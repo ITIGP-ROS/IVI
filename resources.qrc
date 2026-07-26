@@ -1,0 +1,42 @@
+<RCC>
+    <qresource prefix="/">
+        <file>assets/icons/fan.png</file>
+        <file>assets/icons/cool.png</file>
+        <file>assets/icons/auto.png</file>
+        <file>assets/icons/heat.png</file>
+        <file>assets/icons/humidity.png</file>
+        <file>assets/icons/air.png</file>
+        <file>assets/images/weatherbackground.jpg</file>
+        <file>assets/images/mercedes.png</file>
+        <file>assets/icons/video.png</file>
+        <file>assets/icons/audio.png</file>
+        <file>assets/icons/radio.png</file>
+        <file>assets/icons/wifi.png</file>
+        <file>assets/icons/bt.png</file>
+        <file>assets/icons/volume.png</file>
+        <file>assets/icons/weather.png</file>
+        <file>assets/images/mercedes_interior.png</file>
+        <file>assets/icons/parallel-feet.png</file>
+        <file>assets/icons/parallel.png</file>
+        <file>assets/icons/feet.png</file>
+        <file>assets/icons/home.png</file>
+        <file>assets/icons/navigation.png</file>
+        <file>assets/icons/brightness.png</file>
+        <file>assets/icons/volumedown.png</file>
+        <file>assets/icons/volumeup.png</file>
+        <file>assets/videos/splash.webm</file>
+        <file>assets/icons/pagenavigation.png</file>
+        <file>assets/icons/reload.png</file>
+        <file>assets/icons/power.png</file>
+        <file>assets/icons/play.png</file>
+        <file>assets/icons/stop.png</file>
+        <file>assets/icons/prev.png</file>
+        <file>assets/icons/pause.png</file>
+        <file>assets/icons/next.png</file>
+        <file>assets/images/iti.png</file>
+        <file>assets/images/car.png</file>
+        <file>assets/icons/upper.png</file>
+        <file>assets/icons/lower.png</file>
+        <file>assets/icons/back.png</file>
+    </qresource>
+</RCC>
