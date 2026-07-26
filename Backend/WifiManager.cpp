@@ -60,8 +60,10 @@ void WifiManager::onPropertiesChanged(QString interface,
         emit wifiEnabledChanged(m_wifiEnabled);
     }
 
-    // Active connections changed — refresh connected SSID
-    if (changedProps.contains("ActiveConnections")) {
+    // Active connections changed — refresh connected SSID only when not connecting.
+    // During a connection, the state=2 handler sets m_connectedSsid directly to
+    // avoid racing with this signal path (which can fire before state=2 arrives).
+    if (changedProps.contains("ActiveConnections") && m_pendingSsid.isEmpty()) {
         updateConnectedSsid();
     }
 }
@@ -148,9 +150,16 @@ void WifiManager::disconnectFromNetwork()
             QVariant::fromValue(acPath)
         );
 
-        if (reply.type() == QDBusMessage::ErrorMessage)
+        if (reply.type() == QDBusMessage::ErrorMessage) {
             qWarning() << "Disconnect failed:" << reply.errorMessage();
+            return;
+        }
 
+        // Optimistically update UI immediately instead of waiting for NM async signal
+        if (!m_connectedSsid.isEmpty()) {
+            m_connectedSsid = "";
+            emit connectedSsidChanged(m_connectedSsid);
+        }
         return;
     }
 }
@@ -183,9 +192,11 @@ void WifiManager::scanNetworks()
     }
 
     if (wirelessDevicePath.isEmpty()) {
+        m_wirelessDevicePath.clear();
         emit scanFailed("No wireless device found on this machine");
         return;
     }
+    m_wirelessDevicePath = wirelessDevicePath;
 
     QDBusInterface deviceIface(
         "org.freedesktop.NetworkManager",
@@ -238,6 +249,11 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
         return;
     }
 
+    if (m_wirelessDevicePath.isEmpty()) {
+        emit connectFailed("No wireless device available");
+        return;
+    }
+
     // Check if a saved profile already exists — avoid creating duplicates
     QDBusInterface settingsIface(
         "org.freedesktop.NetworkManager",
@@ -274,7 +290,7 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
                 QDBusMessage reply = m_nmInterface->call(
                     "ActivateConnection",
                     QVariant::fromValue(connPath),
-                    QVariant::fromValue(QDBusObjectPath("/")),
+                    QVariant::fromValue(QDBusObjectPath(m_wirelessDevicePath)),
                     QVariant::fromValue(QDBusObjectPath("/"))
                 );
                 if (reply.type() == QDBusMessage::ErrorMessage) {
@@ -295,9 +311,8 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
     connectionSettings["id"]   = ssid;
 
     QVariantMap wirelessSettings;
-    wirelessSettings["ssid"]   = ssid.toUtf8();
-    wirelessSettings["mode"]   = "infrastructure";
-    wirelessSettings["hidden"] = true;
+    wirelessSettings["ssid"] = ssid.toUtf8();
+    wirelessSettings["mode"] = "infrastructure";
 
     QVariantMap securitySettings;
     securitySettings["key-mgmt"] = "wpa-psk";
@@ -311,7 +326,7 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
     QDBusMessage reply = m_nmInterface->call(
         "AddAndActivateConnection",
         QVariant::fromValue(allSettings),
-        QVariant::fromValue(QDBusObjectPath("/")),
+        QVariant::fromValue(QDBusObjectPath(m_wirelessDevicePath)),
         QVariant::fromValue(QDBusObjectPath("/"))
     );
 
@@ -328,6 +343,11 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
 // Connect to a network from scan results
 void WifiManager::connectToSelectedNetwork(const QString &ssid)
 {
+    if (m_wirelessDevicePath.isEmpty()) {
+        emit connectFailed("No wireless device available");
+        return;
+    }
+
     QDBusInterface settingsIface(
         "org.freedesktop.NetworkManager",
         "/org/freedesktop/NetworkManager/Settings",
@@ -360,7 +380,7 @@ void WifiManager::connectToSelectedNetwork(const QString &ssid)
                 QDBusMessage reply = m_nmInterface->call(
                     "ActivateConnection",
                     QVariant::fromValue(connPath),
-                    QVariant::fromValue(QDBusObjectPath("/")),
+                    QVariant::fromValue(QDBusObjectPath(m_wirelessDevicePath)),
                     QVariant::fromValue(QDBusObjectPath("/"))
                 );
                 if (reply.type() == QDBusMessage::ErrorMessage) {
@@ -383,6 +403,18 @@ void WifiManager::connectToSelectedNetwork(const QString &ssid)
 void WifiManager::watchActiveConnection(const QString &activeConnPath,
                                         const QString &ssid)
 {
+    // Disconnect previous watcher to prevent stale signals from overlapping connections
+    if (!m_activeConnPath.isEmpty()) {
+        QDBusConnection::systemBus().disconnect(
+            "org.freedesktop.NetworkManager",
+            m_activeConnPath,
+            "org.freedesktop.DBus.Properties",
+            "PropertiesChanged",
+            this,
+            SLOT(onActiveConnPropertiesChanged(QString, QVariantMap, QStringList))
+        );
+    }
+
     m_pendingSsid    = ssid;
     m_activeConnPath = activeConnPath;
 
@@ -411,7 +443,13 @@ void WifiManager::onActiveConnPropertiesChanged(QString interface,
     switch (state) {
         case 2: // Activated
             emit connectSuccess(m_pendingSsid);
-            updateConnectedSsid();
+            // Set directly from m_pendingSsid to avoid racing with the
+            // ActiveConnections D-Bus signal (which can fire before this slot)
+            if (m_connectedSsid != m_pendingSsid) {
+                m_connectedSsid = m_pendingSsid;
+                emit connectedSsidChanged(m_connectedSsid);
+            }
+            m_pendingSsid.clear();
             QDBusConnection::systemBus().disconnect(
                 "org.freedesktop.NetworkManager",
                 m_activeConnPath,
@@ -426,6 +464,7 @@ void WifiManager::onActiveConnPropertiesChanged(QString interface,
             // Delete the bad profile so next attempt asks for password again
             forgetNetwork(m_pendingSsid);
             emit connectFailed("Wrong password or could not connect to: " + m_pendingSsid);
+            m_pendingSsid.clear();
             updateConnectedSsid();
             QDBusConnection::systemBus().disconnect(
                 "org.freedesktop.NetworkManager",
@@ -433,7 +472,7 @@ void WifiManager::onActiveConnPropertiesChanged(QString interface,
                 "org.freedesktop.DBus.Properties",
                 "PropertiesChanged",
                 this,
-                SLOT(onActiveConnPropertiesChanged(QString, QMetaType::QVariantMap, QStringList))
+                SLOT(onActiveConnPropertiesChanged(QString, QVariantMap, QStringList))
             );
             break;
 

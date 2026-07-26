@@ -48,8 +48,9 @@ private:
     void updateConnectedSsid();
 
     QDBusInterface *m_nmInterface;
-    bool            m_wifiEnabled    = false;
+    bool            m_wifiEnabled       = false;
     QString         m_pendingSsid;
     QString         m_activeConnPath;
     QString         m_connectedSsid;
+    QString         m_wirelessDevicePath;
 };

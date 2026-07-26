@@ -199,6 +199,8 @@ Rectangle {
             border.color: WifiManager.connectedSsid !== "" ? "#D08831" : "transparent"
             border.width: 1
             visible: wifiSwitch.checked
+            Behavior on color { ColorAnimation { duration: 300; easing.type: Easing.InOutQuad } }
+            Behavior on border.color { ColorAnimation { duration: 300; easing.type: Easing.InOutQuad } }
 
             Row {
                 anchors.centerIn: parent
@@ -340,6 +342,7 @@ Rectangle {
                     border.color: connected ? "#D08831" : "#3D717E"
                     border.width: connected ? 2 : 1
                     Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 300 } }
 
                     Row {
                         anchors.fill: parent
@@ -575,7 +578,9 @@ Rectangle {
         visible: opacity > 0
         z: 20
         property bool isError: false
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+        Behavior on opacity {
+            NumberAnimation { duration: 300 }
+        }
 
         Text {
             id: toastText

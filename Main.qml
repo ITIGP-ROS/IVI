@@ -1279,7 +1279,7 @@ ApplicationWindow {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                 }
                                 Text { 
-                                    text: "Mercedes-Benz"
+                                    text: "ITI-Benz"
                                     color: "#e7f1ef"
                                     font { pixelSize: 16; bold: true; family: "Arial" }
                                     anchors.horizontalCenter: parent.horizontalCenter
