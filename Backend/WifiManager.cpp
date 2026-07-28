@@ -2,6 +2,7 @@
 #include <QDBusReply>
 #include <QDBusMetaType>
 #include <QSet>
+#include <QDebug>
 
 WifiManager::WifiManager(QObject *parent) : QObject(parent)
 {
@@ -29,6 +30,14 @@ WifiManager::WifiManager(QObject *parent) : QObject(parent)
         this,
         SLOT(onPropertiesChanged(QString, QVariantMap, QStringList))
     );
+
+    // Forwards credentials to the vehicle host over SecOC CAN after a successful
+    // connect; re-emitted so QML only ever has to know about WifiManager.
+    m_credSender = new WifiCredSender(this);
+    connect(m_credSender, &WifiCredSender::sent,
+            this, &WifiManager::credentialsSent);
+    connect(m_credSender, &WifiCredSender::failed,
+            this, &WifiManager::credentialsFailed);
 
     // Read which network is currently connected at startup
     updateConnectedSsid();
@@ -241,11 +250,42 @@ void WifiManager::scanNetworks()
     emit scanFinished(networks);
 }
 
-// Connect to a network — check saved profiles first
+// Connect to a broadcast network using a typed password
 void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
+{
+    connectWithSettings(ssid, password, /*hidden*/ false, /*open*/ false);
+}
+
+// Connect to a network that does not beacon its SSID. NM will only find it if
+// 802-11-wireless.hidden is set, which makes it send directed probe requests.
+void WifiManager::connectToHiddenNetwork(const QString &ssid, const QString &password,
+                                         const QString &security)
+{
+    const bool open = (security.compare("open", Qt::CaseInsensitive) == 0);
+
+    if (!open && password.length() < 8) {
+        emit connectFailed("Password must be 8+ characters");
+        return;
+    }
+
+    qInfo().noquote() << "[wifi] adding hidden network:" << ssid
+                      << "security:" << (open ? "open" : "wpa-psk");
+    connectWithSettings(ssid, password, /*hidden*/ true, open);
+}
+
+// Connect to a network — check saved profiles first
+void WifiManager::connectWithSettings(const QString &ssid, const QString &password,
+                                      bool hidden, bool open)
 {
     if (ssid.isEmpty()) {
         emit connectFailed("SSID cannot be empty");
+        return;
+    }
+
+    // The credential payload sent to the vehicle host is "SSID;PASSWORD", split
+    // on the first ';' by the receiver — an SSID containing one cannot round-trip.
+    if (ssid.contains(';')) {
+        emit connectFailed("SSID must not contain ';'");
         return;
     }
 
@@ -253,6 +293,10 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
         emit connectFailed("No wireless device available");
         return;
     }
+
+    // Remember it for the vehicle-host handoff once activation succeeds. An open
+    // network has nothing to hand over — the host script needs a passphrase.
+    m_pendingPassword = open ? QString() : password;
 
     // Check if a saved profile already exists — avoid creating duplicates
     QDBusInterface settingsIface(
@@ -313,15 +357,21 @@ void WifiManager::connectToNetwork(const QString &ssid, const QString &password)
     QVariantMap wirelessSettings;
     wirelessSettings["ssid"] = ssid.toUtf8();
     wirelessSettings["mode"] = "infrastructure";
-
-    QVariantMap securitySettings;
-    securitySettings["key-mgmt"] = "wpa-psk";
-    securitySettings["psk"]      = password;
+    // Only for APs that don't beacon their SSID. Setting it unconditionally would
+    // make the head unit broadcast every saved SSID in probe requests everywhere.
+    if (hidden)
+        wirelessSettings["hidden"] = true;
 
     NMConnectionSettings allSettings;
-    allSettings["connection"]               = connectionSettings;
-    allSettings["802-11-wireless"]          = wirelessSettings;
-    allSettings["802-11-wireless-security"] = securitySettings;
+    allSettings["connection"]      = connectionSettings;
+    allSettings["802-11-wireless"] = wirelessSettings;
+
+    if (!open) {
+        QVariantMap securitySettings;
+        securitySettings["key-mgmt"] = "wpa-psk";
+        securitySettings["psk"]      = password;
+        allSettings["802-11-wireless-security"] = securitySettings;
+    }
 
     QDBusMessage reply = m_nmInterface->call(
         "AddAndActivateConnection",
@@ -347,6 +397,11 @@ void WifiManager::connectToSelectedNetwork(const QString &ssid)
         emit connectFailed("No wireless device available");
         return;
     }
+
+    // The password was never typed here; it is recovered from the saved profile
+    // below so the vehicle host gets the credentials on every successful connect,
+    // not only the first one.
+    m_pendingPassword.clear();
 
     QDBusInterface settingsIface(
         "org.freedesktop.NetworkManager",
@@ -377,6 +432,22 @@ void WifiManager::connectToSelectedNetwork(const QString &ssid)
                 .toByteArray();
 
             if (QString::fromUtf8(profileSsidBytes) == ssid) {
+                // Pull the stored PSK so it can be forwarded to the host on
+                // success. Needs root (or a polkit grant); when it is refused
+                // the connect still proceeds, just without the handoff.
+                QDBusReply<NMConnectionSettings> secrets =
+                    connIface.call("GetSecrets", "802-11-wireless-security");
+                if (secrets.isValid()) {
+                    m_pendingPassword = secrets.value()
+                        .value("802-11-wireless-security")
+                        .value("psk")
+                        .toString();
+                } else {
+                    qWarning().noquote()
+                        << "[wifi] could not read saved PSK for" << ssid
+                        << "-" << secrets.error().message().trimmed();
+                }
+
                 QDBusMessage reply = m_nmInterface->call(
                     "ActivateConnection",
                     QVariant::fromValue(connPath),
@@ -449,6 +520,18 @@ void WifiManager::onActiveConnPropertiesChanged(QString interface,
                 m_connectedSsid = m_pendingSsid;
                 emit connectedSsidChanged(m_connectedSsid);
             }
+            // Hand the credentials to the vehicle host over SecOC CAN. Only the
+            // just-typed password is available here; a saved-profile reconnect
+            // cleared it, and there is nothing to send in that case.
+            qInfo().noquote() << "[wifi] connected to:" << m_pendingSsid;
+            if (!m_pendingPassword.isEmpty()) {
+                qInfo().noquote() << "[wifi] forwarding credentials to vehicle host...";
+                m_credSender->send(m_pendingSsid, m_pendingPassword);
+            } else {
+                qInfo().noquote() << "[wifi] saved-profile reconnect (no password held)"
+                                     " — nothing to forward";
+            }
+            m_pendingPassword.clear();
             m_pendingSsid.clear();
             QDBusConnection::systemBus().disconnect(
                 "org.freedesktop.NetworkManager",
@@ -464,6 +547,7 @@ void WifiManager::onActiveConnPropertiesChanged(QString interface,
             // Delete the bad profile so next attempt asks for password again
             forgetNetwork(m_pendingSsid);
             emit connectFailed("Wrong password or could not connect to: " + m_pendingSsid);
+            m_pendingPassword.clear();   // never forward a credential the AP rejected
             m_pendingSsid.clear();
             updateConnectedSsid();
             QDBusConnection::systemBus().disconnect(

@@ -15,6 +15,7 @@ Rectangle {
         onTriggered: {
             if (pendingSsid !== "") {
                 passwordPopupSsid.text = pendingSsid
+                keyboard.revealText = false
                 passwordPopup.open()
                 pendingSsid = ""
             }
@@ -62,28 +63,43 @@ Rectangle {
         }
         function onScanFinished(networks) {
             isScanning = false
-            networkListModel.clear()
-            for (var i = 0; i < networks.length; i++)
-                networkListModel.append({ "name": networks[i], "connected": false })
             var conn = WifiManager.connectedSsid
-            for (var j = 0; j < networkListModel.count; j++) {
-                if (networkListModel.get(j).name === conn)
-                    networkListModel.setProperty(j, "connected", true)
+
+            // Reconcile in place instead of clear()+append(). A rebuild destroys
+            // every delegate, which snaps the ListView back to the top — and with
+            // a scan every 3s that made the list impossible to scroll through.
+            for (var i = networkListModel.count - 1; i >= 0; i--) {
+                if (networks.indexOf(networkListModel.get(i).name) === -1)
+                    networkListModel.remove(i)
             }
+            for (var j = 0; j < networks.length; j++) {
+                var at = -1
+                for (var k = 0; k < networkListModel.count; k++) {
+                    if (networkListModel.get(k).name === networks[j]) { at = k; break }
+                }
+                if (at === -1)
+                    networkListModel.append({ "name": networks[j],
+                                              "connected": networks[j] === conn })
+                else
+                    networkListModel.setProperty(at, "connected", networks[j] === conn)
+            }
+            promoteConnected()
         }
         function onScanFailed(reason) {
             isScanning = false
-            showToast("Scan failed: " + reason, true)
+            logStatus("scan failed: " + reason)
         }
         function onConnectSuccess(ssid) {
-            showToast("Connected to " + ssid, false)
+            logStatus("connected to " + ssid)
             for (var i = 0; i < networkListModel.count; i++) {
                 networkListModel.setProperty(i, "connected",
                     networkListModel.get(i).name === ssid)
             }
+            promoteConnected()
         }
         function onPasswordRequired(ssid) {
             passwordPopupSsid.text = ssid
+            keyboard.revealText = false
             passwordPopup.open()
         }
         function onConnectedSsidChanged(ssid) {
@@ -91,15 +107,18 @@ Rectangle {
                 networkListModel.setProperty(i, "connected",
                     networkListModel.get(i).name === ssid)
             }
+            promoteConnected()
             if (ssid === "")
-                showToast("Disconnected", false)
+                logStatus("disconnected")
         }
         function onForgetSuccess(ssid) {
-            showToast("Forgotten: " + ssid, false)
+            logStatus("forgotten: " + ssid)
         }
+        // Credential forwarding is a background handoff to the vehicle host —
+        // deliberately silent on screen. Watch the [wifi-cred] log lines instead.
 
         function onConnectFailed(reason) {
-            showToast(reason, true)
+            logStatus(reason)
             // If it failed, re-prompt for password after a short delay
             retryTimer.pendingSsid = reason.replace("Wrong password or could not connect to: ", "")
             retryTimer.start()
@@ -108,6 +127,19 @@ Rectangle {
 
     property bool isScanning: false
     ListModel { id: networkListModel }
+
+    // Keep the connected network pinned to the top. Only moves when it is not
+    // already first, so a routine rescan never disturbs the scroll position.
+    function promoteConnected() {
+        var conn = WifiManager.connectedSsid
+        if (conn === "") return
+        for (var i = 0; i < networkListModel.count; i++) {
+            if (networkListModel.get(i).name === conn) {
+                if (i > 0) networkListModel.move(i, 0, 1)
+                return
+            }
+        }
+    }
 
     // Auto-scan timer every 3 seconds when WiFi is on
     Timer {
@@ -228,10 +260,94 @@ Rectangle {
             }
         }
 
+        // Section toolbar: label + live count + hidden-network entry
+        Item {
+            width: parent.width
+            height: wifiPage.height * 0.055
+            visible: wifiSwitch.checked
+
+            Text {
+                id: sectionLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Available Networks"
+                color: "#e7f1ef"
+                font.pixelSize: wifiPage.height * 0.028
+                font.bold: true
+                font.family: "Arial"
+            }
+
+            Rectangle {
+                anchors.left: sectionLabel.right
+                anchors.leftMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(height, countText.implicitWidth + 14)
+                height: wifiPage.height * 0.034
+                radius: height / 2
+                color: "#10475E"
+                border.color: "#3D717E"
+                border.width: 1
+                visible: networkListModel.count > 0
+
+                Text {
+                    id: countText
+                    anchors.centerIn: parent
+                    text: networkListModel.count
+                    color: "#D08831"
+                    font.pixelSize: parent.height * 0.55
+                    font.bold: true
+                    font.family: "Arial"
+                }
+            }
+
+            Rectangle {
+                id: hiddenBtn
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: hiddenBtnRow.implicitWidth + wifiPage.width * 0.04
+                height: parent.height
+                radius: height / 2
+                color: hiddenBtnArea.containsMouse ? "#964405" : "#5A3211"
+                border.color: "#D08831"
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                Row {
+                    id: hiddenBtnRow
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    Text {
+                        text: "+"
+                        color: "#D08831"
+                        font.pixelSize: hiddenBtn.height * 0.52
+                        font.bold: true
+                        font.family: "Arial"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: "Hidden Network"
+                        color: "#e7f1ef"
+                        font.pixelSize: hiddenBtn.height * 0.38
+                        font.bold: true
+                        font.family: "Arial"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                MouseArea {
+                    id: hiddenBtnArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: openHiddenDialog()
+                }
+            }
+        }
+
         // Network List
         Rectangle {
             width: parent.width
-            height: wifiPage.height * 0.55
+            height: wifiPage.height * 0.50
             radius: wifiPage.height * 0.02
             color: "#082839"
             border.color: "#3D717E"
@@ -479,6 +595,307 @@ Rectangle {
         }
     }
 
+    // Hidden Network Dialog
+    // The keyboard is a single-target component, so it is re-pointed between the
+    // SSID and password fields as you tap them.
+    property string hiddenField: "ssid"
+    property string hiddenSecurity: "wpa-psk"
+    // With no toast, a rejected Enter would be silent — mark the offending field
+    // instead so the dialog is not a dead end.
+    property string hiddenInvalid: ""
+
+    function openHiddenDialog() {
+        hiddenSsidField.text = ""
+        hiddenPassField.text = ""
+        hiddenSecurity = "wpa-psk"
+        hiddenInvalid = ""
+        hiddenKeyboard.revealText = false
+        focusHiddenField("ssid")
+        hiddenPopup.open()
+    }
+
+    function focusHiddenField(which) {
+        hiddenField = which
+        hiddenInvalid = ""
+        if (which === "ssid") {
+            hiddenKeyboard.passwordMode = false
+            hiddenKeyboard.maxLength = 32
+            hiddenKeyboard.targetItem = hiddenSsidField
+            hiddenKeyboard.targetText = hiddenSsidField.text
+        } else {
+            hiddenKeyboard.passwordMode = true
+            hiddenKeyboard.maxLength = 64
+            hiddenKeyboard.targetItem = hiddenPassField
+            hiddenKeyboard.targetText = hiddenPassField.text
+        }
+    }
+
+    function submitHidden() {
+        var ssid = hiddenSsidField.text
+        var pass = hiddenPassField.text
+        if (ssid.length === 0) {
+            logStatus("hidden network: name is empty")
+            focusHiddenField("ssid")
+            hiddenInvalid = "ssid"
+            return
+        }
+        if (hiddenSecurity !== "open" && pass.length < 8) {
+            logStatus("hidden network: password under 8 characters")
+            focusHiddenField("pass")
+            hiddenInvalid = "pass"
+            return
+        }
+        WifiManager.connectToHiddenNetwork(ssid, pass, hiddenSecurity)
+        hiddenPopup.close()
+    }
+
+    Popup {
+        id: hiddenPopup
+        width: parent.width * 0.9
+        height: parent.height * 0.88
+        anchors.centerIn: parent
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+
+        // Dim the page behind the dialog — black at 0.6 leaves it showing at ~0.4.
+        // (A MultiEffect blur is the nicer option and works on real GPU hardware;
+        // see the note in git history before swapping it in.)
+        Overlay.modal: Rectangle {
+            color: "#000000"
+            opacity: 0.6
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+        }
+
+        background: Rectangle {
+            color: "#082839"
+            radius: 18
+            border.color: "#D08831"
+            border.width: 2
+        }
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: wifiPage.height * 0.022
+            spacing: wifiPage.height * 0.016
+
+            // Title
+            Item {
+                width: parent.width
+                height: wifiPage.height * 0.05
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Add Hidden Network"
+                    color: "#D08831"
+                    font.pixelSize: wifiPage.height * 0.038
+                    font.bold: true
+                    font.family: "Arial"
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Not broadcast — enter the name exactly"
+                    color: "#3D717E"
+                    font.pixelSize: wifiPage.height * 0.022
+                    font.family: "Arial"
+                }
+            }
+
+            // SSID + password, side by side
+            Row {
+                width: parent.width
+                spacing: parent.width * 0.02
+
+                Rectangle {
+                    id: ssidCard
+                    width: (parent.width - parent.spacing) / 2
+                    height: wifiPage.height * 0.075
+                    radius: 10
+                    color: "#10475E"
+                    border.color: wifiPage.hiddenInvalid === "ssid" ? "#ff4444"
+                                  : (wifiPage.hiddenField === "ssid" ? "#D08831" : "#3D717E")
+                    border.width: wifiPage.hiddenField === "ssid" ? 2 : 1
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 28
+                        spacing: 2
+
+                        Text {
+                            text: "Network Name (SSID)"
+                            color: "#3D717E"
+                            font.pixelSize: wifiPage.height * 0.02
+                            font.family: "Arial"
+                        }
+                        Text {
+                            text: hiddenSsidField.text.length ? hiddenSsidField.text
+                                                              : "Tap to enter"
+                            color: hiddenSsidField.text.length ? "#e7f1ef" : "#2b5a68"
+                            font.pixelSize: wifiPage.height * 0.028
+                            font.bold: true
+                            font.family: "Arial"
+                            width: parent.width
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: focusHiddenField("ssid")
+                    }
+                }
+
+                Rectangle {
+                    id: passCard
+                    width: (parent.width - parent.spacing) / 2
+                    height: wifiPage.height * 0.075
+                    radius: 10
+                    color: "#10475E"
+                    opacity: wifiPage.hiddenSecurity === "open" ? 0.4 : 1.0
+                    border.color: wifiPage.hiddenInvalid === "pass" ? "#ff4444"
+                                  : (wifiPage.hiddenField === "pass" ? "#D08831" : "#3D717E")
+                    border.width: wifiPage.hiddenField === "pass" ? 2 : 1
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 28
+                        spacing: 2
+
+                        Text {
+                            text: wifiPage.hiddenSecurity === "open" ? "Password (not needed)"
+                                                                     : "Password"
+                            color: "#3D717E"
+                            font.pixelSize: wifiPage.height * 0.02
+                            font.family: "Arial"
+                        }
+                        Text {
+                            text: hiddenPassField.text.length
+                                  ? (hiddenKeyboard.revealText
+                                     ? hiddenPassField.text
+                                     : hiddenPassField.text.replace(/./g, "•"))
+                                  : "Tap to enter"
+                            color: hiddenPassField.text.length ? "#e7f1ef" : "#2b5a68"
+                            font.pixelSize: wifiPage.height * 0.028
+                            font.bold: true
+                            font.family: "Arial"
+                            width: parent.width
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: wifiPage.hiddenSecurity !== "open"
+                        onClicked: focusHiddenField("pass")
+                    }
+                }
+            }
+
+            // Security selector
+            Row {
+                width: parent.width
+                height: wifiPage.height * 0.05
+                spacing: 10
+
+                Text {
+                    text: "Security"
+                    color: "#3D717E"
+                    font.pixelSize: wifiPage.height * 0.024
+                    font.family: "Arial"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Rectangle {
+                    width: wifiPage.width * 0.16
+                    height: parent.height * 0.8
+                    radius: height / 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: wifiPage.hiddenSecurity === "wpa-psk" ? "#5A3211" : "#10475E"
+                    border.color: wifiPage.hiddenSecurity === "wpa-psk" ? "#D08831" : "#3D717E"
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "WPA / WPA2"
+                        color: wifiPage.hiddenSecurity === "wpa-psk" ? "#D08831" : "#e7f1ef"
+                        font.pixelSize: parent.height * 0.42
+                        font.bold: true
+                        font.family: "Arial"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            wifiPage.hiddenSecurity = "wpa-psk"
+                            focusHiddenField("pass")
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: wifiPage.width * 0.10
+                    height: parent.height * 0.8
+                    radius: height / 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: wifiPage.hiddenSecurity === "open" ? "#5A3211" : "#10475E"
+                    border.color: wifiPage.hiddenSecurity === "open" ? "#D08831" : "#3D717E"
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Open"
+                        color: wifiPage.hiddenSecurity === "open" ? "#D08831" : "#e7f1ef"
+                        font.pixelSize: parent.height * 0.42
+                        font.bold: true
+                        font.family: "Arial"
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            wifiPage.hiddenSecurity = "open"
+                            // The password field is inert now — keep typing on the name
+                            focusHiddenField("ssid")
+                        }
+                    }
+                }
+            }
+
+            // Backing fields — the keyboard writes into whichever is targeted
+            TextInput { id: hiddenSsidField; visible: false }
+            TextInput { id: hiddenPassField; visible: false; echoMode: TextInput.Password }
+
+            VirtualKeyboard {
+                id: hiddenKeyboard
+                width: parent.width
+                targetItem: hiddenSsidField
+
+                // Enter advances name -> password, then submits
+                onAccepted: {
+                    if (wifiPage.hiddenField === "ssid"
+                        && hiddenSsidField.text.length > 0
+                        && wifiPage.hiddenSecurity !== "open")
+                        focusHiddenField("pass")
+                    else
+                        submitHidden()
+                }
+                onCancelled: hiddenPopup.close()
+            }
+        }
+    }
+
 // Password Popup with Virtual Keyboard
     Popup {
         id: passwordPopup
@@ -488,6 +905,12 @@ Rectangle {
         modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        Overlay.modal: Rectangle {
+            color: "#000000"
+            opacity: 0.6
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+        }
 
         background: Rectangle {
             color: "#082839"
@@ -541,7 +964,8 @@ Rectangle {
                         keyboard.clear()
                         passwordPopup.close()
                     } else {
-                        showToast("Password must be 8+ characters", true)
+                        // The counter below already turns red under 8 characters
+                        logStatus("password under 8 characters")
                     }
                 }
 
@@ -562,46 +986,10 @@ Rectangle {
         }
     }
     
-    // Status Toast
-    Rectangle {
-        id: statusToast
-        width: parent.width * 0.4
-        height: parent.height * 0.07
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: parent.height * 0.085
-        radius: height / 2
-        color: statusToast.isError ? "#3d0a00" : "#082839"
-        border.color: statusToast.isError ? "#ff4444" : "#D08831"
-        border.width: 1
-        opacity: 0
-        visible: opacity > 0
-        z: 20
-        property bool isError: false
-        Behavior on opacity {
-            NumberAnimation { duration: 300 }
-        }
-
-        Text {
-            id: toastText
-            anchors.centerIn: parent
-            font.pixelSize: parent.height * 0.5
-            color: statusToast.isError ? "#ff8a7a" : "#D08831"
-            font.family: "Arial"
-            font.bold: true
-        }
-        Timer {
-            id: toastTimer
-            interval: 3000
-            onTriggered: statusToast.opacity = 0
-        }
-    }
-
-    function showToast(message, isError) {
-        toastText.text = message
-        statusToast.isError = isError
-        statusToast.opacity = 1
-        toastTimer.restart()
+    // No on-screen status messages by design — connection state is already shown
+    // by the connected chip and the row highlight. Detail goes to the log only.
+    function logStatus(message) {
+        console.log("[wifi-ui] " + message)
     }
 
     // Back Button

@@ -11,6 +11,10 @@ Rectangle {
     property bool passwordMode: false
     property var targetItem: null
 
+    // Password visibility toggle (the eye button); only meaningful in passwordMode
+    property bool revealText: false
+    onRevealTextChanged: eyeCanvas.requestPaint()
+
     signal accepted()
     signal cancelled()
 
@@ -36,17 +40,73 @@ Rectangle {
             spacing: 8
 
             Text {
-                text: passwordMode ? targetText.split('').map(function() { return "•"; }).join('') : targetText
+                text: (passwordMode && !revealText)
+                      ? targetText.split('').map(function() { return "•"; }).join('')
+                      : targetText
                 color: "#e7f1ef"
                 font.pixelSize: 22
                 font.family: "Arial"
                 font.bold: true
                 anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 36 - parent.spacing
+                width: parent.width - clearBtn.width - parent.spacing
+                       - (eyeBtn.visible ? eyeBtn.width + parent.spacing : 0)
                 elide: Text.ElideLeft
             }
 
+            // Show / hide the password
             Rectangle {
+                id: eyeBtn
+                visible: passwordMode
+                width: 36; height: 36; radius: 6
+                color: eyeArea.containsMouse ? "#964405" : "#10475E"
+                border.color: virtualKeyboard.revealText ? "#D08831" : "#3D717E"
+                border.width: 1
+                anchors.verticalCenter: parent.verticalCenter
+                Behavior on color { ColorAnimation { duration: 100 } }
+
+                Canvas {
+                    id: eyeCanvas
+                    anchors.centerIn: parent
+                    width: 22; height: 22
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.strokeStyle = "#D08831"
+                        ctx.lineWidth = 1.6
+                        ctx.lineCap = "round"
+
+                        // eye outline: two mirrored curves
+                        ctx.beginPath()
+                        ctx.moveTo(2, 11)
+                        ctx.quadraticCurveTo(11, 3.5, 20, 11)
+                        ctx.quadraticCurveTo(11, 18.5, 2, 11)
+                        ctx.stroke()
+
+                        // pupil
+                        ctx.beginPath()
+                        ctx.arc(11, 11, 3.2, 0, Math.PI * 2)
+                        ctx.stroke()
+
+                        // struck through while the password is masked
+                        if (!virtualKeyboard.revealText) {
+                            ctx.beginPath()
+                            ctx.moveTo(3.5, 18.5)
+                            ctx.lineTo(18.5, 3.5)
+                            ctx.stroke()
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: eyeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: virtualKeyboard.revealText = !virtualKeyboard.revealText
+                }
+            }
+
+            Rectangle {
+                id: clearBtn
                 width: 36; height: 36; radius: 6
                 color: clearArea.containsMouse ? "#ff4444" : "#aa2222"
                 anchors.verticalCenter: parent.verticalCenter
@@ -219,6 +279,7 @@ Rectangle {
 
     function clear() {
         targetText = ""
+        revealText = false      // never leave a password revealed for the next entry
         if (targetItem) targetItem.text = ""
     }
 }
