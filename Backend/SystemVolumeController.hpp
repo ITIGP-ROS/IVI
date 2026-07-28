@@ -12,7 +12,7 @@ class SystemVolumeController : public QObject{
 public:
     // Above 100 is software boost past the 0 dB reference. Exposed to QML so the
     // sliders and the C++ clamp cannot drift apart.
-    static constexpr int kMaxVolumePercent = 150;
+    static constexpr int kMaxVolumePercent = 200;
     Q_PROPERTY(int maxVolume READ maxVolume CONSTANT)
 
     explicit SystemVolumeController(QObject *parent = nullptr);
