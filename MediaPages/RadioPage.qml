@@ -673,6 +673,12 @@ Rectangle {
         height: radioPage.height * 0.7
         anchors.centerIn: Overlay.overlay
         modal: true
+        // Dim the page behind the dialog
+        Overlay.modal: Rectangle {
+            color: "#000000"
+            opacity: 0.6
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+        }
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 

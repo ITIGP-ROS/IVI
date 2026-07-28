@@ -546,6 +546,12 @@ Item {
         height: parent.height * 0.75
         anchors.centerIn: parent
         modal: true
+        // Dim the page behind the dialog
+        Overlay.modal: Rectangle {
+            color: "#000000"
+            opacity: 0.6
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+        }
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
