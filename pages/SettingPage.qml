@@ -24,6 +24,7 @@ Item {
         // Bind to your existing global properties
         brightnessValue: mainWindow.appBrightness
         volumeValue: systemVolume.volume
+        volumeMax: systemVolume.maxVolume
         volumeMuted: systemVolume.muted
 
         onBrightnessChanged: (value) => mainWindow.appBrightness = value
@@ -380,14 +381,7 @@ Item {
                                         text: qsTr("Volume")
                                         font { pixelSize: root.fontSize * 0.6; bold: true; family: "Arial" }
                                         color: '#ffffff'
-                                        anchors.left: parent.left
-                                        anchors.verticalCenter: parent.verticalCenter
-                                    }
-                                    Text {
-                                        text: systemVolume.volume + "%"
-                                        font { pixelSize: root.fontSize * 0.6; bold: true; family: "Arial" }
-                                        color: root.accentColor
-                                        anchors.right: parent.right
+                                        anchors.horizontalCenter: parent.horizontalCenter
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
@@ -397,7 +391,7 @@ Item {
                                     width: parent.parent.width * 0.75
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     from: 0
-                                    to: 100
+                                    to: systemVolume.maxVolume
                                     stepSize: 1
                                     live: true
                                     value: systemVolume.volume
@@ -671,6 +665,13 @@ Item {
                                 modal: true
                                 focus: true
                                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                                // Dim the page behind the dialog, same as the Wi-Fi popups
+                                Overlay.modal: Rectangle {
+                                    color: "#000000"
+                                    opacity: 0.6
+                                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                                }
 
                                 background: Rectangle {
                                     color: "#082839"

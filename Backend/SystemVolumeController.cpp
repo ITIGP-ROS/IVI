@@ -102,7 +102,11 @@ bool SystemVolumeController::muted() const{
 }
 
 void SystemVolumeController::setVolume(int volume){
-    volume = qBound(0, volume, 100);
+    // PA_VOLUME_NORM is the 0 dB reference, not a ceiling — PulseAudio accepts
+    // above it, which is how "allow volume above 100%" works on the desktop.
+    // Past 100 this is digital gain: it makes quiet sources usable but will
+    // clip material that is already near full scale.
+    volume = qBound(0, volume, kMaxVolumePercent);
     if(m_volume == volume) return;
     
     m_volume = volume;

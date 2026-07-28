@@ -30,6 +30,7 @@ Item {
 
         brightnessValue: mainWindow.appBrightness
         volumeValue: systemVolume.volume
+        volumeMax: systemVolume.maxVolume
         volumeMuted: systemVolume.muted
 
         onBrightnessChanged: (value) => mainWindow.appBrightness = value

@@ -10,13 +10,19 @@ class SystemVolumeController : public QObject{
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
 
 public:
+    // Above 100 is software boost past the 0 dB reference. Exposed to QML so the
+    // sliders and the C++ clamp cannot drift apart.
+    static constexpr int kMaxVolumePercent = 150;
+    Q_PROPERTY(int maxVolume READ maxVolume CONSTANT)
+
     explicit SystemVolumeController(QObject *parent = nullptr);
     ~SystemVolumeController();
 
     int volume() const;
+    int maxVolume() const { return kMaxVolumePercent; }
     bool muted() const;
 
-    Q_INVOKABLE void setVolume(int volume);   // 0 - 100
+    Q_INVOKABLE void setVolume(int volume);   // 0 - kMaxVolumePercent
     Q_INVOKABLE void setMuted(bool muted);
     Q_INVOKABLE void toggleMute();
 

@@ -32,6 +32,7 @@ Rectangle {
 
     property real brightnessValue: 1.0
     property real volumeValue: 0.7
+    property real volumeMax: 100      // >100 enables software boost past 0 dB
     property bool volumeMuted: false
 
     signal backRequested()
@@ -286,7 +287,7 @@ Rectangle {
                         width: 90
                         height: 28
                         from: 0
-                        to: 100
+                        to: titleBar.volumeMax
                         stepSize: 1
                         live: true
                         value: titleBar.volumeValue
@@ -328,13 +329,6 @@ Rectangle {
                         }
                     }
 
-                    Text {
-                        width: 25
-                        text: Math.round(titleBar.volumeValue) + "%"
-                        color: titleBar.volumeMuted ? "#ff4444" : "#D08831"
-                        font { pixelSize: 11; bold: true; family: "Arial" }
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
                 }
             }
         }

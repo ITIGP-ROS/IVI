@@ -1052,7 +1052,7 @@ ApplicationWindow {
                                         launcherItem.openCarInfo()
                                     // VOLUME COMMANDS
                                     else if (lowerText.includes("volume up") || lowerText.includes("increase volume")) {
-                                        var newVol = Math.min(100, systemVolume.volume + 11)
+                                        var newVol = Math.min(systemVolume.maxVolume, systemVolume.volume + 11)
                                         systemVolume.volume = newVol
                                         console.log("Volume up →", newVol + "%")
                                     }
@@ -1140,21 +1140,13 @@ ApplicationWindow {
 
                                     Text {
                                         id: volumeLabel
-                                        anchors.left: parent.left
+                                        anchors.horizontalCenter: parent.horizontalCenter
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: "Volume"
                                         color: "#ffffff"
                                         font { pixelSize: 18; bold: true; family: "Arial" }
                                     }
 
-                                    Text {
-                                        id: percentLabel
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: systemVolume.volume + "%"
-                                        color: "#36a9de"
-                                        font { pixelSize: 18; bold: true; family: "Arial" }
-                                    }
                                 }
 
                                 Slider {
@@ -1162,7 +1154,7 @@ ApplicationWindow {
                                     width: parent.width
                                     height: 32
                                     from: 0
-                                    to: 100
+                                    to: systemVolume.maxVolume
                                     stepSize: 1
                                     live: true
                                     value: systemVolume.volume
