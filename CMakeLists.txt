@@ -22,6 +22,7 @@ qt_add_executable(appIVI
     Backend/WifiCredSender.cpp
     Backend/SystemVolumeController.cpp
     Backend/SpeechManager.cpp
+    Backend/MusicLibrary.cpp
 )
 
 target_include_directories(appIVI PRIVATE ${PULSE_INCLUDE_DIRS})

@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import Qt.labs.folderlistmodel
 pragma ComponentBehavior: Bound
 import QtMultimedia
 
@@ -15,9 +14,6 @@ Rectangle {
     property bool audioSelected: mediaPage.currentMediaType === 2
     property string errorMessage: ""
     property int currentFileIndex: -1
-
-    // Fixed on-disk music library — no file picker on a head unit.
-    property string musicFolder: "/home/ehab/Music"
 
     // ── Error & state handling for the shared player ──
     Connections {
@@ -197,17 +193,6 @@ Rectangle {
             visible: rightPanel.currentIndex === 0
             color: 'transparent'
 
-            // The library is a fixed on-disk location, so it loads itself —
-            // there is no file picker to drive from a head unit.
-            FolderListModel {
-                id: localFolderModel
-                folder: "file://" + audioPage.musicFolder
-                nameFilters: ["*.mp3", "*.wav", "*.aac", "*.flac", "*.ogg", "*.m4a"]
-                showDirs: false
-                showHidden: false
-                sortField: FolderListModel.Name
-            }
-
             Column {
                 anchors.fill: parent
                 anchors.margins: audioPage.width / 40
@@ -220,7 +205,7 @@ Rectangle {
 
                     Text {
                         id: localCount
-                        text: localFolderModel.count + (localFolderModel.count === 1 ? " track" : " tracks")
+                        text: musicLibrary.count + (musicLibrary.count === 1 ? " track" : " tracks")
                         color: '#3D717E'
                         font.pixelSize: audioPage.width / 85
                         font.family: "Arial"
@@ -233,7 +218,7 @@ Rectangle {
                 Column {
                     width: parent.width
                     spacing: audioPage.height / 60
-                    visible: localFolderModel.count === 0
+                    visible: musicLibrary.count === 0
 
                     Text {
                         text: "No audio files found"
@@ -255,8 +240,8 @@ Rectangle {
                     width: parent.width
                     height: parent.height - localHeader.height - parent.spacing
                     clip: true
-                    visible: localFolderModel.count > 0
-                    model: localFolderModel
+                    visible: musicLibrary.count > 0
+                    model: musicLibrary
                     spacing: 4
 
                     ScrollBar.vertical: ScrollBar {
