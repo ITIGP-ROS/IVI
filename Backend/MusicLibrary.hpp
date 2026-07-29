@@ -45,12 +45,14 @@ public:
      * developer machine and the target board do not share a username, so a
      * literal /home/<someone>/Music silently lists nothing on the vehicle.
      *
-     *   1. $IVI_MUSIC_DIR        — image/integrator override
-     *   2. XDG music dir         — $HOME/Music on a normal rootfs
-     *   3. $HOME/Music
+     *   1. $IVI_MUSIC_DIR                — explicit override, always wins
+     *   2. /var/lib/ivi/media            — on a Jetson/Tegra board
+     *   3. XDG music dir, else $HOME/Music — developer machine
      *
-     * The first entry that exists wins; if none do, the XDG location is
-     * returned anyway so the empty state names a sensible place to put files.
+     * On the head unit the path is fixed whether or not it exists yet, so it
+     * is identical on every vehicle. On a desktop the first existing candidate
+     * wins, falling back to the conventional location so the empty state still
+     * names somewhere sensible.
      */
     static QString defaultFolder();
 
@@ -64,9 +66,12 @@ private:
         QString path;
     };
 
-    void rewatch();
+    QString watchTarget() const;
+    void    rewatch();
+    void    onDirectoryChanged();
 
     QString            m_folder;
+    QString            m_watchedPath;
     QList<Track>       m_tracks;
     QFileSystemWatcher m_watcher;
 };
