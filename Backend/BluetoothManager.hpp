@@ -3,11 +3,20 @@
 #include <QObject>
 #include <QDBusConnection>
 #include <QDBusObjectPath>
-#include <QTimer>
 #include <QString>
 #include <QVariantMap>
-#include <QMap>
+#include <QSet>
 
+/*
+ * BluetoothManager — A2DP/AVRCP media state for the player UI.
+ *
+ * Event-driven: BlueZ emits PropertiesChanged for Device1 and MediaPlayer1, so
+ * there is no polling. The previous 0.5s poll issued N+3 *blocking* D-Bus calls
+ * per tick on the GUI thread, which scales with the number of devices BlueZ has
+ * ever cached and stalls the HMI whenever bluetoothd is slow.
+ *
+ * QML-facing API is unchanged.
+ */
 class BluetoothManager : public QObject
 {
     Q_OBJECT
@@ -46,20 +55,26 @@ signals:
     void playerStatusChanged();
     void errorOccurred(const QString& message);
 
+private slots:
+    void onPropertiesChanged(const QString &interface, const QVariantMap &changed,
+                             const QStringList &invalidated);
+    void onInterfacesAdded(const QDBusObjectPath &path, const QVariantMap &interfaces);
+    void onInterfacesRemoved(const QDBusObjectPath &path, const QStringList &interfaces);
+    void onBlueZOwnerChanged(const QString &name, const QString &oldOwner,
+                             const QString &newOwner);
+
 private:
-    void init();
-    void poll();                          // called every 0.5s, reads everything fresh
+    void rescan();                                   // full state refresh (async)
+    void selectDevice(const QString &path, const QVariantMap &props);
+    void selectPlayer(const QString &path);
+    void clearDevice();
+    void applyDeviceProps(const QVariantMap &props);
+    void applyPlayerProps(const QVariantMap &props);
+    void subscribe(const QString &path);
+    void unsubscribeAll();
     void sendAvrcpCommand(const QString& command);
 
-    // Returns property map for a given object path + interface
-    // using raw QDBusArgument to avoid deserialization issues
-    QVariantMap getProperties(const QString& path, const QString& iface);
-
-    // Returns all BlueZ object paths + their interfaces
-    // key = object path, value = list of interface names
-    QMap<QString, QStringList> getManagedObjects();
-
-    bool m_connected     = false;
+    bool    m_connected = false;
     QString m_deviceName;
     QString m_deviceAddress;
     QString m_devicePath;
@@ -69,6 +84,6 @@ private:
     QString m_trackAlbum;
     QString m_playerStatus;
 
+    QSet<QString> m_subscribed;
     QDBusConnection m_bus;
-    QTimer* m_pollTimer = nullptr;
 };

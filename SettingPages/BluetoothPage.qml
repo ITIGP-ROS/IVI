@@ -58,23 +58,29 @@ Rectangle {
             isScanning = false
             var seenInScan = {}
 
+            // devices is now a list of objects, not "name|addr|conn" strings —
+            // a device named "Ehab | iPhone" used to corrupt the parse.
             for (var i = 0; i < devices.length; i++) {
-                var parts  = devices[i].split("|")
-                var name   = parts[0]
-                var addr   = parts[1]
-                var isConn = parts[2] === "1"
+                var d      = devices[i]
+                var name   = d.name
+                var addr   = d.address
+                var isConn = d.connected
                 seenInScan[addr] = true
 
-                // Append to model only if new (prevents delegate destruction)
+                // Update in place if known (prevents delegate destruction)
                 var exists = false
                 for (var j = 0; j < deviceListModel.count; j++) {
                     if (deviceListModel.get(j).address === addr) {
                         exists = true
+                        deviceListModel.setProperty(j, "name", name)
+                        deviceListModel.setProperty(j, "paired", d.paired)
+                        deviceListModel.setProperty(j, "rssi", d.rssi)
                         break
                     }
                 }
                 if (!exists) {
-                    deviceListModel.append({ "name": name, "address": addr })
+                    deviceListModel.append({ "name": name, "address": addr,
+                                             "paired": d.paired, "rssi": d.rssi })
                 }
 
                 // Only ADD connected devices we didn't know about
@@ -100,10 +106,45 @@ Rectangle {
         }
         function onScanFailed(reason) {
             isScanning = false
-            showToast(reason, true)
+            logStatus(reason)
         }
-        function onPairSuccess(name) { showToast("Paired with " + name, false) }
-        function onPairFailed(reason) { showToast("Pair failed: " + reason, true) }
+        function onPairSuccess(name) {
+            btPage.connectingAddress = ""
+            logStatus("Paired with " + name)
+            BluetoothManager.scanDevices()      // refresh paired flags
+        }
+        function onPairFailed(reason) {
+            btPage.connectingAddress = ""
+            logStatus("Pair failed: " + reason)
+        }
+
+        function onPairingConfirmationRequested(deviceName, passkey) {
+            pairingPopup.deviceName = deviceName
+            pairingPopup.passkey    = passkey
+            pairingPopup.open()
+        }
+        function onPairingPromptDismissed() {
+            pairingPopup.close()
+        }
+        function onAdapterPresentChanged(present) {
+            if (!present) {
+                deviceListModel.clear()
+                btPage.connectedAddresses   = []
+                btPage.connectingAddress    = ""
+                btPage.disconnectingAddress = ""
+                logStatus("Bluetooth adapter removed")
+            }
+        }
+        function onDiscoveringChanged(active) {
+            btPage.isScanning = active
+        }
+        function onPowerChangeFailed(reason) {
+            // Snap the toggle back — the adapter never changed state.
+            btPage.updatingFromBackend = true
+            btSwitch.checked = BluetoothManager.bluetoothEnabled
+            btPage.updatingFromBackend = false
+            logStatus("Power change failed: " + reason)
+        }
 
         function onDeviceConnectionChanged(address, connected) {
             var list = btPage.connectedAddresses.slice()
@@ -126,11 +167,11 @@ Rectangle {
                 list.push(btPage.connectingAddress)
             btPage.connectedAddresses = list
             btPage.connectingAddress  = ""
-            showToast("Connected to " + name, false)
+            logStatus("Connected to " + name)
         }
         function onConnectFailed(reason) {
             btPage.connectingAddress = ""
-            showToast(reason, true)
+            logStatus(reason)
         }
         function onDisconnectSuccess(name) {
             // Safety cleanup in case onDeviceConnectionChanged was missed
@@ -141,36 +182,28 @@ Rectangle {
             btPage.connectedAddresses = list
 
             btPage.disconnectingAddress = ""
-            showToast("Disconnected from " + name, false)
+            logStatus("Disconnected from " + name)
         }
         function onDisconnectFailed(reason) {
             btPage.disconnectingAddress = ""
-            showToast("Disconnect failed: " + reason, true)
+            logStatus("Disconnect failed: " + reason)
         }
     }
 
     property bool isScanning: false
     ListModel { id: deviceListModel }
 
-    // Auto-scan timer — PAUSED while connecting or disconnecting
-    Timer {
-        id: scanTimer
-        interval: 3000
-        running: btSwitch.checked &&
-                 btPage.connectingAddress === "" &&
-                 btPage.disconnectingAddress === ""
-        repeat: true
-        onTriggered: {
-            if (!isScanning)
-                BluetoothManager.scanDevices()
-        }
-    }
-
-    // Initial scan on startup
+    // Discovery is deliberately NOT on a repeating timer. Bluetooth inquiry
+    // starves the ACL link, which audibly breaks up A2DP playback, so the radio
+    // only scans when the driver asks. One scan on entry, then the Scan button.
     Component.onCompleted: {
         if (BluetoothManager.bluetoothEnabled)
             BluetoothManager.scanDevices()
     }
+
+    // Leaving the page must stop the radio; otherwise a 6s inquiry keeps running
+    // against whatever is playing.
+    Component.onDestruction: BluetoothManager.stopScan()
 
     // Main Layout 
     Column {
@@ -275,9 +308,82 @@ Rectangle {
         }
 
         // Device List 
+        // Section toolbar: label + count + manual scan
+        Item {
+            width: parent.width
+            height: btPage.height * 0.055
+            visible: btSwitch.checked
+
+            Text {
+                id: sectionLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Devices"
+                color: "#e7f1ef"
+                font.pixelSize: btPage.height * 0.028
+                font.bold: true
+                font.family: "Arial"
+            }
+
+            Rectangle {
+                anchors.left: sectionLabel.right
+                anchors.leftMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(height, countText.implicitWidth + 14)
+                height: btPage.height * 0.034
+                radius: height / 2
+                color: "#10475E"
+                border.color: "#3D717E"
+                border.width: 1
+                visible: deviceListModel.count > 0
+
+                Text {
+                    id: countText
+                    anchors.centerIn: parent
+                    text: deviceListModel.count
+                    color: "#D08831"
+                    font.pixelSize: parent.height * 0.55
+                    font.bold: true
+                    font.family: "Arial"
+                }
+            }
+
+            Rectangle {
+                id: scanBtn
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: scanBtnText.implicitWidth + btPage.width * 0.05
+                height: parent.height
+                radius: height / 2
+                color: !enabled ? "#1a3a4c"
+                                : (scanBtnArea.containsMouse ? "#964405" : "#5A3211")
+                border.color: enabled ? "#D08831" : "#3D717E"
+                border.width: 1
+                enabled: !btPage.isScanning
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                Text {
+                    id: scanBtnText
+                    anchors.centerIn: parent
+                    text: btPage.isScanning ? "Scanning..." : "Scan"
+                    color: scanBtn.enabled ? "#e7f1ef" : "#3D717E"
+                    font.pixelSize: scanBtn.height * 0.38
+                    font.bold: true
+                    font.family: "Arial"
+                }
+
+                MouseArea {
+                    id: scanBtnArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: BluetoothManager.scanDevices()
+                }
+            }
+        }
+
         Rectangle {
             width: parent.width
-            height: btPage.height * 0.55
+            height: btPage.height * 0.50
             radius: btPage.height * 0.02
             color: "#082839"
             border.color: "#3D717E"
@@ -381,6 +487,7 @@ Rectangle {
                     id: devRow
                     required property string name
                     required property string address
+                    required property bool   paired
                     width: deviceListView.width - 8
                     height: btPage.height / 12
                     radius: height / 4
@@ -457,7 +564,7 @@ Rectangle {
                                     if (devRow.isDisconnecting) return "..."
                                     if (devRow.isConnecting)    return "..."
                                     if (devRow.isConnected)     return "Disconnect"
-                                    return "Connect"
+                                    return devRow.paired ? "Connect" : "Pair"
                                 }
                                 font.pixelSize: parent.height * 0.5
                                 color: "#ffffff"
@@ -474,6 +581,12 @@ Rectangle {
                                     if (devRow.isConnected) {
                                         btPage.disconnectingAddress = devRow.address
                                         BluetoothManager.disconnectDevice(devRow.address)
+                                    } else if (!devRow.paired) {
+                                        // Pair first — this is what raises the agent
+                                        // prompt. Connecting an unpaired device would
+                                        // trigger it implicitly and read as a hang.
+                                        btPage.connectingAddress = devRow.address
+                                        BluetoothManager.pairDevice(devRow.address)
                                     } else {
                                         btPage.connectingAddress = devRow.address
                                         BluetoothManager.connectDevice(devRow.address)
@@ -502,44 +615,147 @@ Rectangle {
         }
     }
 
-    // Status Toast 
-    Rectangle {
-        id: statusToast
-        width: parent.width * 0.4
-        height: parent.height * 0.07
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: parent.height * 0.075
-        radius: height / 2
-        color: statusToast.isError ? "#3d0a00" : "#082839"
-        border.color: statusToast.isError ? "#ff4444" : "#D08831"
-        border.width: 1
-        opacity: 0
-        visible: opacity > 0
-        z: 20
-        property bool isError: false
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+    // Pairing confirmation — raised by the BlueZ agent (numeric comparison).
+    // Without answering this, pairing with any modern phone cannot complete.
+    Popup {
+        id: pairingPopup
+        width: parent.width * 0.6
+        height: parent.height * 0.5
+        anchors.centerIn: parent
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose      // must be answered, not dismissed
 
-        Text {
-            id: toastText
-            anchors.centerIn: parent
-            font.pixelSize: parent.height * 0.35
-            color: statusToast.isError ? "#ff8a7a" : "#D08831"
-            font.family: "Arial"
-            font.bold: true
+        property string deviceName: ""
+        property int    passkey: 0
+
+        Overlay.modal: Rectangle {
+            color: "#000000"
+            opacity: 0.6
+            Behavior on opacity { NumberAnimation { duration: 180 } }
         }
-        Timer {
-            id: toastTimer
-            interval: 3000
-            onTriggered: statusToast.opacity = 0
+
+        background: Rectangle {
+            color: "#082839"
+            radius: 18
+            border.color: "#D08831"
+            border.width: 2
+        }
+
+        Column {
+            anchors.centerIn: parent
+            width: parent.width - 40
+            spacing: btPage.height * 0.028
+
+            Text {
+                text: "Pairing Request"
+                color: "#D08831"
+                font.pixelSize: btPage.height * 0.042
+                font.bold: true
+                font.family: "Arial"
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Text {
+                text: pairingPopup.deviceName
+                color: "#e7f1ef"
+                font.pixelSize: btPage.height * 0.032
+                font.bold: true
+                font.family: "Arial"
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+
+            // Numeric comparison code. 0 means Just Works — no code to show.
+            Text {
+                visible: pairingPopup.passkey > 0
+                text: String(pairingPopup.passkey).padStart(6, "0")
+                color: "#D08831"
+                font.pixelSize: btPage.height * 0.075
+                font.bold: true
+                font.family: "Arial"
+                font.letterSpacing: 6
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Text {
+                text: pairingPopup.passkey > 0
+                      ? "Confirm this code matches the one on your phone"
+                      : "Allow this device to pair with the vehicle?"
+                color: "#3D717E"
+                font.pixelSize: btPage.height * 0.024
+                font.family: "Arial"
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: btPage.width * 0.03
+
+                Rectangle {
+                    width: btPage.width * 0.18
+                    height: btPage.height * 0.075
+                    radius: height / 3
+                    color: rejectArea.containsMouse ? "#ff4444" : "#aa2222"
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Reject"
+                        color: "#ffffff"
+                        font.pixelSize: parent.height * 0.36
+                        font.bold: true
+                        font.family: "Arial"
+                    }
+                    MouseArea {
+                        id: rejectArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            BluetoothManager.confirmPairing(false)
+                            pairingPopup.close()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: btPage.width * 0.18
+                    height: btPage.height * 0.075
+                    radius: height / 3
+                    color: acceptArea.containsMouse ? "#964405" : "#5A3211"
+                    border.color: "#D08831"
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Pair"
+                        color: "#e7f1ef"
+                        font.pixelSize: parent.height * 0.36
+                        font.bold: true
+                        font.family: "Arial"
+                    }
+                    MouseArea {
+                        id: acceptArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            BluetoothManager.confirmPairing(true)
+                            pairingPopup.close()
+                        }
+                    }
+                }
+            }
         }
     }
 
-    function showToast(message, isError) {
-        toastText.text = message
-        statusToast.isError = isError
-        statusToast.opacity = 1
-        toastTimer.restart()
+    // No on-screen status messages by design — connection state is shown by
+    // the connected chip and the row highlight. Detail goes to the log only.
+    function logStatus(message) {
+        console.log("[bt-ui] " + message)
     }
 
     // Back Button 

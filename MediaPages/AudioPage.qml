@@ -189,47 +189,162 @@ Rectangle {
             visible: rightPanel.currentIndex === 0
             color: 'transparent'
 
-            onVisibleChanged: {
-                if (visible) rightPanel.browseIcon = "📂"
+            // The library is a fixed on-disk location, so it loads itself —
+            // there is no file picker to drive from a head unit.
+            FolderListModel {
+                id: localFolderModel
+                folder: "file://" + audioPage.musicFolder
+                nameFilters: ["*.mp3", "*.wav", "*.aac", "*.flac", "*.ogg", "*.m4a"]
+                showDirs: false
+                showHidden: false
+                sortField: FolderListModel.Name
             }
 
-            FileDialog {
-                id: fileDialog
-                title: "Choose Audio File"
-                nameFilters: ["Audio files (*.mp3 *.wav *.aac *.flac *.ogg *.m4a)", "All files (*)"]
-                onAccepted: {
-                    mediaPlayer.source = fileDialog.selectedFile
-                    mediaPage.currentMediaType = 2
-                    mediaPage.currentMediaTitle = fileDialog.selectedFile.toString().split("/").pop().replace(/\.[^.]+$/, "")
-                    mediaPage.currentMediaSubtitle = "Local Audio"
-                    mediaPlayer.play()
+            Column {
+                anchors.fill: parent
+                anchors.margins: audioPage.width / 40
+                anchors.bottomMargin: audioController.height
+                spacing: audioPage.height / 40
+
+                Row {
+                    id: localHeader
+                    width: parent.width
+                    spacing: audioPage.width / 60
+
+                    Text {
+                        text: "🗂️"
+                        font.pixelSize: audioPage.width / 60
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: audioPage.musicFolder
+                        color: '#D08831'
+                        font.pixelSize: audioPage.width / 75
+                        font.family: "Arial"
+                        font.bold: true
+                        elide: Text.ElideLeft
+                        width: parent.width * 0.6
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: localFolderModel.count + " tracks"
+                        color: '#3D717E'
+                        font.pixelSize: audioPage.width / 85
+                        font.family: "Arial"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
-            }
 
-            Row {
-                anchors.centerIn: parent
-                spacing: audioPage.width / 40
-                anchors.verticalCenterOffset: -audioController.height / 2
+                // Empty state — a missing or empty folder must say so, otherwise
+                // a blank panel looks like the player is broken.
+                Column {
+                    width: parent.width
+                    spacing: audioPage.height / 60
+                    visible: localFolderModel.count === 0
 
-                Image {
-                    source: "qrc:/assets/icons/audio.png"
-                    width: audioPage.height / 3
-                    height: width
-                    fillMode: Image.PreserveAspectFit
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: audioPage.audioSelected
+                    Text {
+                        text: "No audio files found"
+                        color: '#3D717E'
+                        font.pixelSize: audioPage.width / 45
+                        font.family: "Arial"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    Text {
+                        text: "Put your music in " + audioPage.musicFolder
+                        color: '#3D717E'
+                        font.pixelSize: audioPage.width / 80
+                        font.family: "Arial"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
                 }
 
-                Text {
-                    text: audioPage.audioSelected ? mediaPlayer.source.toString().split("/").pop().replace(/\.[^.]+$/, "") : "Select an audio file"
-                    color: audioPage.audioSelected ? '#e7f1ef' : '#3D717E'
-                    font.bold: audioPage.audioSelected
-                    font.pixelSize: audioPage.audioSelected? audioPage.width / 60 : audioPage.width / 35
-                    font.family: "Arial"
-                    width: audioPage.audioSelected? audioPage.width / 3 : audioPage.width / 4.1
-                    wrapMode: Text.WordWrap
-                    anchors.top: parent.top
-                    anchors.topMargin: audioPage.audioSelected? audioPage.height / 15 : 0
+                ListView {
+                    width: parent.width
+                    height: parent.height - localHeader.height - parent.spacing
+                    clip: true
+                    visible: localFolderModel.count > 0
+                    model: localFolderModel
+                    spacing: 4
+
+                    ScrollBar.vertical: ScrollBar {
+                        id: localScrollBar
+                        width: audioPage.width / 100
+                        anchors.right: parent.right
+                        anchors.rightMargin: 4
+
+                        contentItem: Rectangle {
+                            implicitWidth: parent.width
+                            radius: width / 2
+                            color: localScrollBar.pressed ? '#964405' : localScrollBar.hovered ? '#D08831' : '#5A3211'
+                            opacity: localScrollBar.hovered || localScrollBar.pressed ? 1.0 : 0.6
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                        }
+                        background: Rectangle {
+                            implicitWidth: parent.width
+                            color: '#082839'
+                            radius: width / 2
+                            opacity: 0.3
+                        }
+                        minimumSize: 0.1
+                    }
+
+                    delegate: Rectangle {
+                        id: localRow
+                        required property string fileName
+                        required property string filePath
+                        required property int index
+
+                        readonly property bool isCurrent:
+                            mediaPlayer.source.toString() === ("file://" + localRow.filePath)
+
+                        width: ListView.view.width - localScrollBar.width * 2
+                        height: audioPage.height / 14
+                        radius: height / 5
+                        color: isCurrent ? '#5A3211'
+                                         : localRowArea.containsMouse ? '#10475E' : 'transparent'
+                        border.color: isCurrent ? '#D08831' : 'transparent'
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        Row {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: parent.width / 20
+                            spacing: parent.width / 30
+
+                            Text {
+                                text: localRow.isCurrent && mediaPlayer.playbackState === MediaPlayer.PlayingState
+                                      ? "🔊" : "🎵"
+                                font.pixelSize: audioPage.width / 70
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            Text {
+                                text: localRow.fileName.replace(/\.[^.]+$/, "")
+                                color: localRow.isCurrent ? '#D08831' : '#e7f1ef'
+                                font.pixelSize: audioPage.width / 70
+                                font.family: "Arial"
+                                elide: Text.ElideRight
+                                width: parent.parent.width * 0.7
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+
+                        MouseArea {
+                            id: localRowArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                mediaPlayer.source = "file://" + localRow.filePath
+                                mediaPage.currentMediaType = 2
+                                mediaPage.currentMediaTitle = localRow.fileName.replace(/\.[^.]+$/, "")
+                                mediaPage.currentMediaSubtitle = "Local Audio"
+                                audioPage.currentFileIndex = localRow.index
+                                mediaPlayer.play()
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -263,15 +378,46 @@ Rectangle {
                 anchors.verticalCenterOffset: -audioController.height / 2
                 spacing: audioPage.width / 40
 
-                Image {
-                    source: "qrc:/assets//icons/audio.png"
+                // Status disc — A2DP/AVRCP carries no cover art, so this shows
+                // the stream's state rather than pretending to be album art.
+                Rectangle {
+                    id: btDisc
                     width: audioPage.height / 3
                     height: width
-                    fillMode: Image.PreserveAspectFit
+                    radius: width / 2
                     anchors.verticalCenter: parent.verticalCenter
+                    color: '#10475E'
+                    border.color: '#D08831'
+                    border.width: 2
                     visible: btManager && btManager.connected
                     opacity: btManager && btManager.playerStatus === "playing" ? 1.0 : 0.5
                     Behavior on opacity { NumberAnimation { duration: 300 } }
+
+                    // Breathing ring while the phone is actually playing
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width + 18
+                        height: width
+                        radius: width / 2
+                        color: 'transparent'
+                        border.color: '#D08831'
+                        border.width: 2
+                        opacity: 0
+                        SequentialAnimation on opacity {
+                            running: btManager && btManager.playerStatus === "playing"
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.45; duration: 1100; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 0.0;  duration: 1100; easing.type: Easing.InOutSine }
+                        }
+                    }
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.45
+                        height: width
+                        source: "qrc:/assets/icons/bt.png"
+                        fillMode: Image.PreserveAspectFit
+                    }
                 }
 
                 Column {

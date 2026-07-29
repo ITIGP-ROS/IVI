@@ -15,7 +15,11 @@ Item {
     required property MediaPlayer mediaPlayer
     required property var        mediaPage
 
-    property bool mediaPlaying: mediaPlayer.playbackState === MediaPlayer.PlayingState
+    property bool btActive: mediaPage.currentMediaType === 4
+    // Bluetooth is driven by the phone over AVRCP, not by mediaPlayer.
+    property bool mediaPlaying: btActive
+                                ? (btManager && btManager.playerStatus === "playing")
+                                : mediaPlayer.playbackState === MediaPlayer.PlayingState
 
     WindowBar {
         id: titleBar
@@ -139,6 +143,7 @@ Item {
 
                             onCardClicked: stackView.push(videoPageComponent)
                         }
+
                     }
                 }
             }
@@ -168,11 +173,20 @@ Item {
                 anchors.rightMargin: height * 0.5
                 spacing: root.width / 60
 
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.height * 0.6; height: width
+                    source: "qrc:/assets/icons/bt.png"
+                    fillMode: Image.PreserveAspectFit
+                    visible: root.btActive
+                }
+
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: mediaPage.currentMediaType === 1 ? " 📻" : mediaPage.currentMediaType === 2 ? " 🎵" : " 🎬"
                     font.pixelSize: parent.height * 0.7
                     color: "#D08831"
+                    visible: !root.btActive
                 }
 
                 Column {
@@ -216,7 +230,7 @@ Item {
                     width: statusBar.height * 0.65; height: width; radius: width / 2
                     color: statusPrevArea.containsMouse ? "#082839" : "#964405"
                     border.color: "#D08831"; border.width: 1
-                    visible: mediaPage.currentMediaType === 1
+                    visible: mediaPage.currentMediaType === 1 || root.btActive
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Image{
                         anchors.centerIn: parent
@@ -226,7 +240,10 @@ Item {
                     }
                     MouseArea {
                         id: statusPrevArea; anchors.fill: parent; hoverEnabled: true
-                        onClicked: mediaPage.globalRadioAPI.playPrevious()
+                        onClicked: {
+                            if (root.btActive) btManager.previous()
+                            else mediaPage.globalRadioAPI.playPrevious()
+                        }
                     }
                 }
 
@@ -252,7 +269,10 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            if (root.mediaPlaying) mediaPlayer.pause()
+                            if (root.btActive) {
+                                if (root.mediaPlaying) btManager.pause()
+                                else                   btManager.play()
+                            } else if (root.mediaPlaying) mediaPlayer.pause()
                             else mediaPlayer.play()
                         }
                     }
@@ -280,6 +300,9 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
+                            // The stream lives on the phone — stop it over AVRCP
+                            // and let the backend clear the state.
+                            if (root.btActive) { btManager.stop(); return }
                             mediaPlayer.stop()
                             mediaPage.currentMediaType = 0
                             mediaPage.currentMediaTitle = ""
@@ -295,7 +318,7 @@ Item {
                     width: statusBar.height * 0.65; height: width; radius: width / 2
                     color: statusNextArea.containsMouse ? "#082839" : "#964405"
                     border.color: "#D08831"; border.width: 1
-                    visible: mediaPage.currentMediaType === 1
+                    visible: mediaPage.currentMediaType === 1 || root.btActive
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Image{
                         anchors.centerIn: parent
@@ -305,7 +328,10 @@ Item {
                     }
                     MouseArea {
                         id: statusNextArea; anchors.fill: parent; hoverEnabled: true
-                        onClicked: mediaPage.globalRadioAPI.playNext()
+                        onClicked: {
+                            if (root.btActive) btManager.next()
+                            else mediaPage.globalRadioAPI.playNext()
+                        }
                     }
                 }
             }

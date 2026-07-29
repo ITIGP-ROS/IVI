@@ -31,6 +31,14 @@ int main(int argc, char *argv[]){
     engine.rootContext()->setContextProperty("WifiManager", &wifiManager);
     engine.rootContext()->setContextProperty("BluetoothManager", &bluetoothManager);
 
+    // Inquiry starves the ACL link and audibly breaks up A2DP, so the settings
+    // page must not scan while the media side is playing.
+    QObject::connect(&btManager, &BluetoothManager::playerStatusChanged,
+                     &bluetoothManager, [&btManager, &bluetoothManager]() {
+        bluetoothManager.setMediaActive(
+            btManager.playerStatus().compare("playing", Qt::CaseInsensitive) == 0);
+    });
+
     // System Volume Controller
     SystemVolumeController systemVolumeController;
     engine.rootContext()->setContextProperty("systemVolume", &systemVolumeController);

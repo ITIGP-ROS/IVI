@@ -567,8 +567,48 @@ ApplicationWindow {
     property string currentMediaTitle: ""
     property string currentMediaSubtitle: ""
     property string currentMediaFavicon: ""
+    // 0 none · 1 radio · 2 audio (local/USB) · 3 video · 4 Bluetooth (A2DP)
     property int    currentMediaType: 0
-    property bool   mediaPlaying: sharedMediaPlayer.playbackState === MediaPlayer.PlayingState
+    property bool   btMediaActive: currentMediaType === 4
+
+    // Bluetooth is driven by the phone, not by sharedMediaPlayer, so the
+    // play/pause state has to come from AVRCP instead.
+    property bool   mediaPlaying: btMediaActive
+                                  ? (btManager && btManager.playerStatus === "playing")
+                                  : sharedMediaPlayer.playbackState === MediaPlayer.PlayingState
+
+    // Mirror the phone's A2DP stream into the shared "now playing" state so it
+    // surfaces everywhere the other sources do — media status bar and home tile.
+    function syncBluetoothMedia() {
+        if (!btManager) return
+
+        var live = btManager.connected && btManager.playerStatus !== ""
+        if (live) {
+            currentMediaType     = 4
+            currentMediaFavicon  = ""
+            currentMediaTitle    = btManager.trackTitle !== "" ? btManager.trackTitle
+                                                               : btManager.deviceName
+            var parts = []
+            if (btManager.trackArtist !== "") parts.push(btManager.trackArtist)
+            if (btManager.trackAlbum  !== "") parts.push(btManager.trackAlbum)
+            if (parts.length === 0 && btManager.deviceName !== "") parts.push(btManager.deviceName)
+            currentMediaSubtitle = parts.join("  ·  ")
+        } else if (currentMediaType === 4) {
+            // Only clear if Bluetooth is what is showing — never stomp on a
+            // local track the user started afterwards.
+            currentMediaType     = 0
+            currentMediaTitle    = ""
+            currentMediaSubtitle = ""
+        }
+    }
+
+    Connections {
+        target: btManager
+        function onConnectedChanged()    { mainWindow.syncBluetoothMedia() }
+        function onPlayerStatusChanged() { mainWindow.syncBluetoothMedia() }
+        function onTrackInfoChanged()    { mainWindow.syncBluetoothMedia() }
+        function onDeviceNameChanged()   { mainWindow.syncBluetoothMedia() }
+    }
 
     // --- NEW: GLOBAL RADIO STATE ---
     property string radioSearchQuery: ""
@@ -1733,11 +1773,23 @@ ApplicationWindow {
                                         visible: mainWindow.currentMediaType === 1 && mainWindow.currentMediaFavicon !== "" && status === Image.Ready
                                     }
 
+                                    // Bluetooth gets its own mark so the source is
+                                    // identifiable at a glance, like radio's favicon.
+                                    Image {
+                                        id: btTileIcon
+                                        anchors.centerIn: parent
+                                        width: 36; height: 36
+                                        source: "qrc:/assets/icons/bt.png"
+                                        fillMode: Image.PreserveAspectFit
+                                        visible: mainWindow.currentMediaType === 4
+                                    }
+
                                     Text {
                                         anchors.centerIn: parent
                                         text: mainWindow.currentMediaType === 1 ? "📻" : "🎵"
                                         font.pixelSize: 32
-                                        visible: mainWindow.currentMediaType !== 0 && !faviconImage.visible
+                                        visible: mainWindow.currentMediaType !== 0
+                                                 && !faviconImage.visible && !btTileIcon.visible
                                     }
                                     
                                     Text {
@@ -1785,6 +1837,7 @@ ApplicationWindow {
                                         color: tilePrevArea.containsMouse ? "#082839" : "#21cfa4"
                                         border.color: "#21cfa4"; border.width: 1
                                         visible: mainWindow.currentMediaType === 1
+                                                 || mainWindow.currentMediaType === 4
                                         Image{
                                             anchors.centerIn: parent
                                             width: 18; height: 18
@@ -1793,7 +1846,10 @@ ApplicationWindow {
                                         }
                                         MouseArea {
                                             id: tilePrevArea; anchors.fill: parent; hoverEnabled: true
-                                            onClicked: mainWindow.globalRadioAPI.playPrevious()
+                                            onClicked: {
+                                                if (mainWindow.btMediaActive) btManager.previous()
+                                                else mainWindow.globalRadioAPI.playPrevious()
+                                            }
                                         }
                                     }
 
@@ -1810,7 +1866,10 @@ ApplicationWindow {
                                         MouseArea {
                                             id: tilePlayArea; anchors.fill: parent; hoverEnabled: true
                                             onClicked: {
-                                                if (mainWindow.mediaPlaying) sharedMediaPlayer.pause()
+                                                if (mainWindow.btMediaActive) {
+                                                    if (mainWindow.mediaPlaying) btManager.pause()
+                                                    else                        btManager.play()
+                                                } else if (mainWindow.mediaPlaying) sharedMediaPlayer.pause()
                                                 else sharedMediaPlayer.play()
                                             }
                                         }
@@ -1829,6 +1888,9 @@ ApplicationWindow {
                                         MouseArea {
                                             id: tileStopArea; anchors.fill: parent; hoverEnabled: true
                                             onClicked: {
+                                                // Bluetooth playback lives on the phone; stopping
+                                                // it is an AVRCP command, not a local stop.
+                                                if (mainWindow.btMediaActive) { btManager.stop(); return }
                                                 sharedMediaPlayer.stop()
                                                 mainWindow.currentMediaType = 0
                                                 mainWindow.currentMediaTitle = ""
@@ -1844,6 +1906,7 @@ ApplicationWindow {
                                         color: tileNextArea.containsMouse ? "#082839" : "#21cfa4"
                                         border.color: "#21cfa4"; border.width: 1
                                         visible: mainWindow.currentMediaType === 1
+                                                 || mainWindow.currentMediaType === 4
                                         Image{
                                             anchors.centerIn: parent
                                             width: 18; height: 18
@@ -1852,7 +1915,10 @@ ApplicationWindow {
                                         }
                                         MouseArea {
                                             id: tileNextArea; anchors.fill: parent; hoverEnabled: true
-                                            onClicked: mainWindow.globalRadioAPI.playNext()
+                                            onClicked: {
+                                                if (mainWindow.btMediaActive) btManager.next()
+                                                else mainWindow.globalRadioAPI.playNext()
+                                            }
                                         }
                                     }
                                 }

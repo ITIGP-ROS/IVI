@@ -16,6 +16,8 @@ qt_add_executable(appIVI
     Backend/BluetoothManager.cpp
     Backend/USBManager.cpp
     Backend/BluetoothHWManager.cpp
+    Backend/BlueZ.cpp
+    Backend/BluetoothAgent.cpp
     Backend/WifiManager.cpp
     Backend/WifiCredSender.cpp
     Backend/SystemVolumeController.cpp
