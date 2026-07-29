@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
+import Qt.labs.folderlistmodel
 pragma ComponentBehavior: Bound
-import QtQuick.Dialogs
 import QtMultimedia
 
 Rectangle {
@@ -15,6 +15,9 @@ Rectangle {
     property bool audioSelected: mediaPage.currentMediaType === 2
     property string errorMessage: ""
     property int currentFileIndex: -1
+
+    // Fixed on-disk music library — no file picker on a head unit.
+    property string musicFolder: "/home/ehab/Music"
 
     // ── Error & state handling for the shared player ──
     Connections {
@@ -181,11 +184,16 @@ Rectangle {
         radius: height / 20
 
         property int currentIndex: 0
-        property var browseIcon: "📂"
 
         // ================================================ Local audio ===============================================
         Rectangle {
-            anchors.fill: parent
+            // Bottom is pinned to the progress slider rather than to the panel, so
+            // the track list and its scrollbar stop just above the track position
+            // instead of running underneath it.
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: audioProgress.top
             visible: rightPanel.currentIndex === 0
             color: 'transparent'
 
@@ -203,35 +211,20 @@ Rectangle {
             Column {
                 anchors.fill: parent
                 anchors.margins: audioPage.width / 40
-                anchors.bottomMargin: audioController.height
                 spacing: audioPage.height / 40
 
-                Row {
+                Item {
                     id: localHeader
                     width: parent.width
-                    spacing: audioPage.width / 60
+                    height: localCount.height
 
                     Text {
-                        text: "🗂️"
-                        font.pixelSize: audioPage.width / 60
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text: audioPage.musicFolder
-                        color: '#D08831'
-                        font.pixelSize: audioPage.width / 75
-                        font.family: "Arial"
-                        font.bold: true
-                        elide: Text.ElideLeft
-                        width: parent.width * 0.6
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text: localFolderModel.count + " tracks"
+                        id: localCount
+                        text: localFolderModel.count + (localFolderModel.count === 1 ? " track" : " tracks")
                         color: '#3D717E'
                         font.pixelSize: audioPage.width / 85
                         font.family: "Arial"
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right
                     }
                 }
 
@@ -250,7 +243,7 @@ Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Text {
-                        text: "Put your music in " + audioPage.musicFolder
+                        text: "Add music to the library folder"
                         color: '#3D717E'
                         font.pixelSize: audioPage.width / 80
                         font.family: "Arial"
@@ -327,6 +320,9 @@ Rectangle {
                                 font.family: "Arial"
                                 elide: Text.ElideRight
                                 width: parent.parent.width * 0.7
+                                // Pin left, otherwise an RTL filename (Arabic) drifts
+                                // to the far edge and detaches from its icon.
+                                horizontalAlignment: Text.AlignLeft
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }
@@ -354,10 +350,6 @@ Rectangle {
             anchors.fill: parent
             visible: rightPanel.currentIndex === 2
             color: 'transparent'
-
-            onVisibleChanged: {
-                if (visible) rightPanel.browseIcon = "🔵"
-            }
 
             Connections {
                 target: btManager
@@ -529,10 +521,6 @@ Rectangle {
             radius: audioPage.width / 20
             visible: rightPanel.currentIndex === 3
             color: 'transparent'
-
-            onVisibleChanged: {
-                if (visible) rightPanel.browseIcon = "💾"
-            }
 
             Text {
                 anchors.centerIn: parent
@@ -1045,7 +1033,7 @@ Rectangle {
                 id: speedSlider
                 anchors.verticalCenter: parent.verticalCenter
                 visible: rightPanel.currentIndex !== 2
-                anchors.right: browseBtn.left
+                anchors.right: parent.right
                 anchors.rightMargin: audioController.width / 20
                 width: audioController.width / 8
                 from: 0.5; to: 8; value: 1
@@ -1076,16 +1064,6 @@ Rectangle {
                 }
             }
 
-            // Browse
-            ControlBtn {
-                id: browseBtn
-                icon: rightPanel.browseIcon
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.right: parent.right
-                anchors.rightMargin: audioController.width / 20
-                onClicked: rightPanel.currentIndex === 0 ? fileDialog.open() : 
-                            rightPanel.currentIndex === 1 ? urlDialog.open() : console.log("Browse action for other sources coming soon")
-            }
         }
     }
 
