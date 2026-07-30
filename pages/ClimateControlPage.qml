@@ -90,13 +90,11 @@ Item {
         onBrightnessChanged: (value) => mainWindow.appBrightness = value
         onVolumeChanged: (value) => systemVolume.volume = value
         onVolumeMuteToggled: systemVolume.toggleMute()
+
+        onWifiRequested:      mainWindow.openSettingsSection("wifi")
+        onBluetoothRequested: mainWindow.openSettingsSection("bluetooth")
     }
 
-    WindowResize {
-        z: 99
-        anchors.fill: parent
-        window: root.Window.window
-    }
 
     // MAIN CONTENT
     Item {

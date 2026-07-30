@@ -37,6 +37,12 @@ BluetoothHWManager::BluetoothHWManager(QObject *parent) : QObject(parent)
     connect(m_agent, &BluetoothAgent::cancelled, this,
             [this]() { emit pairingPromptDismissed(); });
 
+    // Keep the connected set in step with the signal the rest of the app
+    // already listens to, rather than duplicating the bookkeeping at each of
+    // the places that can change it.
+    connect(this, &BluetoothHWManager::deviceConnectionChanged,
+            this, &BluetoothHWManager::noteConnectionChanged);
+
     // BlueZ may not be up yet when the HMI starts — a real race on a vehicle
     // where everything boots in parallel. Watch the name so a late bluetoothd
     // (or a restart of it) is picked up instead of leaving Bluetooth dead.
@@ -150,6 +156,14 @@ void BluetoothHWManager::releaseAdapter()
 
     m_adapterPath.clear();
     setDiscovering(false);
+
+    // No adapter means nothing is connected, whether or not BlueZ got around to
+    // removing the device interfaces first.
+    if (anyDeviceConnected()) {
+        m_connectedAddresses.clear();
+        emit anyDeviceConnectedChanged(false);
+    }
+
     if (m_bluetoothEnabled) {
         m_bluetoothEnabled = false;
         emit bluetoothEnabledChanged(false);
@@ -176,6 +190,21 @@ void BluetoothHWManager::onBlueZOwnerChanged(const QString &name, const QString 
 }
 
 // ---------------------------------------------------------- device churn ---
+
+void BluetoothHWManager::noteConnectionChanged(const QString &address, bool connected)
+{
+    const bool was = anyDeviceConnected();
+
+    if (connected)
+        m_connectedAddresses.insert(address);
+    else
+        m_connectedAddresses.remove(address);
+
+    if (anyDeviceConnected() != was) {
+        qInfo() << "[bt] any device connected:" << anyDeviceConnected();
+        emit anyDeviceConnectedChanged(anyDeviceConnected());
+    }
+}
 
 void BluetoothHWManager::trackDevice(const QString &path, const QVariantMap &props)
 {

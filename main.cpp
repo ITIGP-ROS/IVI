@@ -12,6 +12,14 @@
 int main(int argc, char *argv[]){
     QGuiApplication app(argc, argv);
 
+    // Required before any QML Settings element will work. Without these,
+    // QSettings refuses to initialise ("The following application identifiers
+    // have not been set") and every saved value — the weather city, the last
+    // reading shown on the launcher — is silently discarded at every boot.
+    QGuiApplication::setOrganizationName(QStringLiteral("IVI"));
+    QGuiApplication::setOrganizationDomain(QStringLiteral("ivi.local"));
+    QGuiApplication::setApplicationName(QStringLiteral("IVI"));
+
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,

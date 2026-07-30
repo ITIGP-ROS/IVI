@@ -112,7 +112,13 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 100 } }
 
-                Text { text: "✕"; color: "#ffffff"; font.pixelSize: 18; font.bold: true; anchors.centerIn: parent }
+                // × (U+00D7) rather than ✕ (U+2715): the latter is a Dingbats
+                // glyph that no font on the target image covers — it is not an
+                // emoji either, so the emoji font that carries the rest of the
+                // symbols here does not rescue it, and the button came up blank
+                // on the head unit. U+00D7 is in Latin-1 and is what the other
+                // close buttons in this app already use.
+                Text { text: "×"; color: "#ffffff"; font.pixelSize: 24; font.bold: true; font.family: "Arial"; anchors.centerIn: parent }
 
                 MouseArea {
                     id: clearArea

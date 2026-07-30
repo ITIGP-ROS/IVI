@@ -634,6 +634,13 @@ ApplicationWindow {
     Settings {
         id: appSettings
         property string savedCity: "Giza"
+
+        // Last reading that actually came back from the API. Seeding the
+        // launcher from this means a boot with no network shows the real
+        // numbers from last time rather than an invented placeholder.
+        property string lastTemp:  ""
+        property string lastDesc:  ""
+        property string lastEmoji: ""
     }
 
     property string preferredCity: appSettings.savedCity
@@ -642,10 +649,24 @@ ApplicationWindow {
         appSettings.savedCity = mainWindow.preferredCity
     }
 
-    WindowResize {
-        z: 2
-        window: mainWindow
+    /*
+     * Routed here from the window bar's WiFi / Bluetooth status icons.
+     *
+     * Only this file can see the top-level stack, and both sub-pages live
+     * inside Settings, so the bar cannot get there on its own. If Settings is
+     * already on screen it is told to switch section rather than being pushed
+     * a second time.
+     */
+    function openSettingsSection(section) {
+        const settings = stackView.currentItem as SettingPage
+        if (settings)
+            settings.showSection(section)
+        else
+            stackView.push(settingPage, { pendingSection: section })
     }
+
+    // No WindowResize: the head unit runs at one fixed size, and edge drag
+    // handles on a touchscreen only give the driver a way to break the layout.
 
     StackView {
         id: stackView
@@ -672,10 +693,31 @@ ApplicationWindow {
             onOpenCarInfo:        carInfoPopup.visible = true
 
             // Weather Data (updated via WeatherAPI component below)
-            property string currentTemp:  "--"
-            property string currentEmoji: "🌡️"
-            property string currentDesc:  "Loading..."
-            property string locationText: "📍 " + mainWindow.preferredCity
+            //
+            // Seeded so the card reads as a weather card from the first frame
+            // instead of sitting on "Loading..." — on a cold boot the UI is up
+            // long before WiFi associates, so that placeholder was the first
+            // thing the driver saw every single time.
+            //
+            // Order of preference: last successful reading, then a typical Giza
+            // default for a unit that has never had a network. Neither is live,
+            // so weatherIsLive gates the note on the location line — the card
+            // must never present a stale or invented number as the real one.
+            readonly property string fallbackTemp:  "30°C"
+            readonly property string fallbackEmoji: "☀️"
+            readonly property string fallbackDesc:  "Clear Sky"
+
+            property bool   weatherIsLive: false
+            property string currentTemp:  fallbackTemp
+            property string currentEmoji: fallbackEmoji
+            property string currentDesc:  fallbackDesc
+            // Kept as a binding rather than assigned from the reply handler, so
+            // the "not live" note comes back by itself when the city changes.
+            property string resolvedLocation: ""
+            property string locationText:
+                "📍 " + (resolvedLocation !== "" ? resolvedLocation
+                                                 : mainWindow.preferredCity)
+                      + (weatherIsLive ? "" : " · not live")
 
             // shared HVAC quick-state (tile + page)
             property int  hvacMode:          0
@@ -691,11 +733,22 @@ ApplicationWindow {
             property int  hvacRearMode:     0
             property bool hvacRearPower:    false
 
-            Component.onCompleted: weatherAPI.fetch(mainWindow.preferredCity)
+            Component.onCompleted: {
+                if (appSettings.lastTemp !== "") {
+                    currentTemp  = appSettings.lastTemp
+                    currentEmoji = appSettings.lastEmoji
+                    currentDesc  = appSettings.lastDesc
+                }
+                weatherAPI.fetch(mainWindow.preferredCity)
+            }
 
             Connections {
                 target: mainWindow
                 function onPreferredCityChanged() {
+                    // What is on screen belongs to the old city, so it is not
+                    // live any more until the new one comes back.
+                    launcherItem.weatherIsLive    = false
+                    launcherItem.resolvedLocation = ""
                     weatherAPI.fetch(mainWindow.preferredCity)
                 }
             }
@@ -715,17 +768,17 @@ ApplicationWindow {
             WeatherAPI {
                 id: weatherAPI
 
-                // Say what is actually happening rather than leaving the tile
-                // on "Loading..." — it keeps retrying underneath either way.
-                onNetworkError: function(message) {
-                    if (launcherItem.currentTemp === "--")
-                        launcherItem.currentDesc = "Offline"
-                }
+                // No handler for networkError: the card is already showing the
+                // seeded reading with "not live" beside the city, which says
+                // more than "Offline" did, and WeatherAPI keeps retrying
+                // underneath. A wrong city name is different — that one never
+                // resolves itself, so it has to be said out loud.
                 onCityNotFound: function(city) {
                     launcherItem.currentDesc = "City not found"
                 }
 
                 onWeatherReceived: function(current, daily, hourly, location) {
+                    launcherItem.weatherIsLive = true
                     launcherItem.currentTemp = Math.round(current.temperature_2m) + "°C"
                     var code = current.weather_code
                     var d    = current.is_day
@@ -768,7 +821,12 @@ ApplicationWindow {
                     else
                         launcherItem.currentEmoji = "⛈️"
                     
-                    launcherItem.locationText = "📍 " + location.name + ", " + location.country
+                    launcherItem.resolvedLocation = location.name + ", " + location.country
+
+                    // Remember it for the next cold boot.
+                    appSettings.lastTemp  = launcherItem.currentTemp
+                    appSettings.lastDesc  = launcherItem.currentDesc
+                    appSettings.lastEmoji = launcherItem.currentEmoji
                 }
             }
 

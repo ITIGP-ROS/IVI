@@ -10,6 +10,29 @@ Item {
     property string preferredCity
     property color accentColor: "#D08831"
 
+    /*
+     * Jump straight to one sub-page.
+     *
+     * Set as an initial property when the page is pushed from elsewhere (the
+     * status icons in the window bar), or called directly when Settings is
+     * already on screen. Either way it starts from the settings menu, so
+     * tapping the same icon twice does not stack duplicates.
+     */
+    property string pendingSection: ""
+
+    function showSection(section) {
+        stackView.pop(null)
+        if (section === "wifi")
+            stackView.push(wifiPageComponent)
+        else if (section === "bluetooth")
+            stackView.push(bluetoothPageComponent)
+    }
+
+    Component.onCompleted: {
+        if (pendingSection !== "")
+            showSection(pendingSection)
+    }
+
     WindowBar {
         id: titleBar
         z: 2
@@ -30,6 +53,9 @@ Item {
         onBrightnessChanged: (value) => mainWindow.appBrightness = value
         onVolumeChanged: (value) => systemVolume.volume = value
         onVolumeMuteToggled: systemVolume.toggleMute()
+
+        onWifiRequested:      root.showSection("wifi")
+        onBluetoothRequested: root.showSection("bluetooth")
     }
 
     // BACKGROUND — autumn dark navy

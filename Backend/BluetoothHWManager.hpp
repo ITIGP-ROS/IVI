@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QDBusObjectPath>
 #include <QHash>
+#include <QSet>
 #include <QTimer>
 #include <QVariantList>
 #include "BlueZ.hpp"
@@ -49,6 +50,17 @@ class BluetoothHWManager : public QObject {
     Q_PROPERTY(bool bluetoothEnabled READ bluetoothEnabled WRITE setBluetoothEnabled NOTIFY bluetoothEnabledChanged)
     Q_PROPERTY(bool adapterPresent   READ adapterPresent   NOTIFY adapterPresentChanged)
     Q_PROPERTY(bool discovering      READ discovering      NOTIFY discoveringChanged)
+    /*
+     * True while any device is connected.
+     *
+     * Until now the only record of this lived in BluetoothPage.qml, as an array
+     * built up from deviceConnectionChanged. That works for the page but is
+     * invisible to everything else — the status icon in the window bar has no
+     * way to ask. btManager::connected is not the same question either: that one
+     * tracks the media player, so a connected phone with nothing playing does
+     * not count. This is the adapter's own view of it.
+     */
+    Q_PROPERTY(bool anyDeviceConnected READ anyDeviceConnected NOTIFY anyDeviceConnectedChanged)
 
 public:
     explicit BluetoothHWManager(QObject *parent = nullptr);
@@ -57,6 +69,7 @@ public:
     bool bluetoothEnabled() const { return m_bluetoothEnabled; }
     bool adapterPresent()   const { return !m_adapterPath.isEmpty(); }
     bool discovering()      const { return m_discovering; }
+    bool anyDeviceConnected() const { return !m_connectedAddresses.isEmpty(); }
     void setBluetoothEnabled(bool enabled);
 
     Q_INVOKABLE void scanDevices();
@@ -77,6 +90,7 @@ signals:
     void bluetoothEnabledChanged(bool enabled);
     void adapterPresentChanged(bool present);
     void discoveringChanged(bool discovering);
+    void anyDeviceConnectedChanged(bool connected);
 
     void scanStarted();
     // Each entry: { name, address, paired, trusted, connected, rssi, icon }
@@ -107,6 +121,9 @@ private slots:
     void onInterfacesRemoved(const QDBusObjectPath &path, const QStringList &interfaces);
     void onBlueZOwnerChanged(const QString &name, const QString &oldOwner,
                              const QString &newOwner);
+    // Single place the connected set is maintained: every path that changes a
+    // device's state already funnels through deviceConnectionChanged.
+    void noteConnectionChanged(const QString &address, bool connected);
 
 private:
     void bootstrap();                       // find adapter, subscribe, register agent
@@ -126,6 +143,8 @@ private:
     bool    m_discovering      = false;
     bool    m_scanPending      = false;
     bool    m_mediaActive      = false;
+
+    QSet<QString> m_connectedAddresses;
 
     // One owned timer rather than a singleShot per scan: overlapping requests
     // cannot then leave a stop pending against a window that already closed.

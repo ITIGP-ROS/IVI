@@ -65,6 +65,9 @@ Item {
         onBrightnessChanged: (value) => mainWindow.appBrightness = value
         onVolumeChanged: (value) => systemVolume.volume = value
         onVolumeMuteToggled: systemVolume.toggleMute()
+
+        onWifiRequested:      mainWindow.openSettingsSection("wifi")
+        onBluetoothRequested: mainWindow.openSettingsSection("bluetooth")
     }
 
     // Weather helper
@@ -250,13 +253,18 @@ Item {
                 Column {
                     spacing: root.height * 0.005; anchors.verticalCenter: parent.verticalCenter
                     Text { id: weatherDescription; text: "Partly Cloudy"; color: "white"; font { pointSize: root.height * 0.020; family: "Arial" } }
-                    Text { id: temperature;        text: "21°C";          color: "#dd9c4d"; font { pointSize: root.height * 0.040; family: "Arial"; bold: true } }
+                    // Temperatures read white, not amber. On the #3D717E card the
+                    // amber sits at about 2.3:1 against the background — legible
+                    // on a desk, not in a car with sun on the screen. White is
+                    // 5.4:1 on the same card. Amber stays for labels and rules,
+                    // where it is decoration rather than the number being read.
+                    Text { id: temperature;        text: "21°C";          color: "#FFFFFF"; font { pointSize: root.height * 0.040; family: "Arial"; bold: true } }
                 }
                 Item { width: root.width * 0.2; height: 1 }
                 Column {
                     spacing: root.height * 0.014; anchors.verticalCenter: parent.verticalCenter
                     Text { id: cityName;   text: "Cairo, Egypt"; color: "white"; font { pointSize: root.height * 0.026; family: "Arial"; bold: true } }
-                    Text { id: feelsLike;  text: "Feels like: 19°C"; color: "#dd9c4d"; font { pointSize: root.height * 0.02; family: "Arial" } }
+                    Text { id: feelsLike;  text: "Feels like: 19°C"; color: "#DCEAF0"; font { pointSize: root.height * 0.02; family: "Arial" } }
                 }
                 Rectangle { width: 1; height: root.height * 0.09; color: "#dd9c4d"; opacity: 0.5; anchors.verticalCenter: parent.verticalCenter }
                 Column {
@@ -332,7 +340,13 @@ Item {
                             required property int    index
                             property bool isCurrent: index === root.currentHour
                             width: root.width * 0.08; height: hourlyRow.height
-                            color: hourlyDelegate.isCurrent ? "#dd9c4d" : "#5A3211"
+                            // Idle tiles were brown (#5A3211) sitting on a teal
+                            // container, which fought the rest of the page and
+                            // left amber-on-brown text at ~4.7:1. Dark teal keeps
+                            // them in the page's palette and lets the temperature
+                            // be white at ~10:1. The current hour stays amber-on-
+                            // dark so it still reads as the selected one.
+                            color: hourlyDelegate.isCurrent ? "#dd9c4d" : "#0E3B4E"
                             radius: root.height * 0.01
                             opacity: hourlyDelegate.isCurrent ? 1.0 : 0.8
                             border.color: hourlyDelegate.isCurrent ? "#FFFFFF" : "#dd9c4d"
@@ -344,14 +358,14 @@ Item {
                                 topPadding: parent.height * 0.1
                                 spacing: root.height * 0.005
                                 Text { 
-                                    text: hourlyDelegate.time; color: hourlyDelegate.isCurrent ? "#082839" : "#FFFFFF"
+                                    text: hourlyDelegate.time; color: hourlyDelegate.isCurrent ? "#082839" : "#A8C6D4"
                                     font { pointSize: root.height * 0.02; family: "Arial" }
                                     anchors.horizontalCenter: parent.horizontalCenter
                                 }
                                 Rectangle { width: parent.width * 0.8; height: 1; color: hourlyDelegate.isCurrent ? "#082839" : "#dd9c4d"; radius: width / 2; anchors.horizontalCenter: parent.horizontalCenter }
                                 Text { 
-                                    text: hourlyDelegate.temp; 
-                                    color: hourlyDelegate.isCurrent ? "#082839" : "#dd9c4d"; 
+                                    text: hourlyDelegate.temp;
+                                    color: hourlyDelegate.isCurrent ? "#082839" : "#FFFFFF";
                                     font { 
                                         pointSize: root.height * 0.035; 
                                         bold: true; 
@@ -447,7 +461,7 @@ Item {
                                 font { pointSize: root.height * 0.020; family: "Arial"; bold: true }
                                 width: parent.width * 0.1
                             }
-                            Text { text: dailyRow.maxTemp + " / " + dailyRow.minTemp; color: "#dd9c4d"; font { pointSize: root.height * 0.020; family: "Arial" }
+                            Text { text: dailyRow.maxTemp + " / " + dailyRow.minTemp; color: "#FFFFFF"; font { pointSize: root.height * 0.020; family: "Arial" }
                                 horizontalAlignment: Text.AlignRight; width: parent.width * 0.45 
                             }
                         }
