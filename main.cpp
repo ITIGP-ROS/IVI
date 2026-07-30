@@ -7,7 +7,7 @@
 #include "Backend/BluetoothHWManager.hpp"
 #include "Backend/SystemVolumeController.hpp"
 #include "Backend/SpeechManager.hpp"
-#include "Backend/MusicLibrary.hpp"
+#include "Backend/MediaLibrary.hpp"
 
 int main(int argc, char *argv[]){
     QGuiApplication app(argc, argv);
@@ -26,11 +26,14 @@ int main(int argc, char *argv[]){
     engine.rootContext()->setContextProperty("btManager", &btManager);
     engine.rootContext()->setContextProperty("usbManager", &usbManager);
 
-    // Local audio library. Listed in C++ so the UI does not depend on the
+    // Local media libraries. Listed in C++ so the UI does not depend on the
     // Qt.labs.folderlistmodel QML plugin being present in the target image.
-    MusicLibrary musicLibrary;
-    engine.rootContext()->setContextProperty("musicLibrary", &musicLibrary);
-    qInfo().noquote() << "[music] library folder:" << musicLibrary.folder();
+    MediaLibrary *musicLibrary = MediaLibrary::music(&app);
+    MediaLibrary *videoLibrary = MediaLibrary::video(&app);
+    engine.rootContext()->setContextProperty("musicLibrary", musicLibrary);
+    engine.rootContext()->setContextProperty("videoLibrary", videoLibrary);
+    qInfo().noquote() << "[music] library folder:" << musicLibrary->folder();
+    qInfo().noquote() << "[video] library folder:" << videoLibrary->folder();
     
     // Settings Managers
     WifiManager wifiManager;

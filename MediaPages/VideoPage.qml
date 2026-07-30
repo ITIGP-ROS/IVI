@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 pragma ComponentBehavior: Bound
-import QtQuick.Dialogs
 import QtMultimedia
 
 Rectangle {
@@ -9,6 +8,33 @@ Rectangle {
     required property StackView stackView
     anchors.fill: parent
     color: "transparent"
+
+    // Stop playback and show the local library list again. The Local tab has
+    // no file picker, so this is how you get back to choosing a video.
+    function showLocalLibrary() {
+        videoPlayer.stop()
+        videoPlayer.source = ""
+        videoPlayer.videoSelected = false
+        videoPlayer.currentFileIndex = -1
+        videoPage.fullScreen = false
+    }
+
+    // ── Full screen ──
+    // The video takes the entire screen: source list, panel chrome, transport
+    // controls and the title bar all fold away, leaving only a small minimise
+    // button in the top-left corner.
+    //
+    // MediaPlayerPage watches this to hide its WindowBar, which is drawn over
+    // this page and would otherwise sit on top of the picture.
+    property bool fullScreen: false
+
+    // Escape and a double tap on the picture are alternatives to the button —
+    // worth having when the only control on screen is one small icon.
+    Shortcut {
+        sequence: "Escape"
+        enabled: videoPage.fullScreen
+        onActivated: videoPage.fullScreen = false
+    }
 
     MediaPlayer {
         id: videoPlayer
@@ -78,6 +104,7 @@ Rectangle {
         width: videoPage.width / 5
         height: parent.height
         color: '#082839'
+        visible: !videoPage.fullScreen
 
         Column {
             anchors.top: parent.top
@@ -160,16 +187,34 @@ Rectangle {
     // ========================================== Right Panel (Content & Controls) =========================================
     Rectangle {
         id: rightPanel
-        width: videoPage.width - leftPanel.width - videoPage.width / 10
-        height: videoPage.height - videoPage.height / 6
+
+        // Anchored to the page rather than to leftPanel so that going
+        // fullscreen only changes margins — an animatable number — instead of
+        // re-targeting the anchor, which would snap.
+        readonly property real insetLeft: videoPage.fullScreen
+                                          ? 0 : leftPanel.width + videoPage.width / 20
+        readonly property real insetRight: videoPage.fullScreen ? 0 : videoPage.width / 20
+        readonly property real insetTop: videoPage.fullScreen ? 0 : videoPage.height / 10
+        readonly property real insetBottom: videoPage.fullScreen ? 0 : videoPage.height / 15
+
+        width: videoPage.width - insetLeft - insetRight
+        height: videoPage.height - insetTop - insetBottom
         anchors.top: parent.top
-        anchors.topMargin: videoPage.height / 10
-        anchors.left: leftPanel.right
-        anchors.leftMargin: videoPage.width / 20
-        color: 'transparent'
+        anchors.topMargin: insetTop
+        anchors.left: parent.left
+        anchors.leftMargin: insetLeft
+        // Black behind the picture in fullscreen: a video whose aspect ratio
+        // does not match the screen is letterboxed, and the page gradient
+        // showing through those bars looks like a rendering fault.
+        color: videoPage.fullScreen ? '#000000' : 'transparent'
         border.color: '#D08831'
-        border.width: 2
-        radius: height / 20
+        border.width: videoPage.fullScreen ? 0 : 2
+        radius: videoPage.fullScreen ? 0 : height / 20
+
+        Behavior on width  { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
+        Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
+        Behavior on anchors.topMargin  { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
+        Behavior on anchors.leftMargin { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
 
         property int currentIndex: 0
         property var browseIcon: "📂"
@@ -178,29 +223,51 @@ Rectangle {
             id: videoOut
             z: 1
             anchors.fill: parent
-            anchors.bottomMargin: videoController.height + videoProgress.height + videoPage.height / 16
-            anchors.margins: videoPage.height / 50
+            // Windowed, the controls sit below the picture. Fullscreen, the
+            // picture takes the whole panel and the controls float over it.
+            anchors.margins: videoPage.fullScreen ? 0 : videoPage.height / 50
+            anchors.bottomMargin: videoPage.fullScreen
+                                  ? 0
+                                  : videoController.height + videoProgress.height + videoPage.height / 16
+        }
+
+        // A double tap on the picture leaves fullscreen. Sits below the
+        // minimise button (z 10) so it never steals its clicks.
+        MouseArea {
+            id: videoSurfaceArea
+            z: 1
+            anchors.fill: parent
+            enabled: videoPage.fullScreen && videoPlayer.videoSelected
+            onDoubleClicked: videoPage.fullScreen = false
+        }
+
+        // The only chrome left in fullscreen. Deliberately small and dim until
+        // hovered so it does not intrude on the picture.
+        ScreenBtn {
+            id: minimiseBtn
+            expanded: true
+            btnSize: videoPage.height / 22
+            visible: videoPage.fullScreen
+            opacity: minimiseHover.hovered ? 1.0 : 0.45
+            Behavior on opacity { NumberAnimation { duration: 150 } }
+            z: 10
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.topMargin: videoPage.height / 35
+            anchors.leftMargin: videoPage.height / 32
+            onClicked: videoPage.fullScreen = false
+
+            HoverHandler { id: minimiseHover }
         }
 
         // ================================================ Local video ===============================================
         Rectangle {
             anchors.fill: parent
-            visible: rightPanel.currentIndex === 0
+            visible: rightPanel.currentIndex === 0 && !videoPage.fullScreen
             color: 'transparent'
 
             onVisibleChanged: {
                 if (visible) rightPanel.browseIcon = "📂"
-            }
-
-            FileDialog {
-                id: fileDialog
-                title: "Choose Video File"
-                nameFilters: ["Video files (*.mp4 *.mkv *.avi *.mov *.wmv *.webm)", "All files (*)"]
-                onAccepted: {
-                    videoPlayer.source = fileDialog.selectedFile
-                    videoPlayer.videoSelected = true
-                    videoPlayer.play()
-                }
             }
 
             Rectangle {
@@ -210,13 +277,141 @@ Rectangle {
                 color: videoPlayer.videoSelected ? "#082839" : 'transparent'
                 radius: height / 50
 
-                Text {
-                    anchors.centerIn: parent
+                // The library is a fixed on-disk location, so it loads itself —
+                // there is no file picker to drive from a head unit. Hidden once
+                // playback starts so the VideoOutput underneath is unobstructed.
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: videoPage.width / 40
+                    spacing: videoPage.height / 40
                     visible: !videoPlayer.videoSelected
-                    text: "Select a video file"
-                    color: '#3D717E'
-                    font.pixelSize: videoPage.width / 35
-                    font.family: "Arial"
+
+                    Item {
+                        id: localHeader
+                        width: parent.width
+                        height: localCount.height
+
+                        Text {
+                            id: localCount
+                            text: videoLibrary.count + (videoLibrary.count === 1 ? " video" : " videos")
+                            color: '#3D717E'
+                            font.pixelSize: videoPage.width / 85
+                            font.family: "Arial"
+                            anchors.right: parent.right
+                        }
+                    }
+
+                    // Empty state — a missing or empty folder must say so,
+                    // otherwise a blank panel looks like the player is broken.
+                    Column {
+                        width: parent.width
+                        spacing: videoPage.height / 60
+                        visible: videoLibrary.count === 0
+
+                        Text {
+                            text: "No video files found"
+                            color: '#3D717E'
+                            font.pixelSize: videoPage.width / 45
+                            font.family: "Arial"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                        }
+                        Text {
+                            text: "Add videos to the library folder"
+                            color: '#3D717E'
+                            font.pixelSize: videoPage.width / 80
+                            font.family: "Arial"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                        }
+                    }
+
+                    ListView {
+                        width: parent.width
+                        height: parent.height - localHeader.height - parent.spacing
+                        clip: true
+                        visible: videoLibrary.count > 0
+                        model: videoLibrary
+                        spacing: 4
+
+                        ScrollBar.vertical: ScrollBar {
+                            id: localScrollBar
+                            width: videoPage.width / 100
+                            anchors.right: parent.right
+                            anchors.rightMargin: 4
+
+                            contentItem: Rectangle {
+                                implicitWidth: parent.width
+                                radius: width / 2
+                                color: localScrollBar.pressed ? '#964405' : localScrollBar.hovered ? '#D08831' : '#5A3211'
+                                opacity: localScrollBar.hovered || localScrollBar.pressed ? 1.0 : 0.6
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on opacity { NumberAnimation { duration: 150 } }
+                            }
+                            background: Rectangle {
+                                implicitWidth: parent.width
+                                color: '#082839'
+                                radius: width / 2
+                                opacity: 0.3
+                            }
+                            minimumSize: 0.1
+                        }
+
+                        delegate: Rectangle {
+                            id: localRow
+                            required property string fileName
+                            required property string filePath
+                            required property int index
+
+                            readonly property bool isCurrent:
+                                videoPlayer.source.toString() === ("file://" + localRow.filePath)
+
+                            width: ListView.view.width - localScrollBar.width * 2
+                            height: videoPage.height / 14
+                            radius: height / 5
+                            color: isCurrent ? '#5A3211'
+                                             : localRowArea.containsMouse ? '#10475E' : 'transparent'
+                            border.color: isCurrent ? '#D08831' : 'transparent'
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            Row {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: parent.width / 20
+                                spacing: parent.width / 30
+
+                                Text {
+                                    text: "🎬"
+                                    font.pixelSize: videoPage.width / 70
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                Text {
+                                    text: localRow.fileName.replace(/\.[^.]+$/, "")
+                                    color: localRow.isCurrent ? '#D08831' : '#e7f1ef'
+                                    font.pixelSize: videoPage.width / 70
+                                    font.family: "Arial"
+                                    elide: Text.ElideRight
+                                    width: parent.parent.width * 0.7
+                                    // Pin left, otherwise an RTL filename (Arabic)
+                                    // drifts to the far edge and detaches from its icon.
+                                    horizontalAlignment: Text.AlignLeft
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            MouseArea {
+                                id: localRowArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    videoPlayer.source = "file://" + localRow.filePath
+                                    videoPlayer.videoSelected = true
+                                    videoPlayer.currentFileIndex = localRow.index
+                                    videoPlayer.play()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -224,7 +419,7 @@ Rectangle {
         // ================================================ Internet video ============================================
         Rectangle {
             anchors.fill: parent
-            visible: rightPanel.currentIndex === 1
+            visible: rightPanel.currentIndex === 1 && !videoPage.fullScreen
             color: 'transparent'
 
             onVisibleChanged: {
@@ -312,7 +507,7 @@ Rectangle {
             anchors.leftMargin: videoPage.width / 90
             anchors.bottomMargin: videoPage.height / 5.35
             radius: videoPage.width / 20
-            visible: rightPanel.currentIndex === 2
+            visible: rightPanel.currentIndex === 2 && !videoPage.fullScreen
             color: 'transparent'
 
             onVisibleChanged: {
@@ -542,6 +737,8 @@ Rectangle {
         // ======================================== Video Controls (Shared) ==========================================
         Rectangle {
             id: videoProgress
+            z: 2
+            visible: !videoPage.fullScreen
             anchors.bottom: videoController.top
             anchors.left: videoController.left
             anchors.right: videoController.right
@@ -638,6 +835,8 @@ Rectangle {
 
         Rectangle {
             id: videoController
+            z: 2
+            visible: !videoPage.fullScreen
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
@@ -850,13 +1049,32 @@ Rectangle {
                 }
             }
 
+            ScreenBtn {
+                id: screenToggle
+                expanded: videoPage.fullScreen
+                // Nothing to maximise until a video is playing.
+                visible: videoPlayer.videoSelected
+                anchors.verticalCenter: parent.verticalCenter
+                // Takes the far-right slot when the browse button is hidden.
+                anchors.right: browseBtn.visible ? browseBtn.left : parent.right
+                anchors.rightMargin: browseBtn.visible ? videoController.width / 40
+                                                       : videoController.width / 20
+                onClicked: videoPage.fullScreen = !videoPage.fullScreen
+            }
+
             ControlBtn {
                 id: browseBtn
                 icon: rightPanel.browseIcon
+                // Only Internet has anything to browse to — it opens the URL
+                // keyboard. Local and USB both load their own contents, so the
+                // button would do nothing there.
+                visible: rightPanel.currentIndex === 1
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
                 anchors.rightMargin: videoController.width / 20
-                onClicked: rightPanel.currentIndex === 0 ? fileDialog.open() :
+                // Local has no picker any more — the button returns to the
+                // library list instead of opening a file dialog.
+                onClicked: rightPanel.currentIndex === 0 ? videoPage.showLocalLibrary() :
                             rightPanel.currentIndex === 1 ? urlKeyboardPopup.open() :
                             console.log("Browse action for other sources coming soon")
             }
@@ -872,7 +1090,9 @@ Rectangle {
             anchors.right: parent.right
             anchors.topMargin: videoPage.height / 35
             anchors.rightMargin: videoPage.height / 32
-            visible: videoPlayer.videoSelected
+            // Fullscreen keeps only the minimise button, so this goes away
+            // with the rest of the chrome.
+            visible: videoPlayer.videoSelected && !videoPage.fullScreen
             opacity: 0.4
             z: 10
 
@@ -890,10 +1110,7 @@ Rectangle {
                 hoverEnabled: true
                 onEntered: parent.opacity = 1
                 onExited: parent.opacity = 0.4
-                onClicked: {
-                    videoPlayer.stop()
-                    videoPlayer.videoSelected = false
-                }
+                onClicked: videoPage.showLocalLibrary()
             }
         }
     }
@@ -962,6 +1179,76 @@ Rectangle {
 
         onOpened: {
             urlKeyboard.targetText = urlField.text
+        }
+    }
+
+    /*
+     * Full screen toggle.
+     *
+     * The glyph is drawn rather than set as text: the usual characters for
+     * this (⛶, ⤢) are outside DejaVu's coverage, and a target image without an
+     * emoji font renders them as empty boxes. Canvas has no such dependency.
+     */
+    component ScreenBtn: Rectangle {
+        id: screenBtn
+        property bool expanded: false
+        // Set by the caller: this is used both inside the control bar and as a
+        // standalone overlay, so it cannot size itself from one parent.
+        property real btnSize: videoController.height * 0.55
+        signal clicked()
+
+        width: btnSize
+        height: btnSize
+        radius: width / 2
+
+        color: screenBtnArea.containsMouse ? "#964405" : "#5A3211"
+        border.color: "#D08831"
+        border.width: 1
+        scale: screenBtnArea.containsMouse ? 1.15 : 1
+        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on scale { NumberAnimation { duration: 150 } }
+
+        Canvas {
+            id: screenBtnCanvas
+            anchors.centerIn: parent
+            width: parent.width * 0.5
+            height: width
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                ctx.strokeStyle = "#ffffff"
+                ctx.lineWidth = Math.max(1.5, width / 9)
+                ctx.lineCap = "square"
+
+                // Four corner brackets: pointing outward to enter fullscreen,
+                // inward to leave it.
+                var arm = width * 0.32
+                var pad = screenBtn.expanded ? width * 0.28 : 0
+                var corners = [
+                    [pad,          pad,          1,  1],
+                    [width - pad,  pad,         -1,  1],
+                    [pad,          width - pad,  1, -1],
+                    [width - pad,  width - pad, -1, -1]
+                ]
+                for (var i = 0; i < corners.length; ++i) {
+                    var x = corners[i][0], y = corners[i][1]
+                    var dx = corners[i][2], dy = corners[i][3]
+                    ctx.beginPath()
+                    ctx.moveTo(x + dx * arm, y)
+                    ctx.lineTo(x, y)
+                    ctx.lineTo(x, y + dy * arm)
+                    ctx.stroke()
+                }
+            }
+        }
+
+        onExpandedChanged: screenBtnCanvas.requestPaint()
+
+        MouseArea {
+            id: screenBtnArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: screenBtn.clicked()
         }
     }
 

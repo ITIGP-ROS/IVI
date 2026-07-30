@@ -21,9 +21,14 @@ Item {
                                 ? (btManager && btManager.playerStatus === "playing")
                                 : mediaPlayer.playbackState === MediaPlayer.PlayingState
 
+    // Set by VideoPage while it is showing fullscreen, so the title bar can
+    // get out of the way — it is drawn over the page, not above it.
+    property bool videoFullScreen: false
+
     WindowBar {
         id: titleBar
         z: 1
+        visible: !root.videoFullScreen
         window: mainWindow
         titleName: "Media Player"
         showBackButton: true
@@ -361,6 +366,10 @@ Item {
         id: videoPageComponent
         VideoPage {
             stackView: stackView
+            // The title bar is drawn over this page, so the video page cannot
+            // hide it itself — it reports the state and we hide it here.
+            onFullScreenChanged: root.videoFullScreen = fullScreen
+            Component.onDestruction: root.videoFullScreen = false
         }
     }
 }

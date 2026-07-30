@@ -700,8 +700,31 @@ ApplicationWindow {
                 }
             }
 
+            // WiFi normally associates after the UI is already up, so the fetch
+            // at startup has usually failed by the time there is a network.
+            // Retrying on the transition fills the tile in straight away
+            // instead of waiting out WeatherAPI's backoff.
+            Connections {
+                target: WifiManager
+                function onConnectedSsidChanged() {
+                    if (WifiManager.connectedSsid !== "")
+                        weatherAPI.retryNow()
+                }
+            }
+
             WeatherAPI {
                 id: weatherAPI
+
+                // Say what is actually happening rather than leaving the tile
+                // on "Loading..." — it keeps retrying underneath either way.
+                onNetworkError: function(message) {
+                    if (launcherItem.currentTemp === "--")
+                        launcherItem.currentDesc = "Offline"
+                }
+                onCityNotFound: function(city) {
+                    launcherItem.currentDesc = "City not found"
+                }
+
                 onWeatherReceived: function(current, daily, hourly, location) {
                     launcherItem.currentTemp = Math.round(current.temperature_2m) + "°C"
                     var code = current.weather_code
