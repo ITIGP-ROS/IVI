@@ -23,9 +23,21 @@ qt_add_executable(appIVI
     Backend/SystemVolumeController.cpp
     Backend/SpeechManager.cpp
     Backend/MediaLibrary.cpp
+    Backend/AmbientLightManager.cpp
 )
 
 target_include_directories(appIVI PRIVATE ${PULSE_INCLUDE_DIRS})
+
+# Bench switch for the ambient light CAN link. ON prints the frames to the
+# terminal instead of opening can0, for developing on a laptop with no bus:
+#   cmake -B build -DAMBIENT_CAN_SIMULATE=ON
+option(AMBIENT_CAN_SIMULATE "Print ambient-light CAN frames instead of sending them" OFF)
+# Defined either way, so the flag works in both directions. Defining it only
+# when ON meant a build could never turn simulation back off — whatever the
+# source happened to default to won, and a head unit could ship printing frames
+# to its log while driving nothing.
+target_compile_definitions(appIVI PRIVATE
+    AMBIENT_CAN_SIMULATE=$<IF:$<BOOL:${AMBIENT_CAN_SIMULATE}>,1,0>)
 
 qt_add_qml_module(appIVI
     URI IVI
@@ -50,6 +62,7 @@ qt_add_qml_module(appIVI
         MediaPages/RadioPage.qml
         SettingPages/BluetoothPage.qml
         SettingPages/WiFiPage.qml
+        SettingPages/AmbientLightPage.qml
     RESOURCES
         resources.qrc
 )

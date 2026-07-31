@@ -10,6 +10,14 @@ Item {
     property string preferredCity
     property color accentColor: "#D08831"
 
+    // Cards are sized from how many there are rather than a fixed fraction of
+    // the width. Five at the old root.width/5.5 overflowed the screen; deriving
+    // it means the next one added cannot silently do that again.
+    readonly property int  cardCount:   5
+    readonly property real cardSpacing: root.width / 28
+    readonly property real cardWidth:
+        (root.width * 0.88 - cardSpacing * (cardCount - 1)) / cardCount
+
     /*
      * Jump straight to one sub-page.
      *
@@ -26,6 +34,8 @@ Item {
             stackView.push(wifiPageComponent)
         else if (section === "bluetooth")
             stackView.push(bluetoothPageComponent)
+        else if (section === "ambient")
+            stackView.push(ambientPageComponent)
     }
 
     Component.onCompleted: {
@@ -99,13 +109,13 @@ Item {
 
                     Row {
                         id: cardRow
-                        spacing: root.width / 20
+                        spacing: root.cardSpacing
                         anchors.horizontalCenter: parent.horizontalCenter
 
                         // WI-FI CARD — glass morphism
                         Item {
                             id: wifiCard
-                            width: root.width / 5.5
+                            width: root.cardWidth
                             height: root.height / 2.5
 
                             Rectangle {
@@ -211,7 +221,7 @@ Item {
                         // BLUETOOTH CARD — glass morphism
                         Item {
                             id: bluetoothCard
-                            width: root.width / 5.5
+                            width: root.cardWidth
                             height: root.height / 2.5
 
                             Rectangle {
@@ -312,10 +322,136 @@ Item {
                             }
                         }
 
+                        // AMBIENT LIGHT CARD — glass morphism
+                        Item {
+                            id: ambientCard
+                            width: root.cardWidth
+                            height: root.height / 2.5
+
+                            Rectangle {
+                                id: ambGlass
+                                anchors.fill: parent
+                                radius: height * 0.06
+                                color: "#3D717E"
+                                border.width: 1
+                                border.color: "#50FFFFFF"
+                                visible: false
+                            }
+
+                            InnerShadow {
+                                id: ambInner
+                                anchors.fill: ambGlass
+                                source: ambGlass
+                                horizontalOffset: -3
+                                verticalOffset: -3
+                                radius: 10
+                                samples: 20
+                                color: "#80FFFFFF"
+                                visible: false
+                            }
+
+                            DropShadow {
+                                anchors.fill: ambGlass
+                                source: ambInner
+                                horizontalOffset: 6
+                                verticalOffset: 6
+                                radius: 14
+                                samples: 28
+                                color: "#50000000"
+                            }
+
+                            // Glow on hover
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: height * 0.06
+                                color: "transparent"
+                                border.color: root.accentColor
+                                border.width: 2
+                                opacity: ambHover.hovered ? 0.55 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: 200 } }
+                            }
+
+                            // Top Accent Bar
+                            Rectangle {
+                                width: parent.width * 0.4
+                                height: 3
+                                radius: 2
+                                color: root.accentColor
+                                anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
+                                opacity: 0.85
+                            }
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: parent.height * 0.1
+
+                                /*
+                                 * The current colour itself, rather than an icon.
+                                 * There is no ambient-light asset to use, and this
+                                 * says more than a glyph would — the card shows what
+                                 * the cabin is actually set to.
+                                 *
+                                 * Ringed and haloed so that "off" reads as an unlit
+                                 * lamp rather than as a hole punched in the card.
+                                 */
+                                Item {
+                                    width: parent.parent.height * 0.32
+                                    height: width
+                                    anchors.horizontalCenter: parent.horizontalCenter
+
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: parent.width * 1.45
+                                        height: width
+                                        radius: width / 2
+                                        color: AmbientLight.color
+                                        opacity: AmbientLight.on ? 0.22 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 250 } }
+                                    }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: width / 2
+                                        color: AmbientLight.on ? AmbientLight.color
+                                                               : "#2a5a6d"
+                                        border.color: AmbientLight.on
+                                                      ? Qt.lighter(AmbientLight.color, 1.4)
+                                                      : "#4d8298"
+                                        border.width: 2
+                                        Behavior on color { ColorAnimation { duration: 250 } }
+                                    }
+                                }
+
+                                Text {
+                                    text: qsTr("Ambient Light")
+                                    color: "#ffffff"
+                                    font { bold: true; family: "Arial"; pixelSize: root.fontSize * 0.7 }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: AmbientLight.on ? qsTr("On")
+                                                          : qsTr("Cabin lighting")
+                                    color: "#8899bb"
+                                    font { family: "Arial"; pixelSize: root.fontSize * 0.6 }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                            }
+
+                            scale: ambHover.hovered ? 1.03 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+
+                            HoverHandler { id: ambHover }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: stackView.push(ambientPageComponent)
+                            }
+                        }
+
                         // VOLUME CARD — glass morphism
                         Item {
                             id: volumeCard
-                            width: root.width / 5.5
+                            width: root.cardWidth
                             height: root.height / 2.5
 
                             Rectangle {
@@ -497,7 +633,7 @@ Item {
                                                 // WEATHER CITY CARD — glass morphism
                         Item {
                             id: weatherCard
-                            width: root.width / 5.5
+                            width: root.cardWidth
                             height: root.height / 2.5
 
                             Rectangle {
@@ -762,6 +898,14 @@ Item {
             id: bluetoothPageComponent
             BluetoothPage {
                 id: btPage
+                stackView: stackView
+            }
+        }
+
+        Component {
+            id: ambientPageComponent
+            AmbientLightPage {
+                id: ambientPage
                 stackView: stackView
             }
         }

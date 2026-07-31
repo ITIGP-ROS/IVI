@@ -8,6 +8,7 @@
 #include "Backend/SystemVolumeController.hpp"
 #include "Backend/SpeechManager.hpp"
 #include "Backend/MediaLibrary.hpp"
+#include "Backend/AmbientLightManager.hpp"
 
 int main(int argc, char *argv[]){
     QGuiApplication app(argc, argv);
@@ -60,6 +61,10 @@ int main(int argc, char *argv[]){
     // System Volume Controller
     SystemVolumeController systemVolumeController;
     engine.rootContext()->setContextProperty("systemVolume", &systemVolumeController);
+
+    // Cabin ambient lighting, over CAN to the ESP32
+    AmbientLightManager ambientLight;
+    engine.rootContext()->setContextProperty("AmbientLight", &ambientLight);
 
     // Speech Recognition Manager
     SpeechManager speechManager;
