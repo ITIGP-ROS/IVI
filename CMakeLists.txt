@@ -50,10 +50,7 @@ qt_add_qml_module(appIVI
         pages/SettingPage.qml
         API/WeatherAPI.qml
         API/RadioAPI.qml
-        Components/AppCard.qml
         Components/WindowBar.qml
-        Components/WindowResize.qml
-        Components/NetworkCard.qml
         Components/MediaCard.qml
         Components/CarInfoPopup.qml
         Components/VirtualKeyboard.qml

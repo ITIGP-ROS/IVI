@@ -203,7 +203,7 @@ Item {
                                 Text {
                                     text: qsTr("Manage connections")
                                     color: "#8899bb"
-                                    font { family: "Arial"; pixelSize: root.fontSize * 0.6 }
+                                    font { family: "Arial"; pixelSize: root.fontSize * 0.55 }
                                     anchors.horizontalCenter: parent.horizontalCenter
                                 }
                             }
@@ -300,7 +300,7 @@ Item {
                                 Text {
                                     text: qsTr("Bluetooth")
                                     color: "#ffffff"
-                                    font { bold: true; family: "Arial"; pixelSize: root.fontSize }
+                                    font { bold: true; family: "Arial"; pixelSize: root.fontSize - 2 }
                                     anchors.horizontalCenter: parent.horizontalCenter
                                 }
 

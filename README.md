@@ -32,10 +32,7 @@
   - [RadioAPI](#radioapi)
 - [Reusable QML Components](#reusable-qml-components)
   - [WindowBar](#windowbar)
-  - [AppCard](#appcard)
   - [MediaCard](#mediacard)
-  - [NetworkCard](#networkcard)
-  - [WindowResize](#windowresize)
   - [CarInfoPopup](#carinfopopup)
 - [Design System & UI Conventions](#design-system--ui-conventions)
 - [Build System](#build-system)
@@ -90,11 +87,8 @@ IVI/
 │   └── SpeechManager.cpp/hpp         # Vosk offline speech-to-text, QAudioSource capture
 │
 ├── Components/
-│   ├── AppCard.qml              # Animated launcher tile with accent glow
 │   ├── MediaCard.qml            # Now-playing card with artwork, title, and transport controls
-│   ├── NetworkCard.qml          # Compact Wi-Fi / Bluetooth status card
 │   ├── WindowBar.qml            # Shared top bar with title, back, brightness, and volume controls
-│   ├── WindowResize.qml         # Frameless window resize handle
 │   └── CarInfoPopup.qml         # Modal vehicle information overlay
 │
 ├── MediaPages/
@@ -163,9 +157,9 @@ The application follows a **layered architecture** that cleanly separates hardwa
 
 The home screen is the entry point after the splash screen finishes. It presents four animated app tiles (Weather, Media, Climate, Settings) alongside live status widgets.
 
-**App Tiles (AppCard)**
+**App Tiles**
 
-Each tile is a custom `AppCard` component with:
+The tiles are laid out inline in `Main.qml` rather than as a shared component. Each has:
 - A colored top accent bar that matches the app's theme color.
 - A circular icon container with a semi-transparent tinted background.
 - A title and subtitle text block.
@@ -194,7 +188,9 @@ All HVAC state is stored directly on `launcherItem` and is two-way synced with t
 
 **Splash Screen**
 
-On first launch, a full-screen video plays from embedded resources (`assets/videos/splash.mp4`) at 1.25× playback speed. A `NumberAnimation` begins fading the splash out 500 ms before the video ends, creating a seamless transition. Once the video stops, `splashDone` is set to `true` and the splash item is hidden.
+On launch, an `AnimatedImage` plays the branded clip (`assets/videos/vpace_splash.gif`, 90 frames, ~3 s) full-screen from embedded resources, cropped to fill with `PreserveAspectCrop`.
+
+`AnimatedImage` loops forever and has no "finished" signal, so the end of the clip is detected by watching `currentFrame` reach `frameCount - 1`. Playback is stopped *on* that frame — letting it wrap would visibly restart the logo underneath the fade — and a 300 ms `NumberAnimation` fades the splash out, after which `splashDone` is set to `true` and the item is hidden. A 6 s backstop timer forces the same transition if the gif is missing or fails to decode, so a bad resource can never strand the head unit on a splash it cannot leave.
 
 **Voice Activation**
 
@@ -732,29 +728,6 @@ A shared top bar used on every page of the application. It provides consistent s
 
 ---
 
-### AppCard
-
-**File:** `Components/AppCard.qml`
-
-A styled launcher tile component with animated hover effects.
-
-**Properties:** `title`, `subtitle`, `emoji`, `accentColor`, `cardWidth`, `cardHeight`.
-
-**Signal:** `clicked()`.
-
-**Visual structure:**
-- Dark card body (`#101e36`) with a rounded-rectangle border tinted to `accentColor` at 35% opacity.
-- A thin accent bar across the top center (40% width, 3 px height) in `accentColor`.
-- A circular icon area with `accentColor` background at 12% opacity, containing the `emoji` text.
-- Title in white bold text; subtitle in muted `#8899bb` text, word-wrapped.
-
-**Hover animation:**
-- On enter: card scales up to 1.03, and a second semi-transparent border fades in at 55% opacity creating a glow effect.
-- On exit: scale returns to 1.0, glow fades out.
-- All transitions use 150–200 ms `NumberAnimation` with `Easing.OutQuad`.
-
----
-
 ### MediaCard
 
 **File:** `Components/MediaCard.qml`
@@ -768,30 +741,6 @@ A compact now-playing card shown on the launcher while media is active. Displays
 - Scrolling marquee for long track names.
 - Play/pause button wired to `sharedMediaPlayer`.
 - Media type badge indicating whether the source is Radio, Audio, or Video.
-
----
-
-### NetworkCard
-
-**File:** `Components/NetworkCard.qml`
-
-A small status card for the launcher that shows active Wi-Fi and Bluetooth connections at a glance.
-
-**Shows:**
-- Wi-Fi icon + SSID from `WifiManager.connectedSsid`, or "Not Connected".
-- Bluetooth icon + device name from `btManager.deviceName`, or "Not Connected".
-
-Tapping the card is a shortcut to the Settings page.
-
----
-
-### WindowResize
-
-**File:** `Components/WindowResize.qml`
-
-An invisible edge/corner hit area overlaid on every page's window. When the application runs in windowed mode (e.g., on a desktop for development), it allows the user to drag the edges and corners to resize the frameless window.
-
-**Implementation:** Uses `MouseArea` with `Qt.SizeHorCursor`, `Qt.SizeVerCursor`, and `Qt.SizeFDiagCursor` depending on position, and calls `window.startSystemResize(edge)` with the appropriate `Qt.Edge` flag.
 
 ---
 

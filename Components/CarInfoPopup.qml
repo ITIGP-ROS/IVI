@@ -79,7 +79,7 @@ Rectangle {
                 spacing: 12
 
                 Image {
-                    source: "qrc:/assets/images/mercedes.png"
+                    source: "qrc:/assets/images/vpace.png"
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
                     Layout.maximumWidth: 40
