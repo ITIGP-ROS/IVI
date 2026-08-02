@@ -192,11 +192,13 @@ Rectangle {
                 }
             }
 
-            // Row 4: ZXCV + Shift + Backspace
+            // Row 4: ZXCV + Shift + Dot + Backspace
+            // Ten keys, so this row uses the number row's width formula rather
+            // than the nine-key one the rows above it share.
             Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
                 // Shift
                 Rectangle {
-                    width: (virtualKeyboard.width - 66) / 9; height: 44; radius: 6
+                    width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
                     color: shiftMouse.containsMouse ? "#D08831" : (shiftActive ? "#D08831" : "#10475E")
                     border.color: shiftMouse.containsMouse ? "#D08831" : "#3D717E"; border.width: 1
                     Behavior on color { ColorAnimation { duration: 80 } }
@@ -211,7 +213,7 @@ Rectangle {
                 Repeater {
                     model: shiftActive ? ["Z","X","C","V","B","N","M"] : ["z","x","c","v","b","n","m"]
                     delegate: Rectangle {
-                        width: (virtualKeyboard.width - 66) / 9; height: 44; radius: 6
+                        width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
                         color: keyMouse4.containsMouse ? "#964405" : "#10475E"
                         border.color: keyMouse4.containsMouse ? "#D08831" : "#3D717E"; border.width: 1
                         Behavior on color { ColorAnimation { duration: 80 } }
@@ -219,9 +221,30 @@ Rectangle {
                         MouseArea { id: keyMouse4; anchors.fill: parent; hoverEnabled: true; onClicked: appendChar(modelData) }
                     }
                 }
+                // Dot. Its own key rather than a Repeater entry: shift must not
+                // turn it into anything else, and appendChar's auto-unshift
+                // would drop the caps the user just armed for the next letter.
+                Rectangle {
+                    width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
+                    color: dotMouse.containsMouse ? "#964405" : "#10475E"
+                    border.color: dotMouse.containsMouse ? "#D08831" : "#3D717E"; border.width: 1
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Text { anchors.centerIn: parent; text: "."; color: "#e7f1ef"; font.pixelSize: 16; font.bold: true; font.family: "Arial" }
+                    MouseArea {
+                        id: dotMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            if (targetText.length < maxLength) {
+                                targetText = targetText + "."
+                                if (targetItem) targetItem.text = targetText
+                            }
+                        }
+                    }
+                }
                 // Backspace
                 Rectangle {
-                    width: (virtualKeyboard.width - 66) / 9; height: 44; radius: 6
+                    width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
                     color: bsMouse.containsMouse ? "#964405" : "#10475E"
                     border.color: bsMouse.containsMouse ? "#D08831" : "#3D717E"; border.width: 1
                     Behavior on color { ColorAnimation { duration: 80 } }
