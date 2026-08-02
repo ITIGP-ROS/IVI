@@ -616,11 +616,16 @@ Rectangle {
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
-                    Text {
+                    Image {
                         anchors.centerIn: parent
-                        text: volumeBtn.muted ? "🔈" : volumeSlider.value < 0.5 ? "🔉" : "🔊"
-                        font.pixelSize: (parent.width + parent.height) / 4
-                        font.family: "Arial"
+                        width: 20; height: 20
+                        // Only two states, unlike the emoji this replaced:
+                        // volumedown.png is a speaker with a cross, i.e. muted,
+                        // not "quiet". Showing it at low-but-audible volume
+                        // would tell the driver the audio is off when it is not.
+                        source: volumeBtn.muted ? "qrc:/assets/icons/volumedown.png"
+                                                : "qrc:/assets/icons/volumeup.png"
+                        fillMode: Image.PreserveAspectFit
                     }
                     MouseArea {
                         id: muteArea

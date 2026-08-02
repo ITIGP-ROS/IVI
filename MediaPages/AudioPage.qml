@@ -823,7 +823,8 @@ Rectangle {
                 id: volumeBtn
                 property bool muted: false
                 visible: rightPanel.currentIndex !== 2
-                icon: mediaPlayer.audioOutput.muted ? "🔈" : volumeSlider.value < 0.5 ? "🔉" : "🔊"
+                iconSource: mediaPlayer.audioOutput.muted ? "qrc:/assets/icons/volumedown.png"
+                                                          : "qrc:/assets/icons/volumeup.png"
                 onClicked: mediaPlayer.audioOutput.muted = !mediaPlayer.audioOutput.muted
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
@@ -1055,12 +1056,20 @@ Rectangle {
     component ControlBtn: Rectangle {
         id: controlBtn
         property string icon: ""
+        // Set this instead of `icon` for a bitmap glyph. The two are exclusive;
+        // an image wins where both are given.
+        property url iconSource: ""
         property var fontPixel: audioController.width / 35
         signal clicked()
 
         anchors.verticalCenter: parent.verticalCenter
 
-        property real btnSize: Math.max(iconText.width + iconText.width * 0.6, iconText.height + iconText.height * 0.4)
+        // An image has no text metrics to grow from, so image buttons take the
+        // size of the round transport buttons sharing this bar rather than
+        // collapsing to nothing.
+        property real btnSize: String(controlBtn.iconSource) !== ""
+            ? audioController.height * 0.6
+            : Math.max(iconText.width + iconText.width * 0.6, iconText.height + iconText.height * 0.4)
         width: btnSize
         height: btnSize
         radius: width / 2
@@ -1076,8 +1085,18 @@ Rectangle {
             id: iconText
             anchors.centerIn: parent
             text: parent.icon
+            visible: String(controlBtn.iconSource) === ""
             color: '#ffffff'
             font.pixelSize: controlBtn.fontPixel
+        }
+
+        Image {
+            anchors.centerIn: parent
+            source: controlBtn.iconSource
+            visible: String(controlBtn.iconSource) !== ""
+            width: parent.width * 0.5
+            height: parent.height * 0.5
+            fillMode: Image.PreserveAspectFit
         }
 
         MouseArea {
