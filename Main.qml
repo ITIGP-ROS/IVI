@@ -224,12 +224,14 @@ ApplicationWindow {
             signal openMedia()
             signal openSettings()
             signal openCarInfo()
+            signal openDriveView()
 
             onOpenWeather:        stackView.push(weatherPage)
             onOpenClimateControl: stackView.push(climatePage)
             onOpenMedia:          stackView.push(mediaPage)
             onOpenSettings:       stackView.push(settingPage)
             onOpenCarInfo:        carInfoPopup.visible = true
+            onOpenDriveView:      stackView.push(driveViewPage)
 
             // Weather Data (updated via WeatherAPI component below)
             //
@@ -963,7 +965,7 @@ ApplicationWindow {
 
                     // HVAC
                     Item {
-                        width: parent.width; height: parent.height * 0.65
+                        width: parent.width; height: parent.height * 0.35
                         Rectangle {
                             id: hvacRect
                             anchors.fill: parent; radius: 28
@@ -1024,24 +1026,24 @@ ApplicationWindow {
 
                             Column {
                                 anchors.fill: parent
-                                anchors.margins: 10
-                                anchors.topMargin: 20
-                                spacing: 5
+                                anchors.margins: 8
+                                anchors.topMargin: 8
+                                spacing: 2
 
                                 Text {
                                     text: "HVAC"
                                     color: "#ffffff"
-                                    font { pixelSize: 22; bold: true; family: "Arial" }
+                                    font { pixelSize: 14; bold: true; family: "Arial" }
                                     anchors.horizontalCenter: parent.horizontalCenter
                                 }
 
                                 // Spacer
-                                Item { height: 8; width: 1 }
+                                Item { height: 2; width: 1 }
 
                                 // ---- 3 air direction modes ----
                                 Row {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 12
+                                    spacing: 8
                                     Repeater {
                                         model: [
                                             "qrc:/assets/icons/parallel.png",
@@ -1049,13 +1051,13 @@ ApplicationWindow {
                                             "qrc:/assets/icons/parallel-feet.png"
                                         ]
                                         Rectangle {
-                                            width: 38; height: 38; radius: 8
+                                            width: 24; height: 24; radius: 8
                                             color: launcherItem.hvacMode === index ? '#18b78f' : Qt.rgba(1, 1, 1, 0.23)
                                             border.width: launcherItem.hvacMode === index ? 2 : 0
                                             border.color: "#FFFFFF"
                                             Image {
                                                 anchors.centerIn: parent
-                                                width: 22; height: 22
+                                                width: 14; height: 14
                                                 source: modelData
                                                 fillMode: Image.PreserveAspectFit
                                             }
@@ -1068,31 +1070,31 @@ ApplicationWindow {
                                 }
 
                                 // Spacer
-                                Item { height: 6; width: 1 }
+                                Item { height: 2; width: 1 }
 
                                 // ---- Temp + Fan mini gauges ----
                                 Row {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 16
+                                    spacing: 10
 
                                     // Mini Temp
                                     Item {
-                                        width: 135; height: 142
+                                        width: 82; height: 82
 
                                         Canvas {
                                             id: miniTempCanvas
                                             anchors.horizontalCenter: parent.horizontalCenter
                                             anchors.top: parent.top
-                                            width: 120; height: 120
+                                            width: 68; height: 68
                                             property real val: launcherItem.hvacTemp
                                             onPaint: {
                                                 var ctx = getContext("2d")
-                                                var cx = width/2, cy = height/2, r = 50
+                                                var cx = width/2, cy = height/2, r = 28
                                                 var t = (val - 16) / (30 - 16)
                                                 var s = 0.8 * Math.PI, e = 2.2 * Math.PI, c = s + t*(e-s)
                                                 ctx.clearRect(0,0,width,height)
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=9; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=9; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
+                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=5; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
+                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=5; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
                                             }
                                             onValChanged: requestPaint()
                                             Component.onCompleted: requestPaint()
@@ -1102,16 +1104,16 @@ ApplicationWindow {
                                             anchors.centerIn: miniTempCanvas
                                             text: Math.round(launcherItem.hvacTemp) + "°"
                                             color: "#FFFFFF"
-                                            font { pixelSize: 32; bold: true; family: "Arial" }
+                                            font { pixelSize: 17; bold: true; family: "Arial" }
                                         }
 
                                         Text {
                                             anchors.horizontalCenter: parent.horizontalCenter
                                             anchors.top: miniTempCanvas.bottom
-                                            anchors.topMargin: -18
+                                            anchors.topMargin: -10
                                             text: "Temperature"
                                             color: '#f5eee6'
-                                            font { pixelSize: 14; bold: true; family: "Arial" }
+                                            font { pixelSize: 10; bold: true; family: "Arial" }
                                         }
 
                                         MouseArea {
@@ -1155,22 +1157,22 @@ ApplicationWindow {
 
                                     // Mini Fan
                                     Item {
-                                        width: 135; height: 142
+                                        width: 82; height: 82
 
                                         Canvas {
                                             id: miniFanCanvas
                                             anchors.horizontalCenter: parent.horizontalCenter
                                             anchors.top: parent.top
-                                            width: 120; height: 120
+                                            width: 68; height: 68
                                             property real val: launcherItem.hvacFan
                                             onPaint: {
                                                 var ctx = getContext("2d")
-                                                var cx = width/2, cy = height/2, r = 50
+                                                var cx = width/2, cy = height/2, r = 28
                                                 var t = val / 7
                                                 var s = 0.8 * Math.PI, e = 2.2 * Math.PI, c = s + t*(e-s)
                                                 ctx.clearRect(0,0,width,height)
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=9; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=9; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
+                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=5; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
+                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=5; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
                                             }
                                             onValChanged: requestPaint()
                                             Component.onCompleted: requestPaint()
@@ -1180,16 +1182,16 @@ ApplicationWindow {
                                             anchors.centerIn: miniFanCanvas
                                             text: Math.round(launcherItem.hvacFan)
                                             color: "#FFFFFF"
-                                            font { pixelSize: 32; bold: true; family: "Arial" }
+                                            font { pixelSize: 17; bold: true; family: "Arial" }
                                         }
 
                                         Text {
                                             anchors.horizontalCenter: parent.horizontalCenter
                                             anchors.top: miniFanCanvas.bottom
-                                            anchors.topMargin: -18
+                                            anchors.topMargin: -10
                                             text: "Fan Speed"
                                             color: "#f5eee6"
-                                            font { pixelSize: 14; bold: true; family: "Arial" }
+                                            font { pixelSize: 10; bold: true; family: "Arial" }
                                         }
 
                                         MouseArea {
@@ -1235,15 +1237,15 @@ ApplicationWindow {
                                 Row {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     // Recirc
-                                    spacing: 8
+                                    spacing: 5
                                     Rectangle {
-                                        width: 36; height: 36; radius: 8
+                                        width: 20; height: 20; radius: 8
                                         color: launcherItem.recircActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
                                         border.color: "#FFFFFF"
                                         border.width: launcherItem.recircActive ? 2 : 0
                                         Image{
                                             anchors.centerIn: parent
-                                            width: 18; height: 18
+                                            width: 11; height: 11
                                             fillMode: Image.PreserveAspectFit
                                             source: "qrc:/assets/icons/reload.png"
                                         }
@@ -1251,27 +1253,27 @@ ApplicationWindow {
                                     }
                                     // Air Quality
                                     Rectangle {
-                                        width: 36; height: 36; radius: 8
+                                        width: 20; height: 20; radius: 8
                                         color: launcherItem.airQualityActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
                                         border.color: "#FFFFFF"
                                         border.width: launcherItem.airQualityActive ? 2 : 0
-                                        Text { anchors.centerIn: parent; text: "AQ"; color: "#FFFFFF"; font.pixelSize: 10; font.bold: true }
+                                        Text { anchors.centerIn: parent; text: "AQ"; color: "#FFFFFF"; font.pixelSize: 7; font.bold: true }
                                         MouseArea { anchors.fill: parent; onClicked: launcherItem.airQualityActive = !launcherItem.airQualityActive }
                                     }
                                     // Spacer
                                     Rectangle{
-                                        width: 8; height: 8
+                                        width: 5; height: 5
                                         color: "transparent"
                                     }
                                     // Power
                                     Rectangle {
-                                        width: 36; height: 36; radius: 18
+                                        width: 20; height: 20; radius: 12
                                         color: launcherItem.climatePower ? '#964405' : Qt.rgba(1,1,1,0.08)
                                         border.color: launcherItem.climatePower ? '#97ffffff' : "transparent"
                                         border.width: 1
                                         Image{
                                             anchors.centerIn: parent
-                                            width: 18; height: 18
+                                            width: 11; height: 11
                                             fillMode: Image.PreserveAspectFit
                                             source: "qrc:/assets/icons/power.png"
                                         }
@@ -1279,20 +1281,20 @@ ApplicationWindow {
                                     }
                                     // Spacer
                                     Rectangle{
-                                        width: 8; height: 8
+                                        width: 5; height: 5
                                         color: "transparent"
                                     }
                                     Rectangle {
-                                        width: 36; height: 36; radius: 8
+                                        width: 20; height: 20; radius: 8
                                         color: launcherItem.autoActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
                                         border.color: "#FFFFFF"
                                         border.width: launcherItem.autoActive ? 2 : 0
-                                        Text { anchors.centerIn: parent; text: "AUTO"; color: "#FFFFFF"; font.pixelSize: 9; font.bold: true }
+                                        Text { anchors.centerIn: parent; text: "AUTO"; color: "#FFFFFF"; font.pixelSize: 6; font.bold: true }
                                         MouseArea { anchors.fill: parent; onClicked: launcherItem.autoActive = !launcherItem.autoActive }
                                     }
                                     // SYNC
                                     Rectangle {
-                                        width: 36; height: 36; radius: 8
+                                        width: 20; height: 20; radius: 8
                                         color: launcherItem.hvacSyncActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
                                         border.color: "#FFFFFF"
                                         border.width: launcherItem.hvacSyncActive ? 2 : 0
@@ -1300,7 +1302,7 @@ ApplicationWindow {
                                             anchors.centerIn: parent
                                             text: "SYNC"
                                             color: "#FFFFFF"
-                                            font { pixelSize: 9; bold: true; family: "Arial" }
+                                            font { pixelSize: 6; bold: true; family: "Arial" }
                                         }
                                         MouseArea {
                                             anchors.fill: parent
@@ -1308,6 +1310,59 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // Drive View (3D surroundings)
+                    Item {
+                        width: parent.width; height: parent.height * 0.28
+                        Rectangle {
+                            anchors.fill: parent; radius: 28
+                            color: Qt.rgba(1,1,1,0.05)
+                            border.color: hovered ? Qt.rgba(0.4,0.7,1,0.5) : Qt.rgba(1,1,1,0.12)
+                            border.width: 1
+                            property bool hovered: false
+                            scale: hovered ? 1.02 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 200 } }
+                            Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                            Rectangle {
+                                anchors.fill: parent; radius: parent.radius
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
+                                    GradientStop { position: 0.5; color: "transparent" }
+                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
+                                }
+                            }
+                            Rectangle {
+                                anchors.fill: parent; radius: parent.radius
+                                color: "#4a9eff"; opacity: 0.06; z: -1; anchors.margins: -2
+                            }
+
+                            Row {
+                                anchors.centerIn: parent; spacing: 18
+                                Text { text: "🚗"; font.pixelSize: 46; anchors.verticalCenter: parent.verticalCenter }
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                                    Text {
+                                        text: "Drive View"
+                                        color: "#ffffff"
+                                        font { pixelSize: 18; bold: true; family: "Arial" }
+                                    }
+                                    Text {
+                                        text: "3D Surround View"
+                                        color: "#7fb4ff"
+                                        font { pixelSize: 12; family: "Arial" }
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent; hoverEnabled: true
+                                onEntered: parent.hovered = true
+                                onExited:  parent.hovered = false
+                                onClicked: launcherItem.openDriveView()
                             }
                         }
                     }
@@ -1863,6 +1918,14 @@ ApplicationWindow {
                     launcher.weatherAPI.fetch(settingsInstance.preferredCity)
                 }
             }
+        }
+    }
+
+    // Drive View page (3D surroundings, ROS2)
+    Component {
+        id: driveViewPage
+        DriveViewPage {
+            onGoBack: stackView.pop()
         }
     }
 }

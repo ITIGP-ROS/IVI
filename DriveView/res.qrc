@@ -1,0 +1,48 @@
+<RCC>
+    <qresource prefix="/">
+        <file>meshes/car_mesh.mesh</file>
+        <file>meshes/cube_Material_001_0_mesh.mesh</file>
+        <file>meshes/low_poly_car.glb</file>
+        <file>meshes/lowpoly_ps1_character_with_walk_animation.glb</file>
+        <file>meshes/cube_004_mesh.mesh</file>
+        <file>meshes/plane__0_mesh.mesh</file>
+        <file>img/maparrow.png</file>
+    </qresource>
+    <qresource prefix="/audi">
+        <file>models_3d/audi_low_poly/maps/textureData.png</file>
+        <file>models_3d/audi_low_poly/maps/textureData47.jpg</file>
+        <file>models_3d/audi_low_poly/maps/textureData53.jpg</file>
+        <file>models_3d/audi_low_poly/maps/textureData63.png</file>
+        <file>models_3d/audi_low_poly/maps/textureData69.png</file>
+        <file>models_3d/audi_low_poly/meshes/circle______________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_001_2232_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_001_________1_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_001_________2_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_001__________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_001_DiffuseGrey_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_2232_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_________1_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_________2_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4__________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/object_4_DiffuseGrey_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_1_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_001_______________________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_2_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_002_Glass_001_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_3_001_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_004_Material_001_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_005_glaaa_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_006_Material_002_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_007_rs7_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_008_3_002_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_009________________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_010____________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane____________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane_____________1_0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane______________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane______________0_mesh30.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane________________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane__________________0_mesh.mesh</file>
+        <file>models_3d/audi_low_poly/meshes/plane___________________0_mesh.mesh</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Lowpoly (PS1) Character with Walk Animation
+* source:	https://sketchfab.com/3d-models/lowpoly-ps1-character-with-walk-animation-8c52b986041044eb8c1f8e1fd7309071
+* author:	gezegond (https://sketchfab.com/gezegond)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Lowpoly (PS1) Character with Walk Animation" (https://sketchfab.com/3d-models/lowpoly-ps1-character-with-walk-animation-8c52b986041044eb8c1f8e1fd7309071) by gezegond (https://sketchfab.com/gezegond) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

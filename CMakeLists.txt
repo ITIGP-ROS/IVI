@@ -5,9 +5,16 @@ project(IVI VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick DBus Concurrent Multimedia)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick Quick3D Location Positioning DBus Concurrent Multimedia)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PULSE REQUIRED libpulse)
+
+# --- DriveView (3D surroundings visualization) ---
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(object_detection_msgs REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -24,9 +31,21 @@ qt_add_executable(appIVI
     Backend/SpeechManager.cpp
     Backend/MediaLibrary.cpp
     Backend/AmbientLightManager.cpp
+    DriveView/src/ros_node.cpp
+    DriveView/src/detection_model.cpp
+    DriveView/src/detection_instancing.cpp
+    DriveView/src/car_info.cpp
+    DriveView/src/box_transform.cpp
+    DriveView/inc/ros_node.h
+    DriveView/inc/detection_model.h
+    DriveView/inc/detection_instancing.h
+    DriveView/inc/car_info.h
+    DriveView/inc/box_transform.h
+    DriveView/inc/detection_data.h
 )
 
 target_include_directories(appIVI PRIVATE ${PULSE_INCLUDE_DIRS})
+target_include_directories(appIVI PRIVATE DriveView)
 
 # Bench switch for the ambient light CAN link. ON prints the frames to the
 # terminal instead of opening can0, for developing on a laptop with no bus:
@@ -60,8 +79,13 @@ qt_add_qml_module(appIVI
         SettingPages/BluetoothPage.qml
         SettingPages/WiFiPage.qml
         SettingPages/AmbientLightPage.qml
+        DriveView/DriveViewPage.qml
+        DriveView/qml/Scene3D.qml
+        DriveView/qml/MapOSM.qml
+        DriveView/models_3d/audi_low_poly/Audi_rs7_free__low_poly.qml
     RESOURCES
         resources.qrc
+        DriveView/res.qrc
 )
 
 set_target_properties(appIVI PROPERTIES
@@ -73,11 +97,19 @@ set_target_properties(appIVI PROPERTIES
 
 target_link_libraries(appIVI PRIVATE
     Qt6::Quick
+    Qt6::Quick3D
+    Qt6::Location
+    Qt6::Positioning
     Qt6::DBus
     Qt6::Concurrent
     Qt6::Multimedia
     ${PULSE_LIBRARIES}
     vosk
+    rclcpp::rclcpp
+    sensor_msgs::sensor_msgs
+    geometry_msgs::geometry_msgs
+    std_msgs::std_msgs
+    object_detection_msgs::object_detection_msgs
 )
 
 include(GNUInstallDirs)
