@@ -67,24 +67,42 @@ Item {
             }
         }
 
-        // The three detection classes, sharing the C++ instancing tables with
+        // The detection classes, sharing the C++ instancing tables with
         // the full-screen scene — no extra subscription, no second copy.
         Node {
             Model {
-                source: "qrc:/meshes/plane__0_mesh.mesh"
+                source: "qrc:/meshes/plane__0_walkpose_mesh.mesh"
                 instancing: planeInstancing
+                castsShadows: false
+                receivesShadows: false
                 materials: PrincipledMaterial { baseColor: "#c8ccd2"; metalness: 0.1; roughness: 0.5 }
             }
             Model {
                 source: "#Cube"
                 instancing: cubeInstancing
+                castsShadows: false
+                receivesShadows: false
                 materials: PrincipledMaterial { baseColor: "#c8ccd2"; metalness: 0.1; roughness: 0.5 }
             }
             Model {
-                source: "qrc:/meshes/car_mesh.mesh"
+                source: "qrc:/models_3d/tesla_low_poly/meshes/object_0_mesh.mesh"
                 instancing: carInstancing
-                materials: PrincipledMaterial { baseColor: "#c8ccd2"; metalness: 0.1; roughness: 0.5 }
+                castsShadows: false
+                receivesShadows: false
+                materials: PrincipledMaterial {
+                    // same gray texture as the full scene
+                    baseColor: Qt.rgba(1,1,1,1)
+                    baseColorMap: teslaTex
+                    metalness: 0.0; roughness: 0.9
+                }
             }
         }
+    }
+
+    Texture {
+        id: teslaTex
+        source: "qrc:/models_3d/tesla_low_poly/maps/textureData_gray.png"
+        generateMipmaps: true
+        mipFilter: Texture.Linear
     }
 }
