@@ -66,12 +66,27 @@ void DetectionInstancing::rebuild()
 
             if (d.label == 0) {
                 // pedestrian: plane mesh needs a big upscale
-                scale *= 70.0f;
-            } else if (d.label == 2) {
-                // car: swap scale axes and apply the -90 deg tilt
-                // previously done in the QML delegate
-                scale = QVector3D(d.scale.y(), d.scale.x(), d.scale.z());
+                scale *= 100.0f;
+                // walkpose mesh is Blender Z-up (height along +Z, arms +-Y);
+                // the pedestrian box rotation maps local Y -> world up.
+                // Pre-rotate pitch -90 deg about X: +Z (up) -> +Y (up).
+                // Angles (pitch, yaw, roll); keep pitch -90, tune yaw only:
+                //   (-90, 0, 0)    faces along motion
+                //   (-90, 180, 0)  facing flipped 180 deg
                 rotation = d.rotation * QQuaternion::fromEulerAngles(-90, 0, 0);
+            } else if (d.label == 2) {
+                // tesla mesh: length +-117 (X), width +-51 (Y), up 0..67 (Z), ~cm units
+                // measured boxes: x=width, y=height, z=length.
+                // Uniform scale by the box HEIGHT so the car fills the box
+                // vertically (k = y / 0.6732; 0.6732 = mesh height / 100).
+                const float k = d.scale.y() / 0.6732f;
+                scale = QVector3D(k*0.8, k, k*1.5);
+                // pitch -90 maps Z up -> Y up; yaw -90 turns the car length
+                // along the box's width slot (z) which holds the true length
+                float yaw = 0.0f;
+                if (d.scale.z() > d.scale.x() * 1.1f && d.scale.z() > d.scale.y() * 1.1f)
+                    yaw = -90.0f;
+                rotation = d.rotation * QQuaternion::fromEulerAngles(-90, yaw, 0);
             }
 
             const QColor color = useInstanceColor_ ? d.color : Qt::white;

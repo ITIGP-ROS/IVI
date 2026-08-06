@@ -8,7 +8,6 @@ import "../models_3d/audi_low_poly"
 Item {
     id: root
     clip: true
-
     property bool topDownView: false
 
     property vector3d chaseOrigin:   Qt.vector3d(0, 0, 0)
@@ -18,6 +17,9 @@ Item {
     property vector3d topOrigin:   Qt.vector3d(0, 0, 0)
     property vector3d topRotation: Qt.vector3d(-90, 0, 0)
     property real     topDistance: 1600
+
+    // render the Tesla with its baked texture instead of the flat detection tint
+    property bool useTeslaTexture: true
 
     anchors.fill: parent
 
@@ -112,21 +114,41 @@ Item {
 
         Node {
             Model {
-                source: "qrc:/meshes/plane__0_mesh.mesh"
+                source: "qrc:/meshes/plane__0_walkpose_mesh.mesh"
                 instancing: planeInstancing
+                castsShadows: false
+                receivesShadows: false
                 materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5 }
             }
             Model {
                 source: "#Cube"
                 instancing: cubeInstancing
+                castsShadows: false
+                receivesShadows: false
                 materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5 }
             }
             Model {
-                source: "qrc:/meshes/car_mesh.mesh"
+                source: "qrc:/models_3d/tesla_low_poly/meshes/object_0_mesh.mesh"
                 instancing: carInstancing
-                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5 }
+                castsShadows: false
+                receivesShadows: false
+                materials: PrincipledMaterial {
+                    // white base when the map is active: the gray texture
+                    // already carries the full tone range, avoid double-darkening.
+                    // Matte + no metal: flat, non-distracting detection look
+                    baseColor: root.useTeslaTexture ? Qt.rgba(1,1,1,1) : fsd.detection
+                    baseColorMap: root.useTeslaTexture ? teslaTex : null
+                    metalness: 0.0; roughness: 0.9
+                }
             }
         }
+    }
+
+    Texture {
+        id: teslaTex
+        source: "qrc:/models_3d/tesla_low_poly/maps/textureData_gray.png"
+        generateMipmaps: true
+        mipFilter: Texture.Linear
     }
 
     // DEBUG: log render stats every second (remove after benchmarking)
