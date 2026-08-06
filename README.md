@@ -285,8 +285,8 @@ The Video page (`MediaPages/VideoPage.qml`) has its own dedicated `MediaPlayer` 
 **Source Selection**
 
 A left panel (same layout as Audio) supports:
+- **Local** — lists the on-disk video library. There is no file picker; the folder loads itself.
 - **USB** — populates a playlist from `usbManager.videoFiles`. Supported extensions are detected by `USBManager`'s internal scanner (`.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`, and others).
-- **URL** — direct stream URL input.
 
 **Video Output**
 

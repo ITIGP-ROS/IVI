@@ -46,18 +46,18 @@ Rectangle {
 
         onErrorOccurred: function(error, errorString) {
             videoSelected = false
+            // Both remaining sources are local files, so the wording is about
+            // files, not servers. Anything else falls through to the player's
+            // own string rather than being dressed up in a guess.
             switch(error) {
-                case MediaPlayer.NetworkError:
-                    errorMessage = "⚠  Cannot reach the server — check your internet connection"
-                    break
                 case MediaPlayer.FormatError:
                     errorMessage = "⚠  Unsupported video format"
                     break
                 case MediaPlayer.AccessDeniedError:
-                    errorMessage = "⚠  Access denied — the server rejected the request"
+                    errorMessage = "⚠  Cannot read the file — permission denied"
                     break
                 case MediaPlayer.ResourceError:
-                    errorMessage = "⚠  Invalid URL or resource not found"
+                    errorMessage = "⚠  File not found or unreadable"
                     break
                 default:
                     errorMessage = "⚠  " + errorString
@@ -114,9 +114,8 @@ Rectangle {
 
             Repeater {
                 model: [
-                    { label: "🗂️  Local",    idx: 0 },
-                    { label: "🌐  Internet", idx: 1 },
-                    { label: "💾  USB",      idx: 2 }
+                    { label: "🗂️  Local", idx: 0 },
+                    { label: "💾  USB",   idx: 1 }
                 ]
 
                 delegate: Rectangle {
@@ -152,7 +151,17 @@ Rectangle {
                 }
             }
 
-            Rectangle { width: 1; height: videoPage.height / 2.3; color: "transparent" }
+            // Spacer. Audio uses a bare height / 2.3 here, but it has three
+            // sources to this page's two — so that constant alone leaves this
+            // Back button one row high. Adding back a row plus the column
+            // spacing lands the two buttons at the same y.
+            Rectangle {
+                width: 1
+                height: videoPage.height / 2.3
+                        + videoPage.height / 14
+                        + videoPage.height / 40
+                color: "transparent"
+            }
 
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -217,7 +226,6 @@ Rectangle {
         Behavior on anchors.leftMargin { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
 
         property int currentIndex: 0
-        property var browseIcon: "📂"
 
         VideoOutput {
             id: videoOut
@@ -265,10 +273,6 @@ Rectangle {
             anchors.fill: parent
             visible: rightPanel.currentIndex === 0 && !videoPage.fullScreen
             color: 'transparent'
-
-            onVisibleChanged: {
-                if (visible) rightPanel.browseIcon = "📂"
-            }
 
             Rectangle {
                 anchors.fill: parent
@@ -416,89 +420,6 @@ Rectangle {
             }
         }
 
-        // ================================================ Internet video ============================================
-        Rectangle {
-            anchors.fill: parent
-            visible: rightPanel.currentIndex === 1 && !videoPage.fullScreen
-            color: 'transparent'
-
-            onVisibleChanged: {
-                if (visible) rightPanel.browseIcon = "🌐"
-            }
-
-            // Hidden input — syncs with VirtualKeyboard
-            TextInput {
-                id: urlField
-                visible: false
-                text: ""
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                anchors.bottomMargin: videoController.height + videoProgress.height + videoPage.height / 16
-                anchors.margins: videoPage.height / 50
-                color: videoPlayer.videoSelected ? "#082839" : 'transparent'
-                radius: height / 50
-
-                Text {
-                    anchors.centerIn: parent
-                    visible: !videoPlayer.videoSelected
-                    text: "Enter a video URL to stream"
-                    color: '#3D717E'
-                    font.pixelSize: videoPage.width / 35
-                    font.family: "Arial"
-                }
-
-                Rectangle {
-                    id: loadingOverlay
-                    anchors.fill: parent
-                    color: '#80000000'
-                    visible: videoPlayer.mediaStatus === MediaPlayer.BufferingMedia ||
-                            videoPlayer.mediaStatus === MediaPlayer.LoadingMedia   ||
-                            videoPlayer.mediaStatus === MediaPlayer.StalledMedia
-                    radius: parent.radius
-
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: videoPage.height / 30
-
-                        Rectangle {
-                            width: videoPage.width / 30
-                            height: width
-                            radius: width / 2
-                            color: 'transparent'
-                            border.color: '#D08831'
-                            border.width: 3
-                            anchors.horizontalCenter: parent.horizontalCenter
-
-                            Rectangle {
-                                width: parent.border.width + 2
-                                height: parent.border.width + 2
-                                color: '#80000000'
-                                anchors.top: parent.top
-                                anchors.horizontalCenter: parent.horizontalCenter
-                            }
-
-                            RotationAnimation on rotation {
-                                running: loadingOverlay.visible
-                                loops: Animation.Infinite
-                                duration: 900
-                                from: 0; to: 360
-                            }
-                        }
-
-                        Text {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: videoPlayer.mediaStatus === MediaPlayer.StalledMedia ? "⚠  Stream stalled" : "Loading..."
-                            color: '#D08831'
-                            font.pixelSize: videoPage.width / 70
-                            font.family: "Arial"
-                        }
-                    }
-                }
-            }
-        }
-
         // ================================================== USB video ==============================================
         Rectangle {
             anchors.fill: parent
@@ -507,15 +428,13 @@ Rectangle {
             anchors.leftMargin: videoPage.width / 90
             anchors.bottomMargin: videoPage.height / 5.35
             radius: videoPage.width / 20
-            visible: rightPanel.currentIndex === 2 && !videoPage.fullScreen
+            visible: rightPanel.currentIndex === 1 && !videoPage.fullScreen
             color: 'transparent'
 
             onVisibleChanged: {
-                if (visible) {
-                    rightPanel.browseIcon = "💾"
-                    if (usbManager.connected && usbManager.videoFiles.length === 0 && !usbManager.scanning)
-                        usbManager.scanFiles()
-                }
+                if (visible && usbManager.connected
+                        && usbManager.videoFiles.length === 0 && !usbManager.scanning)
+                    usbManager.scanFiles()
             }
 
             Text {
@@ -924,7 +843,7 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            if (rightPanel.currentIndex === 2 && usbManager.connected && usbManager.videoFiles.length > 0) {
+                            if (rightPanel.currentIndex === 1 && usbManager.connected && usbManager.videoFiles.length > 0) {
                                 var newIndex = videoPlayer.currentFileIndex - 1
                                 if (newIndex < 0) newIndex = usbManager.videoFiles.length - 1
                                 videoPlayer.currentFileIndex = newIndex
@@ -991,7 +910,7 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            if (rightPanel.currentIndex === 2 && usbManager.connected && usbManager.videoFiles.length > 0) {
+                            if (rightPanel.currentIndex === 1 && usbManager.connected && usbManager.videoFiles.length > 0) {
                                 var newIndex = videoPlayer.currentFileIndex + 1
                                 if (newIndex >= usbManager.videoFiles.length) newIndex = 0
                                 videoPlayer.currentFileIndex = newIndex
@@ -1019,7 +938,7 @@ Rectangle {
             Slider {
                 id: speedSlider
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.right: browseBtn.left
+                anchors.right: screenToggle.left
                 anchors.rightMargin: videoController.width / 20
                 width: videoController.width / 8
                 from: 0.5; to: 8; value: 1
@@ -1056,28 +975,9 @@ Rectangle {
                 // Nothing to maximise until a video is playing.
                 visible: videoPlayer.videoSelected
                 anchors.verticalCenter: parent.verticalCenter
-                // Takes the far-right slot when the browse button is hidden.
-                anchors.right: browseBtn.visible ? browseBtn.left : parent.right
-                anchors.rightMargin: browseBtn.visible ? videoController.width / 40
-                                                       : videoController.width / 20
-                onClicked: videoPage.fullScreen = !videoPage.fullScreen
-            }
-
-            ControlBtn {
-                id: browseBtn
-                icon: rightPanel.browseIcon
-                // Only Internet has anything to browse to — it opens the URL
-                // keyboard. Local and USB both load their own contents, so the
-                // button would do nothing there.
-                visible: rightPanel.currentIndex === 1
-                anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
                 anchors.rightMargin: videoController.width / 20
-                // Local has no picker any more — the button returns to the
-                // library list instead of opening a file dialog.
-                onClicked: rightPanel.currentIndex === 0 ? videoPage.showLocalLibrary() :
-                            rightPanel.currentIndex === 1 ? urlKeyboardPopup.open() :
-                            console.log("Browse action for other sources coming soon")
+                onClicked: videoPage.fullScreen = !videoPage.fullScreen
             }
         }
 
@@ -1113,73 +1013,6 @@ Rectangle {
                 onExited: parent.opacity = 0.4
                 onClicked: videoPage.showLocalLibrary()
             }
-        }
-    }
-
-    // ========================================== URL Keyboard Popup =========================================
-    Popup {
-        id: urlKeyboardPopup
-        parent: Overlay.overlay
-        width: videoPage.width * 0.6
-        height: videoPage.height * 0.7
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        // Dim the page behind the dialog
-        Overlay.modal: Rectangle {
-            color: "#000000"
-            opacity: 0.6
-            Behavior on opacity { NumberAnimation { duration: 180 } }
-        }
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
-        background: Rectangle {
-            color: "#082839"
-            radius: 16
-            border.color: "#D08831"
-            border.width: 2
-        }
-
-        Column {
-            anchors.fill: parent
-            anchors.margins: 20
-            spacing: 16
-
-            Text {
-                text: "Enter Video URL"
-                font.pixelSize: videoPage.height * 0.04
-                color: "#D08831"
-                font.bold: true
-                font.family: "Arial"
-                anchors.horizontalCenter: parent.horizontalCenter
-            }
-
-            VirtualKeyboard {
-                id: urlKeyboard
-                width: parent.width
-                targetItem: urlField
-                passwordMode: false
-                maxLength: 256
-
-                onAccepted: {
-                    if (urlField.text !== "") {
-                        videoPlayer.source = urlField.text
-                        videoPlayer.videoSelected = true
-                        videoPlayer.play()
-                    }
-                    urlKeyboard.clear()
-                    urlKeyboardPopup.close()
-                }
-
-                onCancelled: {
-                    urlKeyboard.clear()
-                    urlKeyboardPopup.close()
-                }
-            }
-        }
-
-        onOpened: {
-            urlKeyboard.targetText = urlField.text
         }
     }
 
