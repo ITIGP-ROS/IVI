@@ -28,9 +28,8 @@ SpeechManager::SpeechManager(QObject *parent) : QObject(parent){
 
     // Only recognize these words — ignore everything else
     vosk_recognizer_set_grm(m_recognizer,
-        "[\"weather\", \"cairo\", \"giza\", \"milan\", \"hvac\", \"media\", \"settings\", \"wifi\", \"bluetooth\", \"open\", \"back\", \"home\", \
-         \"play\", \"pause\", \"stop\", \"radio\", \"audio\", \"video\", \"volume\", \"up\", \"down\", \"mute\", \"unmute\", \"about\", \"[unk]\", \
-         \"fan\", \"temp\"]"
+        "[\"weather\", \"cairo\", \"giza\", \"milan\", \"media\", \"settings\", \"wifi\", \"bluetooth\", \"open\", \"back\", \"home\", \
+         \"play\", \"pause\", \"stop\", \"radio\", \"audio\", \"video\", \"volume\", \"up\", \"down\", \"mute\", \"unmute\", \"about\", \"[unk]\"]"
     );
     vosk_set_log_level(-1); // silence Vosk logs
 }
