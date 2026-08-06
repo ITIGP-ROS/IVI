@@ -8,10 +8,6 @@
         <file>assets/icons/bt.png</file>
         <file>assets/icons/volume.png</file>
         <file>assets/icons/weather.png</file>
-        <file>assets/images/mercedes_interior.png</file>
-        <file>assets/icons/parallel-feet.png</file>
-        <file>assets/icons/parallel.png</file>
-        <file>assets/icons/feet.png</file>
         <file>assets/icons/home.png</file>
         <file>assets/icons/navigation.png</file>
         <file>assets/icons/brightness.png</file>
@@ -19,7 +15,6 @@
         <file>assets/icons/volumeup.png</file>
         <file>assets/icons/pagenavigation.png</file>
         <file>assets/icons/reload.png</file>
-        <file>assets/icons/power.png</file>
         <file>assets/icons/play.png</file>
         <file>assets/icons/stop.png</file>
         <file>assets/icons/prev.png</file>

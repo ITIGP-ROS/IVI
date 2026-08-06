@@ -64,7 +64,6 @@ qt_add_qml_module(appIVI
     QML_FILES
         Main.qml
         pages/WeatherPage.qml
-        pages/ClimateControlPage.qml
         pages/MediaPlayerPage.qml
         pages/SettingPage.qml
         API/WeatherAPI.qml
@@ -81,6 +80,7 @@ qt_add_qml_module(appIVI
         SettingPages/AmbientLightPage.qml
         DriveView/DriveViewPage.qml
         DriveView/qml/Scene3D.qml
+        DriveView/qml/MiniScene3D.qml
         DriveView/qml/MapOSM.qml
         DriveView/models_3d/audi_low_poly/Audi_rs7_free__low_poly.qml
     RESOURCES

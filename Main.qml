@@ -220,14 +220,12 @@ ApplicationWindow {
         Item {
             id: launcherItem
             signal openWeather()
-            signal openClimateControl()
             signal openMedia()
             signal openSettings()
             signal openCarInfo()
             signal openDriveView()
 
             onOpenWeather:        stackView.push(weatherPage)
-            onOpenClimateControl: stackView.push(climatePage)
             onOpenMedia:          stackView.push(mediaPage)
             onOpenSettings:       stackView.push(settingPage)
             onOpenCarInfo:        carInfoPopup.visible = true
@@ -259,20 +257,6 @@ ApplicationWindow {
                 "📍 " + (resolvedLocation !== "" ? resolvedLocation
                                                  : mainWindow.preferredCity)
                       + (weatherIsLive ? "" : " · not live")
-
-            // shared HVAC quick-state (tile + page)
-            property int  hvacMode:          0
-            property int  hvacTemp:          23
-            property int  hvacFan:           3
-            property bool recircActive:      false
-            property bool airQualityActive:  false
-            property bool autoActive:        false
-            property bool climatePower:      false
-            property bool hvacSyncActive:    true
-            property int  hvacRearTemp:     23
-            property int  hvacRearFan:      3
-            property int  hvacRearMode:     0
-            property bool hvacRearPower:    false
 
             Component.onCompleted: {
                 if (appSettings.lastTemp !== "") {
@@ -704,8 +688,6 @@ ApplicationWindow {
                                     var lowerText = text.toLowerCase().trim()
                                     if (lowerText.includes("weather"))
                                         launcherItem.openWeather()
-                                    else if (lowerText.includes("hvac") || lowerText.includes("climate") || lowerText.includes("ac"))
-                                        launcherItem.openClimateControl()
                                     else if (lowerText.includes("media") || lowerText.includes("music") || lowerText.includes("radio"))
                                         launcherItem.openMedia()
                                     else if (lowerText.includes("settings") || lowerText.includes("setting"))
@@ -732,28 +714,6 @@ ApplicationWindow {
                                         if (systemVolume.muted)
                                             systemVolume.toggleMute()
                                         console.log("Volume unmuted")
-                                    }
-                                    // FAN COMMANDS
-                                    else if (lowerText.includes("fan up")) {
-                                        var newFan = Math.min(7, launcherItem.hvacFan + 1)
-                                        launcherItem.hvacFan = newFan
-                                        console.log("Fan up →", newFan)
-                                    }
-                                    else if (lowerText.includes("fan down")) {
-                                        var newFan = Math.max(0, launcherItem.hvacFan - 1)
-                                        launcherItem.hvacFan = newFan
-                                        console.log("Fan down →", newFan)
-                                    }
-                                    // TEMPERATURE COMMANDS
-                                    else if (lowerText.includes("temp up")) {
-                                        var newTemp = Math.min(30, launcherItem.hvacTemp + 1)
-                                        launcherItem.hvacTemp = newTemp
-                                        console.log("Temp up →", newTemp + "°")
-                                    }
-                                    else if (lowerText.includes("temp down")) {
-                                        var newTemp = Math.max(16, launcherItem.hvacTemp - 1)
-                                        launcherItem.hvacTemp = newTemp
-                                        console.log("Temp down →", newTemp + "°")
                                     }
                                 }
 
@@ -963,360 +923,12 @@ ApplicationWindow {
                         }
                     }
 
-                    // HVAC
-                    Item {
-                        width: parent.width; height: parent.height * 0.35
-                        Rectangle {
-                            id: hvacRect
-                            anchors.fill: parent; radius: 28
-                            color: Qt.rgba(1,1,1,0.05)
-                            border.color: hovered ? Qt.rgba(0.6,0.3,1,0.4) : Qt.rgba(1,1,1,0.12)
-                            border.width: 1
-                            property bool hovered: false
-                            scale: hovered ? 1.02 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 200 } }
-                            Behavior on border.color { ColorAnimation { duration: 200 } }
-
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
-                                    GradientStop { position: 0.5; color: "transparent" }
-                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
-                                }
-                            }
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                color: "#a855f7"; opacity: 0.06; z: -1; anchors.margins: -2
-                            }
-
-                            transform: Translate { id: hFloat }
-                            SequentialAnimation {
-                                loops: Animation.Infinite; running: true
-                                NumberAnimation { target: hFloat; property: "y"; to: 3;  duration: 6000; easing.type: Easing.InOutSine }
-                                NumberAnimation { target: hFloat; property: "y"; to: -3; duration: 6000; easing.type: Easing.InOutSine }
-                            }
-
-                            // Hover glow only — does NOT block clicks
-                            HoverHandler {
-                                onHoveredChanged: parent.hovered = hovered
-                            }
-
-                            // Small expand button (top-right) to open full page
-                            Rectangle {
-                                anchors.top: parent.top; anchors.right: parent.right
-                                anchors.margins: 18
-                                width: 35; height: 35; radius: 8
-                                color: expandMa.containsMouse ? Qt.rgba(1,1,1,0.15) : Qt.rgba(1,1,1,0.05)
-                                border.color: Qt.rgba(1,1,1,0.2)
-                                border.width: 1
-                                Image{
-                                    anchors.centerIn: parent
-                                    width: 20; height: 20
-                                    source: "qrc:/assets/icons/pagenavigation.png"
-                                    fillMode: Image.PreserveAspectFit
-                                }
-                                MouseArea {
-                                    id: expandMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: launcherItem.openClimateControl()
-                                }
-                            }
-
-                            Column {
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                anchors.topMargin: 8
-                                spacing: 2
-
-                                Text {
-                                    text: "HVAC"
-                                    color: "#ffffff"
-                                    font { pixelSize: 14; bold: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-
-                                // Spacer
-                                Item { height: 2; width: 1 }
-
-                                // ---- 3 air direction modes ----
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 8
-                                    Repeater {
-                                        model: [
-                                            "qrc:/assets/icons/parallel.png",
-                                            "qrc:/assets/icons/feet.png",
-                                            "qrc:/assets/icons/parallel-feet.png"
-                                        ]
-                                        Rectangle {
-                                            width: 24; height: 24; radius: 8
-                                            color: launcherItem.hvacMode === index ? '#18b78f' : Qt.rgba(1, 1, 1, 0.23)
-                                            border.width: launcherItem.hvacMode === index ? 2 : 0
-                                            border.color: "#FFFFFF"
-                                            Image {
-                                                anchors.centerIn: parent
-                                                width: 14; height: 14
-                                                source: modelData
-                                                fillMode: Image.PreserveAspectFit
-                                            }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: launcherItem.hvacMode = index
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Spacer
-                                Item { height: 2; width: 1 }
-
-                                // ---- Temp + Fan mini gauges ----
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 10
-
-                                    // Mini Temp
-                                    Item {
-                                        width: 82; height: 82
-
-                                        Canvas {
-                                            id: miniTempCanvas
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: parent.top
-                                            width: 68; height: 68
-                                            property real val: launcherItem.hvacTemp
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                var cx = width/2, cy = height/2, r = 28
-                                                var t = (val - 16) / (30 - 16)
-                                                var s = 0.8 * Math.PI, e = 2.2 * Math.PI, c = s + t*(e-s)
-                                                ctx.clearRect(0,0,width,height)
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=5; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=5; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
-                                            }
-                                            onValChanged: requestPaint()
-                                            Component.onCompleted: requestPaint()
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: miniTempCanvas
-                                            text: Math.round(launcherItem.hvacTemp) + "°"
-                                            color: "#FFFFFF"
-                                            font { pixelSize: 17; bold: true; family: "Arial" }
-                                        }
-
-                                        Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: miniTempCanvas.bottom
-                                            anchors.topMargin: -10
-                                            text: "Temperature"
-                                            color: '#f5eee6'
-                                            font { pixelSize: 10; bold: true; family: "Arial" }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            preventStealing: true
-
-                                            function setTempFromMouse(mx, my) {
-                                                var cx = parent.width / 2
-                                                var cy = miniTempCanvas.height / 2
-                                                var dx = mx - cx
-                                                var dy = my - cy
-                                                var rad = Math.atan2(dy, dx)
-                                                var deg = rad * 180 / Math.PI
-                                                if (deg < 0) deg += 360
-
-                                                var startDeg = 144
-                                                var sweepDeg = 252
-                                                var t = 0
-                                                if (deg >= 144 && deg <= 360) {
-                                                    t = (deg - startDeg) / sweepDeg
-                                                } else if (deg >= 0 && deg <= 36) {
-                                                    t = (deg + 360 - startDeg) / sweepDeg
-                                                } else {
-                                                    // dead zone — snap to nearest end based on current value
-                                                    t = (launcherItem.hvacTemp > 23) ? 1 : 0
-                                                }
-
-                                                var newVal = 16 + t * 14
-                                                newVal = Math.round(newVal)
-                                                newVal = Math.max(16, Math.min(30, newVal))
-                                                if (newVal !== launcherItem.hvacTemp)
-                                                    launcherItem.hvacTemp = newVal
-                                            }
-
-                                            onPressed: (mouse) => setTempFromMouse(mouse.x, mouse.y)
-                                            onPositionChanged: (mouse) => {
-                                                if (pressed) setTempFromMouse(mouse.x, mouse.y)
-                                            }
-                                        }
-                                    }
-
-                                    // Mini Fan
-                                    Item {
-                                        width: 82; height: 82
-
-                                        Canvas {
-                                            id: miniFanCanvas
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: parent.top
-                                            width: 68; height: 68
-                                            property real val: launcherItem.hvacFan
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                var cx = width/2, cy = height/2, r = 28
-                                                var t = val / 7
-                                                var s = 0.8 * Math.PI, e = 2.2 * Math.PI, c = s + t*(e-s)
-                                                ctx.clearRect(0,0,width,height)
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=5; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=5; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
-                                            }
-                                            onValChanged: requestPaint()
-                                            Component.onCompleted: requestPaint()
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: miniFanCanvas
-                                            text: Math.round(launcherItem.hvacFan)
-                                            color: "#FFFFFF"
-                                            font { pixelSize: 17; bold: true; family: "Arial" }
-                                        }
-
-                                        Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: miniFanCanvas.bottom
-                                            anchors.topMargin: -10
-                                            text: "Fan Speed"
-                                            color: "#f5eee6"
-                                            font { pixelSize: 10; bold: true; family: "Arial" }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            preventStealing: true
-
-                                            function setFanFromMouse(mx, my) {
-                                                var cx = parent.width / 2
-                                                var cy = miniFanCanvas.height / 2
-                                                var dx = mx - cx
-                                                var dy = my - cy
-                                                var rad = Math.atan2(dy, dx)
-                                                var deg = rad * 180 / Math.PI
-                                                if (deg < 0) deg += 360
-
-                                                var startDeg = 144
-                                                var sweepDeg = 252
-                                                var t = 0
-                                                if (deg >= 144 && deg <= 360) {
-                                                    t = (deg - startDeg) / sweepDeg
-                                                } else if (deg >= 0 && deg <= 36) {
-                                                    t = (deg + 360 - startDeg) / sweepDeg
-                                                } else {
-                                                    t = (launcherItem.hvacFan > 3) ? 1 : 0
-                                                }
-
-                                                var newVal = t * 7
-                                                newVal = Math.round(newVal)
-                                                newVal = Math.max(0, Math.min(7, newVal))
-                                                if (newVal !== launcherItem.hvacFan)
-                                                    launcherItem.hvacFan = newVal
-                                            }
-
-                                            onPressed: (mouse) => setFanFromMouse(mouse.x, mouse.y)
-                                            onPositionChanged: (mouse) => {
-                                                if (pressed) setFanFromMouse(mouse.x, mouse.y)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ---- 5 master toggles (Recirc, AQ, Auto, Sync, Power) ----
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    // Recirc
-                                    spacing: 5
-                                    Rectangle {
-                                        width: 20; height: 20; radius: 8
-                                        color: launcherItem.recircActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.recircActive ? 2 : 0
-                                        Image{
-                                            anchors.centerIn: parent
-                                            width: 11; height: 11
-                                            fillMode: Image.PreserveAspectFit
-                                            source: "qrc:/assets/icons/reload.png"
-                                        }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.recircActive = !launcherItem.recircActive }
-                                    }
-                                    // Air Quality
-                                    Rectangle {
-                                        width: 20; height: 20; radius: 8
-                                        color: launcherItem.airQualityActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.airQualityActive ? 2 : 0
-                                        Text { anchors.centerIn: parent; text: "AQ"; color: "#FFFFFF"; font.pixelSize: 7; font.bold: true }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.airQualityActive = !launcherItem.airQualityActive }
-                                    }
-                                    // Spacer
-                                    Rectangle{
-                                        width: 5; height: 5
-                                        color: "transparent"
-                                    }
-                                    // Power
-                                    Rectangle {
-                                        width: 20; height: 20; radius: 12
-                                        color: launcherItem.climatePower ? '#964405' : Qt.rgba(1,1,1,0.08)
-                                        border.color: launcherItem.climatePower ? '#97ffffff' : "transparent"
-                                        border.width: 1
-                                        Image{
-                                            anchors.centerIn: parent
-                                            width: 11; height: 11
-                                            fillMode: Image.PreserveAspectFit
-                                            source: "qrc:/assets/icons/power.png"
-                                        }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.climatePower = !launcherItem.climatePower }
-                                    }
-                                    // Spacer
-                                    Rectangle{
-                                        width: 5; height: 5
-                                        color: "transparent"
-                                    }
-                                    Rectangle {
-                                        width: 20; height: 20; radius: 8
-                                        color: launcherItem.autoActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.autoActive ? 2 : 0
-                                        Text { anchors.centerIn: parent; text: "AUTO"; color: "#FFFFFF"; font.pixelSize: 6; font.bold: true }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.autoActive = !launcherItem.autoActive }
-                                    }
-                                    // SYNC
-                                    Rectangle {
-                                        width: 20; height: 20; radius: 8
-                                        color: launcherItem.hvacSyncActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.hvacSyncActive ? 2 : 0
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "SYNC"
-                                            color: "#FFFFFF"
-                                            font { pixelSize: 6; bold: true; family: "Arial" }
-                                        }
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            onClicked: launcherItem.hvacSyncActive = !launcherItem.hvacSyncActive
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     // Drive View (3D surroundings)
+                    // 0.63 spans both tile slots that used to sit below the status
+                    // card, so this column still reaches the same depth as the two
+                    // either side of it.
                     Item {
-                        width: parent.width; height: parent.height * 0.28
+                        width: parent.width; height: parent.height * 0.63
                         Rectangle {
                             anchors.fill: parent; radius: 28
                             color: Qt.rgba(1,1,1,0.05)
@@ -1340,26 +952,85 @@ ApplicationWindow {
                                 color: "#4a9eff"; opacity: 0.06; z: -1; anchors.margins: -2
                             }
 
-                            Row {
-                                anchors.centerIn: parent; spacing: 18
-                                Text { text: "🚗"; font.pixelSize: 46; anchors.verticalCenter: parent.verticalCenter }
-                                Column {
-                                    anchors.verticalCenter: parent.verticalCenter; spacing: 4
-                                    Text {
-                                        text: "Drive View"
-                                        color: "#ffffff"
-                                        font { pixelSize: 18; bold: true; family: "Arial" }
-                                    }
-                                    Text {
-                                        text: "3D Surround View"
-                                        color: "#7fb4ff"
-                                        font { pixelSize: 12; family: "Arial" }
-                                    }
+                            // Live preview of the same scene the full page
+                            // draws. Inset so the 3D never reaches the rounded
+                            // corners — cheaper than masking a View3D.
+                            MiniScene3D {
+                                id: drivePreview
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                anchors.topMargin: 58
+                                anchors.bottomMargin: 30
+                            }
+
+                            // Header sits over the preview rather than above it,
+                            // so the 3D gets the full height of the tile.
+                            Column {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.margins: 20
+                                spacing: 2
+                                Text {
+                                    text: "Drive View"
+                                    color: "#ffffff"
+                                    font { pixelSize: 22; bold: true; family: "Arial" }
                                 }
                             }
 
+                            // ROS link indicator. Grey and still when nothing is
+                            // publishing, so a dead pipeline is visible from the
+                            // home screen instead of looking like an empty road.
+                            Row {
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.margins: 20
+                                spacing: 6
+
+                                Rectangle {
+                                    width: 8; height: 8; radius: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
+                                    SequentialAnimation on opacity {
+                                        running: drivePreview.hasSignal
+                                        loops: Animation.Infinite
+                                        NumberAnimation { to: 0.25; duration: 900; easing.type: Easing.InOutSine }
+                                        NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
+                                    }
+                                }
+                                Text {
+                                    text: drivePreview.hasSignal ? "LIVE" : "OFFLINE"
+                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
+                                    font { pixelSize: 11; bold: true; letterSpacing: 1.2; family: "Arial" }
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.top: parent.top; anchors.right: parent.right
+                                anchors.margins: 18
+                                width: 35; height: 35; radius: 8
+                                color: expandDrive.containsMouse ? Qt.rgba(1,1,1,0.15) : Qt.rgba(1,1,1,0.05)
+                                border.color: Qt.rgba(1,1,1,0.2)
+                                border.width: 1
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 20; height: 20
+                                    source: "qrc:/assets/icons/pagenavigation.png"
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                MouseArea {
+                                    id: expandDrive
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: launcherItem.openDriveView()
+                                }
+                            }
+
+                            // Below the overlays, so the badges and the expand
+                            // button get the clicks that land on them.
                             MouseArea {
                                 anchors.fill: parent; hoverEnabled: true
+                                z: -1
                                 onEntered: parent.hovered = true
                                 onExited:  parent.hovered = false
                                 onClicked: launcherItem.openDriveView()
@@ -1787,101 +1458,6 @@ ApplicationWindow {
                 visible: false
                 z: 100
                 onClosePopup: visible = false
-            }
-
-            // Climate Control page
-            Component {
-                id: climatePage
-                ClimateControlPage {
-                    id: climatePageInstance
-                    onGoBack: stackView.pop()
-
-                    // init from shared state 
-                    Component.onCompleted: {
-                        syncActive       = launcherItem.hvacSyncActive
-                        frontTempValue   = launcherItem.hvacTemp
-                        frontFanValue    = launcherItem.hvacFan
-                        frontModeIndex   = launcherItem.hvacMode
-                        frontPowerOn     = launcherItem.climatePower
-                        recircActive     = launcherItem.recircActive
-                        airQualityActive = launcherItem.airQualityActive
-                        autoActive       = launcherItem.autoActive
-
-                        if (syncActive) {
-                            backTempValue  = launcherItem.hvacTemp
-                            backFanValue   = launcherItem.hvacFan
-                            backModeIndex  = launcherItem.hvacMode
-                            backPowerOn    = launcherItem.climatePower
-                        } else {
-                            backTempValue  = launcherItem.hvacRearTemp
-                            backFanValue   = launcherItem.hvacRearFan
-                            backModeIndex  = launcherItem.hvacRearMode
-                            backPowerOn    = launcherItem.hvacRearPower
-                        }
-                    }
-
-                    // page → home tile (write-back) 
-                    onSyncActiveChanged: {
-                        launcherItem.hvacSyncActive = syncActive
-                        if (syncActive) {
-                            // when sync turned on, persist rear = front
-                            launcherItem.hvacRearTemp  = frontTempValue
-                            launcherItem.hvacRearFan   = frontFanValue
-                            launcherItem.hvacRearMode  = frontModeIndex
-                            launcherItem.hvacRearPower = frontPowerOn
-                        }
-                    }
-                    onFrontTempValueChanged:   launcherItem.hvacTemp        = frontTempValue
-                    onFrontFanValueChanged:    launcherItem.hvacFan         = frontFanValue
-                    onFrontModeIndexChanged:   launcherItem.hvacMode        = frontModeIndex
-                    onRecircActiveChanged:     launcherItem.recircActive    = recircActive
-                    onAirQualityActiveChanged: launcherItem.airQualityActive= airQualityActive
-                    onAutoActiveChanged:       launcherItem.autoActive      = autoActive
-                    onFrontPowerOnChanged:     launcherItem.climatePower    = frontPowerOn
-
-                    // rear only persists when sync is OFF
-                    onBackTempValueChanged:  { if (!syncActive) launcherItem.hvacRearTemp  = backTempValue }
-                    onBackFanValueChanged:   { if (!syncActive) launcherItem.hvacRearFan   = backFanValue }
-                    onBackModeIndexChanged:  { if (!syncActive) launcherItem.hvacRearMode  = backModeIndex }
-                    onBackPowerOnChanged:    { if (!syncActive) launcherItem.hvacRearPower = backPowerOn }
-
-                    // home tile → page (read) 
-                    Connections {
-                        target: launcherItem
-                        function onHvacSyncActiveChanged() {
-                            climatePageInstance.syncActive = launcherItem.hvacSyncActive
-                        }
-                        function onHvacTempChanged() {
-                            climatePageInstance.frontTempValue = launcherItem.hvacTemp
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backTempValue = launcherItem.hvacTemp
-                        }
-                        function onHvacFanChanged() {
-                            climatePageInstance.frontFanValue = launcherItem.hvacFan
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backFanValue = launcherItem.hvacFan
-                        }
-                        function onHvacModeChanged() {
-                            climatePageInstance.frontModeIndex = launcherItem.hvacMode
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backModeIndex = launcherItem.hvacMode
-                        }
-                        function onRecircActiveChanged() {
-                            climatePageInstance.recircActive = launcherItem.recircActive
-                        }
-                        function onAirQualityActiveChanged() {
-                            climatePageInstance.airQualityActive = launcherItem.airQualityActive
-                        }
-                        function onAutoActiveChanged() {
-                            climatePageInstance.autoActive = launcherItem.autoActive
-                        }
-                        function onClimatePowerChanged() {
-                            climatePageInstance.frontPowerOn = launcherItem.climatePower
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backPowerOn = launcherItem.climatePower
-                        }
-                    }
-                }
             }
         }
     }
