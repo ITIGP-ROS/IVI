@@ -58,6 +58,14 @@ option(AMBIENT_CAN_SIMULATE "Print ambient-light CAN frames instead of sending t
 target_compile_definitions(appIVI PRIVATE
     AMBIENT_CAN_SIMULATE=$<IF:$<BOOL:${AMBIENT_CAN_SIMULATE}>,1,0>)
 
+# pragma Singleton in the file is not enough on its own — qt_add_qml_module
+# only writes the "singleton" line into qmldir when this source property is
+# set. Without it the type still resolves, but as a plain component that every
+# caller instantiates its own copy of, which is exactly what the cache exists
+# to prevent, and the breakage is silent.
+set_source_files_properties(API/WeatherStore.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 qt_add_qml_module(appIVI
     URI IVI
     VERSION 1.0
@@ -67,6 +75,7 @@ qt_add_qml_module(appIVI
         pages/MediaPlayerPage.qml
         pages/SettingPage.qml
         API/WeatherAPI.qml
+        API/WeatherStore.qml
         API/RadioAPI.qml
         Components/WindowBar.qml
         Components/MediaCard.qml

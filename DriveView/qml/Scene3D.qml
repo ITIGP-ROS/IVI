@@ -152,11 +152,35 @@ Item {
                 castsShadows: false
                 receivesShadows: false
                 materials: PrincipledMaterial {
-                    // white base when the map is active: the gray texture
-                    // already carries the full tone range, avoid double-darkening.
-                    // Matte + no metal: flat, non-distracting detection look
-                    baseColor: root.useTeslaTexture ? Qt.rgba(1,1,1,1) : fsd.detection
+                    // White base when the map is active: the silver texture
+                    // already carries the full tone range, so no double-darkening.
+                    // Matte + no metal: flat, non-distracting detection look.
+                    //
+                    // Emissive is doing real work here, not decoration.
+                    // Detections arrive at whatever yaw the detector reports, and
+                    // the scene has a key light plus one weak fill but no ambient
+                    // and no light probe — the two lights sit at opposite yaws, so
+                    // a face pointing between them catches almost nothing. Left to
+                    // the lights alone a car turned away rendered its painted rear
+                    // panels at ~0.6x the brightness of an identical car facing the
+                    // camera, which is what made these read grey instead of silver.
+                    //
+                    // Feeding the same map back as emissive adds a constant floor
+                    // to every face regardless of which way it points. Pulling the
+                    // diffuse down to compensate was tried and made it worse — it
+                    // dimmed everything without closing the gap, because the gap is
+                    // additive, not proportional. Full diffuse plus a strong floor
+                    // is what works.
+                    //
+                    // Note this does NOT make the whole rear silver, and should not:
+                    // the rear window and glass roof are black in the texture by
+                    // design, and from a raised chase camera they are most of what
+                    // you see of a car driving away.
+                    baseColor: root.useTeslaTexture ? Qt.rgba(1, 1, 1, 1) : fsd.detection
                     baseColorMap: root.useTeslaTexture ? teslaTex : null
+                    emissiveMap: root.useTeslaTexture ? teslaTex : null
+                    emissiveFactor: root.useTeslaTexture ? Qt.vector3d(0.65, 0.65, 0.65)
+                                                         : Qt.vector3d(0, 0, 0)
                     metalness: 0.0; roughness: 0.9
                 }
             }
@@ -165,7 +189,7 @@ Item {
 
     Texture {
         id: teslaTex
-        source: "qrc:/models_3d/tesla_low_poly/maps/textureData_gray.png"
+        source: "qrc:/models_3d/tesla_low_poly/maps/textureData_silver.jpg"
         generateMipmaps: true
         mipFilter: Texture.Linear
     }

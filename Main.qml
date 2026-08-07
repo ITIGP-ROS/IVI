@@ -259,22 +259,33 @@ ApplicationWindow {
                       + (weatherIsLive ? "" : " · not live")
 
             Component.onCompleted: {
-                if (appSettings.lastTemp !== "") {
+                /*
+                 * Cache first, summary second. WeatherStore keeps the full last
+                 * reading on disk, so on a warm start the card is not just
+                 * seeded but genuinely current. appSettings.last* stays as the
+                 * fallback for a unit whose stored payload is missing or was
+                 * written by an older build that had no store.
+                 */
+                if (!applyCached(mainWindow.preferredCity)
+                        && appSettings.lastTemp !== "") {
                     currentTemp  = appSettings.lastTemp
                     currentEmoji = appSettings.lastEmoji
                     currentDesc  = appSettings.lastDesc
                 }
-                weatherAPI.fetch(mainWindow.preferredCity)
+                WeatherStore.request(mainWindow.preferredCity)
             }
 
             Connections {
                 target: mainWindow
                 function onPreferredCityChanged() {
                     // What is on screen belongs to the old city, so it is not
-                    // live any more until the new one comes back.
+                    // live any more until the new one comes back — unless the
+                    // new city is already sitting in the cache, in which case
+                    // there is nothing to wait for.
                     launcherItem.weatherIsLive    = false
                     launcherItem.resolvedLocation = ""
-                    weatherAPI.fetch(mainWindow.preferredCity)
+                    launcherItem.applyCached(mainWindow.preferredCity)
+                    WeatherStore.request(mainWindow.preferredCity)
                 }
             }
 
@@ -286,73 +297,96 @@ ApplicationWindow {
                 target: WifiManager
                 function onConnectedSsidChanged() {
                     if (WifiManager.connectedSsid !== "")
-                        weatherAPI.retryNow()
+                        WeatherStore.retryNow()
                 }
             }
 
-            WeatherAPI {
-                id: weatherAPI
+            /* Cached reading for a city onto the card. False if nothing cached. */
+            function applyCached(city) {
+                var e = WeatherStore.entryFor(city)
+                if (e === null)
+                    return false
+                applyWeather(e.current, e.location)
+                // A cached reading is real data, but it is not necessarily now.
+                // Only a reply that just landed earns the "live" badge.
+                weatherIsLive = WeatherStore.isFresh(city)
+                return true
+            }
 
-                // No handler for networkError: the card is already showing the
+            Connections {
+                target: WeatherStore
+
+                // No handler for failed(): the card is already showing the
                 // seeded reading with "not live" beside the city, which says
                 // more than "Offline" did, and WeatherAPI keeps retrying
                 // underneath. A wrong city name is different — that one never
                 // resolves itself, so it has to be said out loud.
-                onCityNotFound: function(city) {
+                function onCityNotFound(city) {
                     launcherItem.currentDesc = "City not found"
                 }
 
-                onWeatherReceived: function(current, daily, hourly, location) {
+                function onUpdated(city) {
+                    if (WeatherStore.normalise(city)
+                            !== WeatherStore.normalise(mainWindow.preferredCity))
+                        return
+                    var e = WeatherStore.entryFor(city)
+                    if (e === null)
+                        return
                     launcherItem.weatherIsLive = true
-                    launcherItem.currentTemp = Math.round(current.temperature_2m) + "°C"
-                    var code = current.weather_code
-                    var d    = current.is_day
+                    launcherItem.applyWeather(e.current, e.location)
 
-                    if (code === 0)
-                        launcherItem.currentDesc = d ? "Clear Sky" : "Clear Night"
-                    else if (code <= 2)
-                        launcherItem.currentDesc = "Partly Cloudy"
-                    else if (code === 3)
-                        launcherItem.currentDesc = "Overcast"
-                    else if (code <= 48)
-                        launcherItem.currentDesc = "Foggy"
-                    else if (code <= 55)
-                        launcherItem.currentDesc = "Drizzle"
-                    else if (code <= 65)
-                        launcherItem.currentDesc = "Rainy"
-                    else if (code <= 75)
-                        launcherItem.currentDesc = "Snowy"
-                    else if (code <= 82)
-                        launcherItem.currentDesc = "Rain Showers"
-                    else
-                        launcherItem.currentDesc = "Thunderstorm"
-
-                    if (code === 0)
-                        launcherItem.currentEmoji = d ? "☀️" : "🌙"
-                    else if (code <= 2)
-                        launcherItem.currentEmoji = d ? "🌤️" : "🌙"
-                    else if (code === 3)
-                        launcherItem.currentEmoji = "☁️"
-                    else if (code <= 48)
-                        launcherItem.currentEmoji = "🌫️"
-                    else if (code <= 57)
-                        launcherItem.currentEmoji = "🌦️"
-                    else if (code <= 65)
-                        launcherItem.currentEmoji = "🌧️"
-                    else if (code <= 75)
-                        launcherItem.currentEmoji = "❄️"
-                    else if (code <= 82)
-                        launcherItem.currentEmoji = "🌦️"
-                    else
-                        launcherItem.currentEmoji = "⛈️"
-                    
-                    launcherItem.resolvedLocation = location.name + ", " + location.country
-
-                    // Remember it for the next cold boot.
+                    // Tiny always-writable fallback, separate from the store's
+                    // full payload — see Component.onCompleted above.
                     appSettings.lastTemp  = launcherItem.currentTemp
                     appSettings.lastDesc  = launcherItem.currentDesc
                     appSettings.lastEmoji = launcherItem.currentEmoji
                 }
+            }
+
+            function applyWeather(current, location) {
+                launcherItem.currentTemp = Math.round(current.temperature_2m) + "°C"
+                var code = current.weather_code
+                var d    = current.is_day
+
+                if (code === 0)
+                    launcherItem.currentDesc = d ? "Clear Sky" : "Clear Night"
+                else if (code <= 2)
+                    launcherItem.currentDesc = "Partly Cloudy"
+                else if (code === 3)
+                    launcherItem.currentDesc = "Overcast"
+                else if (code <= 48)
+                    launcherItem.currentDesc = "Foggy"
+                else if (code <= 55)
+                    launcherItem.currentDesc = "Drizzle"
+                else if (code <= 65)
+                    launcherItem.currentDesc = "Rainy"
+                else if (code <= 75)
+                    launcherItem.currentDesc = "Snowy"
+                else if (code <= 82)
+                    launcherItem.currentDesc = "Rain Showers"
+                else
+                    launcherItem.currentDesc = "Thunderstorm"
+
+                if (code === 0)
+                    launcherItem.currentEmoji = d ? "☀️" : "🌙"
+                else if (code <= 2)
+                    launcherItem.currentEmoji = d ? "🌤️" : "🌙"
+                else if (code === 3)
+                    launcherItem.currentEmoji = "☁️"
+                else if (code <= 48)
+                    launcherItem.currentEmoji = "🌫️"
+                else if (code <= 57)
+                    launcherItem.currentEmoji = "🌦️"
+                else if (code <= 65)
+                    launcherItem.currentEmoji = "🌧️"
+                else if (code <= 75)
+                    launcherItem.currentEmoji = "❄️"
+                else if (code <= 82)
+                    launcherItem.currentEmoji = "🌦️"
+                else
+                    launcherItem.currentEmoji = "⛈️"
+                
+                launcherItem.resolvedLocation = location.name + ", " + location.country
             }
 
             // ============================================================
@@ -1474,11 +1508,12 @@ ApplicationWindow {
             preferredCity: mainWindow.preferredCity
             
             onPreferredCityChanged: {
+                // Assigning preferredCity is enough on its own now — the
+                // launcher watches it and the store dedupes — but the explicit
+                // request keeps the fetch starting from here rather than
+                // depending on notification order.
                 mainWindow.preferredCity = settingsInstance.preferredCity
-                var launcher = stackView.get(0)
-                if (launcher && launcher.weatherAPI) {
-                    launcher.weatherAPI.fetch(settingsInstance.preferredCity)
-                }
+                WeatherStore.request(settingsInstance.preferredCity)
             }
         }
     }

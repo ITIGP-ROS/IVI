@@ -149,9 +149,14 @@ Item {
                 castsShadows: false
                 receivesShadows: false
                 materials: PrincipledMaterial {
-                    // same gray texture as the full scene
-                    baseColor: Qt.rgba(1,1,1,1)
+                    // same silver texture as the full scene
+                    // Same split as the full scene: mostly emissive so a car
+                    // turned away from the key light still reads silver rather
+                    // than grey. See Scene3D.qml for the numbers.
+                    baseColor: Qt.rgba(1, 1, 1, 1)
                     baseColorMap: teslaTex
+                    emissiveMap: teslaTex
+                    emissiveFactor: Qt.vector3d(0.65, 0.65, 0.65)
                     metalness: 0.0; roughness: 0.9
                 }
             }
@@ -160,7 +165,7 @@ Item {
 
     Texture {
         id: teslaTex
-        source: "qrc:/models_3d/tesla_low_poly/maps/textureData_gray.png"
+        source: "qrc:/models_3d/tesla_low_poly/maps/textureData_silver.jpg"
         generateMipmaps: true
         mipFilter: Texture.Linear
     }
