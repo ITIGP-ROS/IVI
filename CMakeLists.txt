@@ -71,6 +71,7 @@ qt_add_qml_module(appIVI
         Components/WindowBar.qml
         Components/MediaCard.qml
         Components/CarInfoPopup.qml
+        Components/AmbientCard.qml
         Components/VirtualKeyboard.qml
         MediaPages/AudioPage.qml
         MediaPages/VideoPage.qml
@@ -81,6 +82,7 @@ qt_add_qml_module(appIVI
         DriveView/DriveViewPage.qml
         DriveView/qml/Scene3D.qml
         DriveView/qml/MiniScene3D.qml
+        DriveView/qml/GroundPlane.qml
         DriveView/qml/MapOSM.qml
         DriveView/models_3d/audi_low_poly/Audi_rs7_free__low_poly.qml
     RESOURCES

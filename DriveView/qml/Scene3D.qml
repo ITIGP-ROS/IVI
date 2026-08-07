@@ -26,15 +26,23 @@ Item {
     // ============================================================
     // THEME
     // ============================================================
+    // Dark, because the road is. The panels used to be dark ink on a light
+    // grey void; with a real road under them that reads as unlit text on unlit
+    // tarmac, so the whole HUD is inverted rather than fighting the ground for
+    // contrast.
     QtObject {
         id: fsd
-        property color bg:          "#e6eaeb"
+        // Shows through where the road has faded out — this is the colour the
+        // detection range ends in, so it wants to be near-black, not grey.
+        property color bg:          "#080a0d"
         property color ego:         "#0066cc"
         property color detection:   "#a6a6a6"
-        property color textPri:     "#1a1a1a"
-        property color textSec:     "#555555"
-        property color panelBg:     "#18000000"
-        property color panelBorder: "#25000000"
+        property color textPri:     "#f2f5f8"
+        property color textSec:     "#9aa4b0"
+        // Opaque enough to sit on top of texture. The old #18000000 was a
+        // 9%-black wash, which is invisible over the paving.
+        property color panelBg:     "#b4121619"
+        property color panelBorder: "#30ffffff"
     }
 
     // ---- Responsive scale helpers ----
@@ -63,6 +71,11 @@ Item {
             clearColor: fsd.bg
             antialiasingMode: SceneEnvironment.MSAA
             antialiasingQuality: SceneEnvironment.High
+            // MSAA fixes edges, not shading. The road's groove bevels are a
+            // normal map at heavy minification, and where the low fill light
+            // rakes across them the specular breaks into crawling glitter —
+            // this widens the highlight as the normals get noisier instead.
+            specularAAEnabled: true
         }
 
         DirectionalLight { eulerRotation.x: -60; eulerRotation.y: 30;   brightness: 1;   castsShadow: true }
@@ -99,6 +112,12 @@ Item {
                                        orbitOrigin.position = Qt.vector3d(orbitOrigin.position.x - dx*s, orbitOrigin.position.y, orbitOrigin.position.z - dy*s)
                                    }
                                }
+        }
+
+        // Road surface. Sits at the ego car's contact patch so detections,
+        // which arrive in metres off the same origin, land on it directly.
+        GroundPlane {
+            y: -100
         }
 
         Node {

@@ -409,9 +409,16 @@ ApplicationWindow {
                 anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
                 anchors.margins: 24; anchors.topMargin: 20
                 height: 56; radius: 16
-                color: Qt.rgba(1,1,1,0.04)
-                border.color: Qt.rgba(1,1,1,0.08)
+                // Lifts on hover. The bar is the only way into car info now
+                // that the About card is gone, and a header that reacts to
+                // nothing gives no hint that it can be pressed at all.
+                color: topBarClick.containsMouse ? Qt.rgba(1,1,1,0.08)
+                                                 : Qt.rgba(1,1,1,0.04)
+                border.color: topBarClick.containsMouse ? Qt.rgba(1,1,1,0.18)
+                                                        : Qt.rgba(1,1,1,0.08)
                 border.width: 1
+                Behavior on color        { ColorAnimation { duration: 200 } }
+                Behavior on border.color { ColorAnimation { duration: 200 } }
 
                 Column {
                     id: timeColumn
@@ -435,15 +442,23 @@ ApplicationWindow {
                     id: welcomeColumn
                     anchors.centerIn: parent;
                     spacing: 2
+
+                    // Same signal the window bar's WiFi icon watches, so the two
+                    // can never disagree about whether we are connected.
+                    readonly property bool online: WifiManager.connectedSsid !== ""
+
                     Text {
-                        text: "Welcome"
+                        text: "Drive Safe"
                         color: "#ffffff"
                         font { pixelSize: 20; bold: true; family: "Arial" }
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Text {
-                        text: "Drive Safe"
-                        color: "#8899bb"
+                        text: welcomeColumn.online ? "Online" : "Offline"
+                        // Coloured, not just worded: at 16 px the two read alike
+                        // at a glance, and this line is the only thing on the
+                        // home screen that says whether the car has a link.
+                        color: welcomeColumn.online ? "#3ad07a" : "#8899bb"
                         font { pixelSize: 16; family: "Arial" }
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
@@ -455,6 +470,15 @@ ApplicationWindow {
                     width: 50; height: 50; fillMode: Image.PreserveAspectFit
                     anchors.right: parent.right; anchors.rightMargin: 25
                     anchors.verticalCenter: parent.verticalCenter
+                }
+
+                // Last child, so it sits above the clock and the logo and gets
+                // the press wherever on the bar it lands.
+                MouseArea {
+                    id: topBarClick
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: launcherItem.openCarInfo()
                 }
             }
 
@@ -478,9 +502,14 @@ ApplicationWindow {
                 Column {
                     width: parent.width * 0.305; height: parent.height; spacing: 20
 
+                    // Fractions below are of this, not of `height`: the three
+                    // add up to 100% on their own, so they have to share what is
+                    // left after the gaps or the column overruns by 40 px.
+                    readonly property real slot: height - spacing * 2
+
                     // Weather
                     Item {
-                        width: parent.width; height: parent.height * 0.4
+                        width: parent.width; height: parent.slot * 0.32
                         Rectangle {
                             anchors.fill: parent; radius: 28
                             color: Qt.rgba(1,1,1,0.05)
@@ -511,32 +540,86 @@ ApplicationWindow {
                                 NumberAnimation { target: wFloat; property: "y"; to: 5;  duration: 4000; easing.type: Easing.InOutSine }
                             }
 
-                            Column {
-                                anchors.centerIn: parent; spacing: 10
-                                Text { 
-                                    text: launcherItem.currentEmoji
-                                    font { pixelSize: 64 }
+                            /*
+                             * Two columns either side of a hairline: icon and
+                             * conditions on the left, the reading on the right.
+                             *
+                             * Stacked in one column this card was tall and
+                             * narrow with dead space down both sides; split
+                             * across the width it fits fonts 15% larger in the
+                             * same 35% of the panel.
+                             *
+                             * Everything is a fraction of the card, not a fixed
+                             * pixel size — the panel proportions have moved
+                             * twice already and hard-coded sizes overflowed
+                             * onto the card below both times.
+                             */
+                            Item {
+                                id: weatherBody
+                                anchors.fill: parent
+                                anchors.margins: Math.round(parent.width * 0.07)
+
+                                Rectangle {
+                                    id: weatherSep
                                     anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 1
+                                    height: Math.round(parent.height * 0.62)
+                                    color: Qt.rgba(1,1,1,0.12)
                                 }
-                                Text { 
-                                    text: launcherItem.currentTemp
-                                    color: "#ffffff"
-                                    font { pixelSize: 42; bold: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter 
+
+                                // ---- left: icon + conditions
+                                Column {
+                                    anchors.right: weatherSep.left
+                                    anchors.rightMargin: Math.round(weatherBody.width * 0.04)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.round(weatherBody.width * 0.44)
+                                    spacing: Math.round(weatherBody.height * 0.04)
+
+                                    Text {
+                                        text: launcherItem.currentEmoji
+                                        font { pixelSize: Math.round(weatherBody.height * 0.5) }
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                    }
+                                    Text {
+                                        text: launcherItem.currentDesc
+                                        color: "#aaccff"
+                                        font { pixelSize: Math.max(14, Math.round(weatherBody.height * 0.12)); family: "Arial" }
+                                        // Elided, not wrapped: "Thunderstorm With
+                                        // Heavy Hail" is a real API string and a
+                                        // second line pushes the icon off the card.
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                    }
                                 }
-                                Text { 
-                                    text: launcherItem.currentDesc
-                                    color: "#aaccff"
-                                    font { pixelSize: 16; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Text { 
-                                    text: launcherItem.locationText
-                                    color: "#6677aa"
-                                    font { pixelSize: 13; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter 
+
+                                // ---- right: reading + place
+                                Column {
+                                    anchors.left: weatherSep.right
+                                    anchors.leftMargin: Math.round(weatherBody.width * 0.04)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.round(weatherBody.width * 0.44)
+                                    spacing: Math.round(weatherBody.height * 0.04)
+
+                                    Text {
+                                        text: launcherItem.currentTemp
+                                        color: "#ffffff"
+                                        font { pixelSize: Math.round(weatherBody.height * 0.35); bold: true; family: "Arial" }
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                    Text {
+                                        text: launcherItem.locationText
+                                        color: "#6677aa"
+                                        font { pixelSize: Math.max(12, Math.round(weatherBody.height * 0.15)); family: "Arial" }
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                    }
                                 }
                             }
+
 
                             MouseArea {
                                 anchors.fill: parent; hoverEnabled: true
@@ -547,9 +630,17 @@ ApplicationWindow {
                         }
                     }
 
+                    // Ambient — quick controls only; the picker, brightness and
+                    // zones stay in Settings.
+                    Item {
+                        width: parent.width; height: parent.slot * 0.48
+                        AmbientCard { anchors.fill: parent }
+                    }
+
+
                     // Voice Bar
                     Item {
-                        width: parent.width; height: parent.height * 0.2
+                        width: parent.width; height: parent.slot * 0.18
                         Rectangle {
                             anchors.fill: parent; radius: 24
                             color: Qt.rgba(1,1,1,0.05)
@@ -723,10 +814,96 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+
+                // ---- MIDDLE COLUMN (35%) — CENTERED ----
+                Column {
+                    width: parent.width * 0.35; height: parent.height; spacing: 20
+
+                    // Drive View (3D surroundings)
+                    // 0.73 leaves room for the voice bar below it while the
+                    // column still reaches the same depth as the two either
+                    // side of it.
+                    Item {
+                        width: parent.width; height: parent.height * 0.64
+                        Rectangle {
+                            anchors.fill: parent; radius: 28
+                            color: Qt.rgba(1,1,1,0.05)
+                            border.color: hovered ? Qt.rgba(0.4,0.7,1,0.5) : Qt.rgba(1,1,1,0.12)
+                            border.width: 1
+                            property bool hovered: false
+                            scale: hovered ? 1.02 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 200 } }
+                            Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                            Rectangle {
+                                anchors.fill: parent; radius: parent.radius
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
+                                    GradientStop { position: 0.5; color: "transparent" }
+                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
+                                }
+                            }
+                            Rectangle {
+                                anchors.fill: parent; radius: parent.radius
+                                color: "#4a9eff"; opacity: 0.06; z: -1; anchors.margins: -2
+                            }
+
+                            // Live preview of the same scene the full page
+                            // draws. Fills the card — it masks itself to the
+                            // card's corners, so it no longer needs an inset to
+                            // stay clear of them.
+                            MiniScene3D {
+                                id: drivePreview
+                                anchors.fill: parent
+                                // Follow the card, so the preview can never be
+                                // the one square-cornered tile on the launcher.
+                                cornerRadius: parent.radius
+                            }
+
+                            // ROS link indicator. Grey and still when nothing is
+                            // publishing, so a dead pipeline is visible from the
+                            // home screen instead of looking like an empty road.
+                            Row {
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.margins: 20
+                                spacing: 6
+
+                                Rectangle {
+                                    width: 8; height: 8; radius: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
+                                    SequentialAnimation on opacity {
+                                        running: drivePreview.hasSignal
+                                        loops: Animation.Infinite
+                                        NumberAnimation { to: 0.25; duration: 900; easing.type: Easing.InOutSine }
+                                        NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
+                                    }
+                                }
+                                Text {
+                                    text: drivePreview.hasSignal ? "LIVE" : "OFFLINE"
+                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
+                                    font { pixelSize: 11; bold: true; letterSpacing: 1.2; family: "Arial" }
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            // Below the overlays, so the badges and the expand
+                            // button get the clicks that land on them.
+                            MouseArea {
+                                anchors.fill: parent; hoverEnabled: true
+                                z: -1
+                                onEntered: parent.hovered = true
+                                onExited:  parent.hovered = false
+                                onClicked: launcherItem.openDriveView()
+                            }
+                        }
+                    }
 
                     // Volume Control — wired to shared C++ controller
                     Item {
-                        width: parent.width; height: parent.height * 0.3
+                        width: parent.width; height: parent.height * 0.305
                         Rectangle {
                             id: volumeCardRect
                             anchors.fill: parent; radius: 28
@@ -843,197 +1020,6 @@ ApplicationWindow {
 
                             HoverHandler {
                                 onHoveredChanged: parent.hovered = hovered
-                            }
-                        }
-                    }
-                }
-
-                // ---- MIDDLE COLUMN (35%) — CENTERED ----
-                Column {
-                    width: parent.width * 0.35; height: parent.height; spacing: 20
-
-                    // Mercedes Status
-                    Item {
-                        width: parent.width; height: parent.height * 0.3
-                        Rectangle {
-                            anchors.fill: parent; radius: 28
-                            color: Qt.rgba(1,1,1,0.05)
-                            border.color: hovered ? Qt.rgba(1,0.6,0.2,0.4) : Qt.rgba(1,1,1,0.12)
-                            border.width: 1
-                            property bool hovered: false
-                            scale: hovered ? 1.02 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 200 } }
-                            Behavior on border.color { ColorAnimation { duration: 200 } }
-
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
-                                    GradientStop { position: 0.5; color: "transparent" }
-                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
-                                }
-                            }
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                color: "#f79b55"; opacity: 0.06; z: -1; anchors.margins: -2
-                            }
-
-                            transform: Translate { id: cFloat }
-                            SequentialAnimation {
-                                loops: Animation.Infinite; running: true
-                                NumberAnimation { target: cFloat; property: "y"; to: 4;  duration: 5000; easing.type: Easing.InOutSine }
-                                NumberAnimation { target: cFloat; property: "y"; to: -4; duration: 5000; easing.type: Easing.InOutSine }
-                            }
-
-                            Column {
-                                anchors.centerIn: parent; spacing: 8
-                                Image {
-                                    source: "qrc:/assets/images/vpace.png"
-                                    width: 65; height: 65; fillMode: Image.PreserveAspectFit
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Text { 
-                                    text: "V-PACE"
-                                    color: "#e7f1ef"
-                                    font { pixelSize: 20; bold: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Text { 
-                                    text: "System Online"
-                                    color: "#21cfa4"
-                                    font { pixelSize: 13; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter 
-                                }
-                                // NEW: hint text
-                                Text {
-                                    text: "Tap for info"
-                                    color: Qt.rgba(1, 1, 1, 0.3)
-                                    font { pixelSize: 10; italic: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onEntered: parent.hovered = true
-                                onExited:  parent.hovered = false
-                                onClicked: launcherItem.openCarInfo()
-                            }
-                        }
-                    }
-
-                    // Drive View (3D surroundings)
-                    // 0.63 spans both tile slots that used to sit below the status
-                    // card, so this column still reaches the same depth as the two
-                    // either side of it.
-                    Item {
-                        width: parent.width; height: parent.height * 0.63
-                        Rectangle {
-                            anchors.fill: parent; radius: 28
-                            color: Qt.rgba(1,1,1,0.05)
-                            border.color: hovered ? Qt.rgba(0.4,0.7,1,0.5) : Qt.rgba(1,1,1,0.12)
-                            border.width: 1
-                            property bool hovered: false
-                            scale: hovered ? 1.02 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 200 } }
-                            Behavior on border.color { ColorAnimation { duration: 200 } }
-
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
-                                    GradientStop { position: 0.5; color: "transparent" }
-                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
-                                }
-                            }
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                color: "#4a9eff"; opacity: 0.06; z: -1; anchors.margins: -2
-                            }
-
-                            // Live preview of the same scene the full page
-                            // draws. Inset so the 3D never reaches the rounded
-                            // corners — cheaper than masking a View3D.
-                            MiniScene3D {
-                                id: drivePreview
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                anchors.topMargin: 58
-                                anchors.bottomMargin: 30
-                            }
-
-                            // Header sits over the preview rather than above it,
-                            // so the 3D gets the full height of the tile.
-                            Column {
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.margins: 20
-                                spacing: 2
-                                Text {
-                                    text: "Drive View"
-                                    color: "#ffffff"
-                                    font { pixelSize: 22; bold: true; family: "Arial" }
-                                }
-                            }
-
-                            // ROS link indicator. Grey and still when nothing is
-                            // publishing, so a dead pipeline is visible from the
-                            // home screen instead of looking like an empty road.
-                            Row {
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                anchors.margins: 20
-                                spacing: 6
-
-                                Rectangle {
-                                    width: 8; height: 8; radius: 4
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
-                                    SequentialAnimation on opacity {
-                                        running: drivePreview.hasSignal
-                                        loops: Animation.Infinite
-                                        NumberAnimation { to: 0.25; duration: 900; easing.type: Easing.InOutSine }
-                                        NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
-                                    }
-                                }
-                                Text {
-                                    text: drivePreview.hasSignal ? "LIVE" : "OFFLINE"
-                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
-                                    font { pixelSize: 11; bold: true; letterSpacing: 1.2; family: "Arial" }
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            Rectangle {
-                                anchors.top: parent.top; anchors.right: parent.right
-                                anchors.margins: 18
-                                width: 35; height: 35; radius: 8
-                                color: expandDrive.containsMouse ? Qt.rgba(1,1,1,0.15) : Qt.rgba(1,1,1,0.05)
-                                border.color: Qt.rgba(1,1,1,0.2)
-                                border.width: 1
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 20; height: 20
-                                    source: "qrc:/assets/icons/pagenavigation.png"
-                                    fillMode: Image.PreserveAspectFit
-                                }
-                                MouseArea {
-                                    id: expandDrive
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: launcherItem.openDriveView()
-                                }
-                            }
-
-                            // Below the overlays, so the badges and the expand
-                            // button get the clicks that land on them.
-                            MouseArea {
-                                anchors.fill: parent; hoverEnabled: true
-                                z: -1
-                                onEntered: parent.hovered = true
-                                onExited:  parent.hovered = false
-                                onClicked: launcherItem.openDriveView()
                             }
                         }
                     }

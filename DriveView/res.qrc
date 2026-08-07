@@ -10,6 +10,10 @@
         <file>models_3d/tesla_low_poly/maps/textureData_gray.png</file>
         <file>models_3d/tesla_low_poly/meshes/object_0_mesh.mesh</file>
         <file>img/maparrow.png</file>
+        <file>textures/road_basecolor.png</file>
+        <file>textures/road_normal.png</file>
+        <file>textures/road_roughness.png</file>
+        <file>textures/range_fade.png</file>
     </qresource>
     <qresource prefix="/audi">
         <file>models_3d/audi_low_poly/maps/textureData.png</file>

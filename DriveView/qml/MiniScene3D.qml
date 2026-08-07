@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick3D
+import QtQuick.Effects
 
 import "../models_3d/audi_low_poly"
 
@@ -24,9 +25,41 @@ Item {
 
     property color accent: "#4a9eff"
 
+    // Corner radius of the card this sits in. A View3D renders a plain
+    // rectangle, so without masking the road spills out past the card's rounded
+    // corners and the tile is the only square one on the launcher.
+    property real cornerRadius: 28
+
+    // Drawn in QML rather than loaded as an image on purpose: a bitmap mask gets
+    // stretched to the item, so a round corner in the file comes out as an
+    // ellipse on a card that is not square. A Rectangle's radius stays a radius.
+    Item {
+        id: edgeMask
+        anchors.fill: parent
+        visible: false
+        layer.enabled: true
+
+        Rectangle {
+            anchors.fill: parent
+            radius: root.cornerRadius
+            color: "white"
+        }
+    }
+
     View3D {
         id: view
         anchors.fill: parent
+
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskSource: edgeMask
+            // Cuts at the halfway point of the mask's own antialiased edge, so
+            // the corners come out as crisp as the cards either side rather
+            // than fading into them.
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 0.1
+        }
 
         environment: SceneEnvironment {
             // Transparent so the tile's own glass gradient shows through and
@@ -36,6 +69,9 @@ Item {
             // Medium, not High: this renders continuously behind the whole
             // launcher, so it gets the cheaper setting of the two.
             antialiasingQuality: SceneEnvironment.Medium
+            // See Scene3D — kills the specular glitter on the road's grooves,
+            // which MSAA cannot touch because it is a shading artefact.
+            specularAAEnabled: true
         }
 
         DirectionalLight { eulerRotation.x: -60; eulerRotation.y: 30;   brightness: 1.1 }
@@ -43,8 +79,13 @@ Item {
 
         // Fixed chase view — same angle the full page opens on, just pulled
         // back further to suit the tile.
+        //
+        // The pivot sits 3 m ahead of the car rather than on it, which drops
+        // the car below centre and hands the extra frame to the road in front.
+        // What is ahead matters more than what is behind.
         Node {
             id: orbitOrigin
+            position: Qt.vector3d(0, 0, -300)
             eulerRotation: Qt.vector3d(-42, 0, 0)
 
             PerspectiveCamera {
@@ -54,6 +95,24 @@ Item {
                 clipNear: 1
                 clipFar: 100000
             }
+        }
+
+        // Same road as the full page, but much wider than it.
+        //
+        // The card wants to be full of road, not to hold a small pool of it, so
+        // the range fade is pushed out past the frame and only shows up as a
+        // gentle dimming towards the far end. The border feather is the mask's
+        // job instead — a radial world-space fade cannot square up with a
+        // rectangular card anyway, because the top of the frame is 35 m away
+        // while the bottom is 6 m.
+        //
+        // Offset forward for the same reason as the pivot: it puts the centre
+        // of the fade ahead of the car, so the road stays strong further up the
+        // frame and dims off behind.
+        GroundPlane {
+            y: -100
+            z: -1200
+            size: 12000
         }
 
         Node {
