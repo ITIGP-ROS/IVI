@@ -54,6 +54,9 @@ void RosNode::initialize(const QString& topic,const QString& topic_detect , cons
                          int maxPoints) {
     maxPoints_ = maxPoints;
 
+    // 60 Hz interpolation between detection messages
+    detectionSmoother_.setModel(&detectionModel_);
+
     qDebug() << "[RosNode] Initializing with topic:" << topic;
 
     node_ = std::make_shared<rclcpp::Node>("qt_pcl_visualizer");
@@ -255,6 +258,7 @@ void RosNode::objectDetectionCallback(const object_detection_msgs::msg::Object3d
 
         d.label = obj.label;
         d.confidence = obj.confidence_score;
+        d.trackId = obj.track_id;
 
         QVector3D corners[8];
 
@@ -298,7 +302,7 @@ void RosNode::objectDetectionCallback(const object_detection_msgs::msg::Object3d
         detections.append(d);
     }
 
-    detectionModel_.setDetections(
+    detectionSmoother_.update(
         detections);
 
 }

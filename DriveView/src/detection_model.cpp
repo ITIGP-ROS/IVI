@@ -11,12 +11,19 @@ DetectionModel::DetectionModel(QObject* parent)
 void DetectionModel::setDetections(
     const QList<DetectionData>& detections)
 {
-    beginResetModel();
+    if (detections_.size() == detections.size()) {
+        // same object count: update in place so QML delegates are not
+        // recreated; only the instancing tables are rebuilt.
+        detections_ = detections;
+        if (!detections_.isEmpty())
+            emit dataChanged(index(0), index(detections_.size() - 1));
+    } else {
+        beginResetModel();
+        detections_ = detections;
+        endResetModel();
+    }
 
-    detections_ = detections;
     m_detectCount = detections_.size();
-
-    endResetModel();
 
     emit detectCountChanged();
 }

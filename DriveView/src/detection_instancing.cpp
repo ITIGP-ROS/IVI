@@ -30,10 +30,14 @@ void DetectionInstancing::setModel(DetectionModel *model)
         return;
     model_ = model;
     emit modelChanged();
-    if (model_)
+    if (model_) {
         connect(model_, &QAbstractItemModel::modelReset,
                 this, &DetectionInstancing::rebuild,
                 Qt::QueuedConnection);
+        connect(model_, &QAbstractItemModel::dataChanged,
+                this, &DetectionInstancing::rebuild,
+                Qt::QueuedConnection);
+    }
     rebuild();
 }
 

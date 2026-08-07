@@ -11,10 +11,11 @@
         <file>models_3d/tesla_low_poly/maps/textureData_silver.jpg</file>
         <file>models_3d/tesla_low_poly/meshes/object_0_mesh.mesh</file>
         <file>img/maparrow.png</file>
-        <file>textures/road_basecolor.png</file>
-        <file>textures/road_normal.png</file>
-        <file>textures/road_roughness.png</file>
-        <file>textures/range_fade.png</file>
+        <file>img/Road_DiagonalLightBrushing_color.png</file>
+        <file>img/Road_DiagonalLightBrushing_normal.png</file>
+        <file>img/Road_DiagonalLightBrushing_occlusionRoughnessMetallic.png</file>
+        <file>hdri/ferndale_studio_12_1k.hdr</file>
+        <file>hdri/wide_street_02_1k.hdr</file>
     </qresource>
     <qresource prefix="/audi">
         <file>models_3d/audi_low_poly/maps/textureData.png</file>

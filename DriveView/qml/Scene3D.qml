@@ -21,6 +21,21 @@ Item {
     // render the Tesla with its baked texture instead of the flat detection tint
     property bool useTeslaTexture: true
 
+    // environment: road style (false = realistic asphalt, true = clean flat)
+    property bool asphaltRoad: false
+    // HDRI testing: -1 = flat background, 0..1 = cycle through the files
+    property int hdriIndex: -1
+    property real probeExposure: 1.0
+    // master look: light = asphalt road + wide-street HDRI (0.3) + white fog,
+    // dark = neon road + ferndale HDRI (0.1) + near-black fog. The preset
+    // writes the individual properties below, so the standalone toggles
+    // (road style, HDRI cycle, exposure slider) still work as overrides.
+    property bool darkTheme: true
+    property var hdriList: [
+        "qrc:/hdri/ferndale_studio_12_1k.hdr",
+        "qrc:/hdri/wide_street_02_1k.hdr"
+    ]
+
     anchors.fill: parent
 
     // ============================================================
@@ -67,19 +82,60 @@ Item {
         Component.onCompleted: view.renderStats.extendedDataCollectionEnabled = true
 
         environment: SceneEnvironment {
+            id: sceneEnv
             backgroundMode: SceneEnvironment.Color
-            clearColor: fsd.bg
+            clearColor: root.darkTheme ? "#0d0d12" : fsd.bg
             antialiasingMode: SceneEnvironment.MSAA
             antialiasingQuality: SceneEnvironment.High
-            // MSAA fixes edges, not shading. The road's groove bevels are a
-            // normal map at heavy minification, and where the low fill light
-            // rakes across them the specular breaks into crawling glitter —
-            // this widens the highlight as the normals get noisier instead.
-            specularAAEnabled: true
+            // HDRI probe: one Texture per file, both loaded once at startup;
+            // a theme switch only re-points the lightProbe reference. Loading
+            // the .hdr from the compressed qrc on every toggle was the freeze
+            // (decompress + HDR parse + env mipmaps on the GUI thread).
+            lightProbe: root.hdriIndex == 0 ? ferndaleTex
+                      : root.hdriIndex == 1 ? wideTex
+                      : null
+            probeExposure: root.probeExposure
+
+            // distance haze: the far end of the city (and everything else
+            // past ~40 m) melts into the light background. This is world-space
+            // (per-fragment), so it is smooth and seamless — no per-row
+            // opacity bands, and it hides the city's loop-wrap pop beyond
+            // the road end.
+            fog: Fog {
+                enabled: true
+                // IVI keeps the dark backdrop in both themes (dark HUD), so
+                // the light-theme fog follows the background instead of the
+                // white dev fog, which read as a glowing white wall over the
+                // near-black clear color.
+                color: root.darkTheme ? "#101015" : "#0d0d12"
+                depthEnabled: true
+                depthNear: 4000
+                depthFar: 6800
+            }
+
+            Texture {
+                id: ferndaleTex
+                source: "qrc:/hdri/ferndale_studio_12_1k.hdr"
+                mappingMode: Texture.Environment
+                generateMipmaps: true
+                mipFilter: Texture.Linear
+            }
+            Texture {
+                id: wideTex
+                source: "qrc:/hdri/wide_street_02_1k.hdr"
+                mappingMode: Texture.Environment
+                generateMipmaps: true
+                mipFilter: Texture.Linear
+            }
         }
 
-        DirectionalLight { eulerRotation.x: -60; eulerRotation.y: 30;   brightness: 1;   castsShadow: true }
-        DirectionalLight { eulerRotation.x: -20; eulerRotation.y: -150; color: "#7799ff"; brightness: 0.4  }
+        DirectionalLight { eulerRotation.x: -60; eulerRotation.y: 30;   brightness: 1.15; castsShadow: true }
+        DirectionalLight { eulerRotation.x: -20; eulerRotation.y: -150; color: "#7799ff"; brightness: 0.5 }
+
+        Environment3D {
+            id: environment3D
+            asphalt: root.asphaltRoad
+        }
 
         Node {
             id: orbitOrigin
@@ -114,20 +170,15 @@ Item {
                                }
         }
 
-        // Road surface. Sits at the ego car's contact patch so detections,
-        // which arrive in metres off the same origin, land on it directly.
-        GroundPlane {
-            y: -100
-        }
-
         Node {
             id: egoVehicle
-            position: Qt.vector3d(0, -100, 0)
+            // road top sits at floorY+0.5 = -141.5; tune ± if the mesh origin is centered
+            position: Qt.vector3d(0, -141, 0)
             Audi_rs7_free__low_poly {
                 id: egoCar
                 scale: Qt.vector3d(137, 250, 137)
                 eulerRotation: Qt.vector3d(0, -90, 0)
-                carColor: fsd.ego; carMetalness: 0.3; carRoughness: 0.1
+                carColor: fsd.ego; carMetalness: 0.6; carRoughness: 0.1
             }
         }
 
@@ -137,7 +188,7 @@ Item {
                 instancing: planeInstancing
                 castsShadows: false
                 receivesShadows: false
-                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5 }
+                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.8; roughness: 0.5 }
             }
             Model {
                 source: "#Cube"
@@ -159,11 +210,11 @@ Item {
                     // Emissive is doing real work here, not decoration.
                     // Detections arrive at whatever yaw the detector reports, and
                     // the scene has a key light plus one weak fill but no ambient
-                    // and no light probe — the two lights sit at opposite yaws, so
-                    // a face pointing between them catches almost nothing. Left to
-                    // the lights alone a car turned away rendered its painted rear
-                    // panels at ~0.6x the brightness of an identical car facing the
-                    // camera, which is what made these read grey instead of silver.
+                    // — the two lights sit at opposite yaws, so a face pointing
+                    // between them catches almost nothing. Left to the lights
+                    // alone a car turned away rendered its painted rear panels at
+                    // ~0.6x the brightness of an identical car facing the camera,
+                    // which is what made these read grey instead of silver.
                     //
                     // Feeding the same map back as emissive adds a constant floor
                     // to every face regardless of which way it points. Pulling the
@@ -545,6 +596,151 @@ Item {
     }
 
     Rectangle {
+        id: hdriCtrl
+        anchors.right: hdriBtn.right
+        anchors.bottom: hdriBtn.top
+        anchors.bottomMargin: _m * 0.4
+        width: 230
+        height: 74
+        radius: _r
+        color: fsd.panelBg
+        border.color: fsd.panelBorder
+        border.width: 1
+        opacity: 0.95
+        visible: hdriIndex >= 0
+
+        Text {
+            id: expLabel
+            anchors { top: parent.top; left: parent.left; right: parent.right; margins: 10 }
+            text: "HDRI Intensity: " + probeExposure.toFixed(2)
+            color: fsd.textSec
+            font.pixelSize: _fSm
+            font.family: "monospace"
+            font.letterSpacing: 1
+        }
+        Slider {
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 10 }
+            from: -1.0
+            to: 3.0
+            value: 1.0
+            onValueChanged: probeExposure = value
+        }
+    }
+
+    Rectangle {
+        id: themeBtn
+        anchors.right: hdriBtn.left
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: _m * 0.55
+        anchors.bottomMargin: _m
+        width: _btnW
+        height: _btnH
+        radius: _r
+        color: darkTheme ? Qt.rgba(0.05, 0.3, 0.55, 0.9) : fsd.panelBg
+        border.color: fsd.panelBorder
+        border.width: 1
+        opacity: 0.95
+
+        Text {
+            anchors.centerIn: parent
+            text: darkTheme ? "DARK THEME" : "LIGHT THEME"
+            color: fsd.textPri
+            font.pixelSize: _fSm
+            font.letterSpacing: 1.2
+            font.family: "monospace"
+            width: parent.width * 0.9
+            height: implicitHeight
+            fontSizeMode: Text.HorizontalFit
+            minimumPixelSize: 8
+            horizontalAlignment: Text.AlignHCenter
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: parent.opacity = 1.0
+            onExited: parent.opacity = 0.95
+            onClicked: darkTheme = !darkTheme
+        }
+    }
+
+    Rectangle {
+        id: hdriBtn
+        anchors.right: roadStyleBtn.left
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: _m * 0.55
+        anchors.bottomMargin: _m
+        width: _btnW
+        height: _btnH
+        radius: _r
+        color: hdriIndex >= 0 ? Qt.rgba(0.05, 0.3, 0.55, 0.9) : fsd.panelBg
+        border.color: fsd.panelBorder
+        border.width: 1
+        opacity: 0.95
+
+        Text {
+            anchors.centerIn: parent
+            text: hdriIndex >= 0 ? "HDRI: " + hdriList[hdriIndex].split("/").pop().split("_")[0] : "HDRI OFF"
+            color: fsd.textPri
+            font.pixelSize: _fSm
+            font.letterSpacing: 1.2
+            font.family: "monospace"
+            width: parent.width * 0.9
+            height: implicitHeight
+            fontSizeMode: Text.HorizontalFit
+            minimumPixelSize: 8
+            horizontalAlignment: Text.AlignHCenter
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: parent.opacity = 1.0
+            onExited: parent.opacity = 0.95
+            onClicked: hdriIndex = (hdriIndex + 2) % (hdriList.length + 1) - 1
+        }
+    }
+
+
+    Rectangle {
+        id: roadStyleBtn
+        anchors.right: resetViewBtn.left
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: _m * 0.55
+        anchors.bottomMargin: _m
+        width: _btnW
+        height: _btnH
+        radius: _r
+        color: fsd.panelBg
+        border.color: fsd.panelBorder
+        border.width: 1
+        opacity: 0.95
+
+        Text {
+            anchors.centerIn: parent
+            text: asphaltRoad ? "ASPHALT ROAD" : "NEON ROAD"
+            color: fsd.textPri
+            font.pixelSize: _fSm
+            font.letterSpacing: 1.2
+            font.family: "monospace"
+            width: parent.width * 0.9
+            height: implicitHeight
+            fontSizeMode: Text.HorizontalFit
+            minimumPixelSize: 8
+            horizontalAlignment: Text.AlignHCenter
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: parent.opacity = 1.0
+            onExited: parent.opacity = 0.95
+            onClicked: asphaltRoad = !asphaltRoad
+        }
+    }
+
+    Rectangle {
+        id: resetViewBtn
         anchors.right: viewToggle.left
         anchors.bottom: parent.bottom
         anchors.rightMargin: _m * 0.55
@@ -836,5 +1032,17 @@ Item {
             applyChaseView()
     }
 
-    Component.onCompleted: applyChaseView()
+    // theme preset: writes the individual environment toggles, so the
+    // standalone buttons/slider can still override after the theme is set
+    function applyTheme() {
+        asphaltRoad = !darkTheme        // light = asphalt, dark = neon
+        hdriIndex = darkTheme ? 0 : 1   // ferndale / wide_street
+        probeExposure = darkTheme ? 0.1 : 0.3
+    }
+    onDarkThemeChanged: applyTheme()
+
+    Component.onCompleted: {
+        applyChaseView()
+        applyTheme()
+    }
 }

@@ -34,11 +34,13 @@ qt_add_executable(appIVI
     DriveView/src/ros_node.cpp
     DriveView/src/detection_model.cpp
     DriveView/src/detection_instancing.cpp
+    DriveView/src/detection_smoother.cpp
     DriveView/src/car_info.cpp
     DriveView/src/box_transform.cpp
     DriveView/inc/ros_node.h
     DriveView/inc/detection_model.h
     DriveView/inc/detection_instancing.h
+    DriveView/inc/detection_smoother.h
     DriveView/inc/car_info.h
     DriveView/inc/box_transform.h
     DriveView/inc/detection_data.h
@@ -91,7 +93,7 @@ qt_add_qml_module(appIVI
         DriveView/DriveViewPage.qml
         DriveView/qml/Scene3D.qml
         DriveView/qml/MiniScene3D.qml
-        DriveView/qml/GroundPlane.qml
+        DriveView/qml/Environment3D.qml
         DriveView/qml/MapOSM.qml
         DriveView/models_3d/audi_low_poly/Audi_rs7_free__low_poly.qml
     RESOURCES

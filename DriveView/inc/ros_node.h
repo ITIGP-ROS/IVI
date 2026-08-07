@@ -21,6 +21,7 @@
 
 
 #include "detection_model.h"
+#include "detection_smoother.h"
 #include "car_info.h"
 
 
@@ -96,6 +97,7 @@ private:
     // detected objects subscription & model
     rclcpp::Subscription<object_detection_msgs::msg::Object3dArray>::SharedPtr detectSub_;
     DetectionModel detectionModel_;
+    DetectionSmoother detectionSmoother_;
 
     // car info subscription (velocity and IMU)
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr velSub_;

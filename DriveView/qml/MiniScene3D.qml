@@ -69,9 +69,13 @@ Item {
             // Medium, not High: this renders continuously behind the whole
             // launcher, so it gets the cheaper setting of the two.
             antialiasingQuality: SceneEnvironment.Medium
-            // See Scene3D — kills the specular glitter on the road's grooves,
-            // which MSAA cannot touch because it is a shading artefact.
-            specularAAEnabled: true
+            // MSAA fixes edges, not shading. The road's groove bevels are a
+            // normal map at heavy minification, and where the low fill light
+            // rakes across them the specular breaks into crawling glitter —
+            // this widens the highlight as the normals get noisier instead.
+            // NOTE: was specularAAEnabled: true — set back to true if the
+            // tile's specular glitter returns (dev-parity change).
+            specularAAEnabled: false
         }
 
         DirectionalLight { eulerRotation.x: -60; eulerRotation.y: 30;   brightness: 1.1 }
@@ -97,26 +101,17 @@ Item {
             }
         }
 
-        // Same road as the full page, but much wider than it.
-        //
-        // The card wants to be full of road, not to hold a small pool of it, so
-        // the range fade is pushed out past the frame and only shows up as a
-        // gentle dimming towards the far end. The border feather is the mask's
-        // job instead — a radial world-space fade cannot square up with a
-        // rectangular card anyway, because the top of the frame is 35 m away
-        // while the bottom is 6 m.
-        //
-        // Offset forward for the same reason as the pivot: it puts the centre
-        // of the fade ahead of the car, so the road stays strong further up the
-        // frame and dims off behind.
-        GroundPlane {
-            y: -100
-            z: -1200
-            size: 12000
+        // Same road as the full page — neon style, no ground strip and no
+        // city, so the tile keeps its transparent glass background. Road
+        // surface sits at floorY+0.5 = -141.5, so the ego car moves down
+        // with it (detections land on the road directly).
+        Environment3D {
+            showGround: false
+            showCity: false
         }
 
         Node {
-            position: Qt.vector3d(0, -100, 0)
+            position: Qt.vector3d(0, -141, 0)
             Audi_rs7_free__low_poly {
                 scale: Qt.vector3d(137, 250, 137)
                 eulerRotation: Qt.vector3d(0, -90, 0)

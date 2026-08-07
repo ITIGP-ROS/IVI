@@ -16,6 +16,9 @@ struct DetectionData
 
     int label;
     float confidence;
+
+    // stable track ID from the detector-side tracker (-1 if untracked)
+    int trackId = -1;
 };
 
 #endif // DETECTION_DATA_H
