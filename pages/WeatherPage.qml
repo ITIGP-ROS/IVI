@@ -715,7 +715,7 @@ Item {
             if (WeatherStore.normalise(city) === WeatherStore.normalise(root.shownCity))
                 root.showCached(city)
         }
-        function onCityNotFound(city)   { cityInputHidden.text = ""; cityPlaceholder.visible = true }
+        function onNotFound(city)       { cityInputHidden.text = ""; cityPlaceholder.visible = true }
         function onFailed(city, reason) { cityInputHidden.text = ""; cityPlaceholder.visible = true }
     }
 

@@ -186,14 +186,19 @@ Item {
                 instancing: planeInstancing
                 castsShadows: false
                 receivesShadows: false
-                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.8; roughness: 0.5 }
+                // Blend so the spawn/despawn fade in DetectionSmoother is
+                // visible at all — it arrives as per-instance alpha, and an
+                // Opaque material simply discards it.
+                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.8; roughness: 0.5
+                                                alphaMode: PrincipledMaterial.Blend }
             }
             Model {
                 source: "#Cube"
                 instancing: cubeInstancing
                 castsShadows: false
                 receivesShadows: false
-                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5 }
+                materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5
+                                                alphaMode: PrincipledMaterial.Blend }
             }
             Model {
                 source: "qrc:/models_3d/tesla_low_poly/meshes/object_0_mesh.mesh"
@@ -231,6 +236,10 @@ Item {
                     emissiveFactor: root.useTeslaTexture ? Qt.vector3d(0.65, 0.65, 0.65)
                                                          : Qt.vector3d(0, 0, 0)
                     metalness: 0.0; roughness: 0.9
+                    // Carries the per-instance spawn/despawn fade. The RGB of
+                    // the instance colour is left at white upstream, so this
+                    // does not tint the silver texture.
+                    alphaMode: PrincipledMaterial.Blend
                 }
             }
         }

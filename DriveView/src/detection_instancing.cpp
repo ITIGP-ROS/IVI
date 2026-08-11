@@ -93,7 +93,14 @@ void DetectionInstancing::rebuild()
                 rotation = d.rotation * QQuaternion::fromEulerAngles(-90, yaw, 0);
             }
 
-            const QColor color = useInstanceColor_ ? d.color : Qt::white;
+            // Alpha always rides through: it carries the spawn/despawn fade
+            // from DetectionSmoother and is independent of whether the class
+            // tint is wanted. RGB stays opt-in because the detection colours
+            // are raw primaries (red/green/blue) chosen as data, not as a
+            // look — applying them would repaint the silver car pure blue and
+            // the pedestrian pure red.
+            QColor color = useInstanceColor_ ? d.color : QColor(Qt::white);
+            color.setAlpha(d.color.alpha());
             const InstanceTableEntry entry =
                 calculateTableEntryFromQuaternion(d.position, scale, rotation, color);
 

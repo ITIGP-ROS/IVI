@@ -53,6 +53,12 @@ private:
         QVector3D targetPrevPos;      // previous message position
         qint64 targetPrevTimeMs = 0;  // wall time of previous message
         qint64 lastTickMs = 0;        // wall time of previous 60 Hz tick
+
+        // spawn/despawn opacity, delivered to the renderer as the alpha of
+        // DetectionData::color. Tracks used to be erased the instant they
+        // went missing, so objects blinked out of existence between frames.
+        float alpha = 0.0f;           // 0 on creation: everything fades in
+        bool fading = false;          // unseen; ramping out before deletion
     };
 
     void tick();

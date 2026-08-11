@@ -25,6 +25,18 @@ constexpr float kMaxSpeedMs = 40.0f;
 // traffic. Detector yaw has +-pi ambiguity on symmetric boxes, so flip the
 // target to the near side instead of letting slerp spin the mesh 180 deg.
 constexpr float kFlipThresholdDeg = 120.0f;
+
+// spawn/despawn opacity ramp. ~350 ms to settle either way: long enough to
+// register as a fade, short enough that a car leaving the field of view is
+// gone before you look for it.
+constexpr float kTauAlphaMs = 90.0f;
+
+// below this a fading track is invisible, so stop paying to transform it
+constexpr float kAlphaGone = 0.02f;
+
+// Base for synthetic keys given to untracked detections. Real track ids from
+// AB3DMOT are non-negative, so nothing can collide with these.
+constexpr int kUntrackedKeyBase = -1000;
 }
 
 DetectionSmoother::DetectionSmoother(QObject* parent)
@@ -52,8 +64,24 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
 
     QSet<int> seen;
 
+    // Untracked detections all arrive carrying the same trackId (-1 by the
+    // message's own definition). Keying the hash on that value collapsed
+    // every one of them into a single Track, so N untracked objects rendered
+    // as exactly 1 — and the same would happen to the whole scene if the
+    // tracker were ever disabled and left track_id at its default. They carry
+    // no identity to preserve and pass straight through without smoothing, so
+    // a per-message synthetic key is all they need to stay distinct.
+    int untrackedSeq = 0;
+
     for (const DetectionData& d : raw) {
-        Track& track = tracks_[d.trackId];
+        const int key = (d.trackId < 0)
+                            ? (kUntrackedKeyBase - untrackedSeq++)
+                            : d.trackId;
+
+        Track& track = tracks_[key];
+        // A track that went missing and came back keeps its identity and
+        // simply stops fading out.
+        track.fading = false;
         track.trackId = d.trackId;
         track.color = d.color;
         track.label = d.label;
@@ -62,6 +90,9 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
         if (d.trackId < 0) {
             // untracked stream: pass through instantly, no interpolation
             track.untracked = true;
+            // tick() skips untracked tracks entirely, so their opacity would
+            // never ramp; they are simply always solid.
+            track.alpha = 1.0f;
             track.currentPos = d.position;
             track.targetPos = d.position;
             track.currentScale = d.scale;
@@ -139,16 +170,27 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
             track.targetRot = targetRot;
         }
 
-        seen.insert(d.trackId);
+        seen.insert(key);
     }
 
-    // drop tracks that disappeared (the detector-side tracker already holds
-    // objects through missed frames, so this only fires on real deletion)
+    // Tracks that disappeared (the detector-side tracker already holds objects
+    // through missed frames, so this only fires on real deletion).
+    //
+    // Tracked objects are marked for a fade rather than erased — deleting them
+    // here made them blink out between two frames, which reads as a glitch
+    // rather than as an object leaving. tick() removes them once invisible.
+    // Untracked ones go immediately: their synthetic key is regenerated every
+    // message, so a "missing" one is an artefact of renumbering, not an object
+    // that actually left, and fading it would flicker.
     for (auto it = tracks_.begin(); it != tracks_.end();) {
-        if (!seen.contains(it.key()))
-            it = tracks_.erase(it);
-        else
+        if (seen.contains(it.key())) {
             ++it;
+        } else if (it->untracked) {
+            it = tracks_.erase(it);
+        } else {
+            it->fading = true;
+            ++it;
+        }
     }
 }
 
@@ -184,6 +226,23 @@ void DetectionSmoother::tick()
         track.currentPos += (projected - track.currentPos) * alpha;
         track.currentScale += (track.targetScale - track.currentScale) * alpha;
         track.currentRot = QQuaternion::slerp(track.currentRot, track.targetRot, alpha);
+
+        // Opacity ramp. A fading track keeps being smoothed above, so it
+        // carries on drifting along its last known velocity while it goes —
+        // an object that coasts out is far less jarring than one that stops
+        // dead and then dissolves.
+        const float aFade = 1.0f - qExp(-float(dtMs) / kTauAlphaMs);
+        const float targetAlpha = track.fading ? 0.0f : 1.0f;
+        track.alpha += (targetAlpha - track.alpha) * aFade;
+    }
+
+    // Reap tracks that have finished fading out. An exponential never quite
+    // reaches zero, so the threshold is what actually ends them.
+    for (auto it = tracks_.begin(); it != tracks_.end();) {
+        if (it->fading && it->alpha < kAlphaGone)
+            it = tracks_.erase(it);
+        else
+            ++it;
     }
 
     const QList<DetectionData> output = buildOutput();
@@ -206,7 +265,11 @@ QList<DetectionData> DetectionSmoother::buildOutput() const
         d.position = track.currentPos;
         d.scale = track.currentScale;
         d.rotation = track.currentRot;
+        // Opacity travels as the alpha of the colour: DetectionInstancing
+        // passes it into the instance table whether or not the class tint
+        // is enabled, so a fade costs no extra plumbing.
         d.color = track.color;
+        d.color.setAlphaF(qBound(0.0f, track.alpha, 1.0f));
         d.label = track.label;
         d.confidence = track.confidence;
         out.append(d);

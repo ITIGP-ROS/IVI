@@ -84,12 +84,22 @@ Item {
         // Fixed chase view — same angle the full page opens on, just pulled
         // back further to suit the tile.
         //
-        // The pivot sits 3 m ahead of the car rather than on it, which drops
-        // the car below centre and hands the extra frame to the road in front.
-        // What is ahead matters more than what is behind.
+        // The pivot sits ahead of the car rather than on it, which drops the
+        // car below centre and hands most of the frame to the road in front.
+        // It used to sit a full 3 m ahead, which pushed the rear bumper to
+        // within ~0.7 m of the bottom edge — the car looked like it was about
+        // to fall out of the tile.
+        //
+        // Only Z moves here: the rotation and the camera's local offset are
+        // untouched, so this slides the whole rig backwards along the road
+        // without changing the angle. At the -42 deg tilt and 60 deg vertical
+        // FOV, backing the pivot off by 115 units lifts the bumper from 7% to
+        // 17% of the tile height above the bottom edge. The road ahead loses
+        // about the same amount, but perspective compresses the far end so
+        // the loss reads as far less than the gain behind.
         Node {
             id: orbitOrigin
-            position: Qt.vector3d(0, 0, -300)
+            position: Qt.vector3d(0, 0, -185)
             eulerRotation: Qt.vector3d(-42, 0, 0)
 
             PerspectiveCamera {

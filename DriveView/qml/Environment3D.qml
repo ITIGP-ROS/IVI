@@ -27,6 +27,12 @@ Node {
     // Keep the floor a few units below that so nothing clips.
     readonly property real floorY: -142
 
+    // Half the road width, in Qt units (100 = 1 m). The lane markings, the
+    // asphalt tiling and the gap to the city all key off this, so widening the
+    // road means changing this one number and nothing else — the edge lines
+    // used to be a separate literal that silently had to match.
+    readonly property real roadHalfWidth: 810   // 16.2 m across
+
     // ---- GROUND ----------------------------------------------------------
     Model {
         id: ground
@@ -34,7 +40,10 @@ Node {
         visible: root.showGround
         y: floorY
         eulerRotation.x: -90
-        scale: Qt.vector3d(72, 240, 1) // 7200-wide x 24000-long strip: always covers the city sweep
+        // 12000-wide x 24000-long strip. Width tracks the city: the outermost
+        // facade is at cityInset + 3450 = 5550, and half of 12000 is 6000, so
+        // the buildings still stand on ground rather than over the void.
+        scale: Qt.vector3d(120, 240, 1)
         receivesShadows: false
         castsShadows: false
         materials: groundMaterial
@@ -56,7 +65,10 @@ Node {
         mipFilter: Texture.Linear
         tilingModeHorizontal: Texture.Repeat
         tilingModeVertical: Texture.Repeat
-        scaleU: 26
+        // UVs run 0..1 across the road quad however wide it is, so the tile
+        // count has to track the width or the grain stretches with it. 26 was
+        // tuned for a 500-unit half-width.
+        scaleU: 26 * root.roadHalfWidth / 500
         scaleV: 26
     }
     Texture {
@@ -66,7 +78,8 @@ Node {
         mipFilter: Texture.Linear
         tilingModeHorizontal: Texture.Repeat
         tilingModeVertical: Texture.Repeat
-        scaleU: 26
+        // Must match asphaltTex exactly or the bumps desync from the colour.
+        scaleU: 26 * root.roadHalfWidth / 500
         scaleV: 26
     }
 
@@ -77,7 +90,8 @@ Node {
         source: "#Rectangle"
         y: floorY + 0.5
         eulerRotation.x: -90
-        scale: Qt.vector3d(10, 120, 1)   // 1000 wide (X) x 12000 long (Z)
+        // #Rectangle is 100x100 local units, hence the /100
+        scale: Qt.vector3d(root.roadHalfWidth * 2 / 100, 120, 1)   // x 12000 long (Z)
         receivesShadows: false
         castsShadows: false
         materials: roadMaterial
@@ -92,11 +106,16 @@ Node {
     }
 
     // lane markings (thin strips above the asphalt)
+    // Inset a little from the physical edge so the asphalt still shows outside
+    // the line. Their thickness is deliberately NOT scaled with the road: a
+    // painted line is a fixed real-world width whatever the road is doing.
+    readonly property real edgeLineX: roadHalfWidth * 0.96
+
     // left edge solid line (magenta in neon style)
     Model {
         id: leftEdge
         source: "#Rectangle"
-        x: -480
+        x: -root.edgeLineX
         y: floorY + 1
         eulerRotation.x: -90
         scale: Qt.vector3d(0.35, 120, 1)
@@ -108,7 +127,7 @@ Node {
     Model {
         id: rightEdge
         source: "#Rectangle"
-        x: 480
+        x: root.edgeLineX
         y: floorY + 1
         eulerRotation.x: -90
         scale: Qt.vector3d(0.35, 120, 1)
@@ -124,6 +143,11 @@ Node {
         cullMode: Material.NoCulling
     }
 
+    // Distance from the centre line to the nearest building facade. Widest
+    // building is 3000 and the facade jitter adds up to 450, so the outermost
+    // wall lands at cityInset + 3450 — the ground strip has to reach past it.
+    readonly property real cityInset: 2100
+
 
     // ---- MOVING CITY (neon style) ---------------------------------------
     // Instanced building cubes on both sides of the road, scrolling toward
@@ -136,9 +160,8 @@ Node {
     // one period (-9600 -> 0) so the loop has no seam. Building depth stays
     // below the spacing (max 760 < 800) so cubes never overlap each other.
     // Buildings are BIG and drastically varied (8..20 m wide, 3..7.6 m deep,
-    // 3..60 m tall); their inner edge sits 11..15.5 m from the road center
-    // (road edge is at 4.8 m) so a clear band of ground stays visible, and
-    // outer edges stay inside the 7200-wide strip (edge at 36 m).
+    // 3..40 m tall); their inner edge sits cityInset..cityInset+4.5 m from the
+    // road centre, and outer edges stay inside the 12000-wide strip.
     // Depth haze is NOT baked into the city: the whole city is one opaque
     // layer — the far end fades via SceneEnvironment fog (Scene3D.qml),
     // which is world-space and seamless, and also hides the loop-wrap pop
@@ -203,13 +226,19 @@ Node {
                 // 3 depth levels (300/530/760, min 3 m, < spacing 800 -> no overlap)
                 let d = 300 + 460 * (p % 3) / 2
                 let w = wl[p]
-                // inner edge 1100..1550 (road edge is 480 -> clear gap);
+                // Inner edge sits cityInset + jitter from the centre line.
+                // It used to be 1300, which put 40 m towers barely 13 m from
+                // a chase camera sitting 8 m up: the frustum sliced straight
+                // through them and they read as flat neon wedges cutting
+                // across the top corners of the HUD rather than as a skyline.
+                // Backing them off lets a whole facade fit in frame, which is
+                // what makes them parse as buildings.
                 // outer edge stays <= 3550 < strip edge 3600
                 // accent rows 5 and 11, base family elsewhere
                 let col = p === 5 ? accent[0] : p === 11 ? accent[1] : base[p % 3]
                 // building cube; #Cube is 100x100x100 units -> /100 scales
                 arr.push(cityEntry.createObject(list, {
-                    position: Qt.vector3d(dir * (1300 + jx[p] + w / 2), h / 2, z),
+                    position: Qt.vector3d(dir * (root.cityInset + jx[p] + w / 2), h / 2, z),
                     scale: Qt.vector3d(w / 100, h / 100, d / 100),
                     color: col
                 }))

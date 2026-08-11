@@ -321,7 +321,7 @@ ApplicationWindow {
                 // more than "Offline" did, and WeatherAPI keeps retrying
                 // underneath. A wrong city name is different — that one never
                 // resolves itself, so it has to be said out loud.
-                function onCityNotFound(city) {
+                function onNotFound(city) {
                     launcherItem.currentDesc = "City not found"
                 }
 
@@ -518,10 +518,24 @@ ApplicationWindow {
 
             Timer {
                 interval: 1000; running: true; repeat: true; triggeredOnStart: true
+
+                // The car runs on UTC+3. Formatting `new Date()` directly means
+                // trusting whatever zone the host is set to, and the Jetson's
+                // image comes up as UTC — so the bar read three hours behind
+                // even though the epoch time underneath was right.
+                //
+                // Deriving the wall clock from the epoch instead gives the same
+                // answer on the Jetson and on a dev laptop in any zone: undo the
+                // host's own offset, then add ours. getTimezoneOffset() is
+                // UTC-minus-local, so adding it back lands on UTC.
+                readonly property int tzOffsetMinutes: 3 * 60
+
                 onTriggered: {
                     var now = new Date()
-                    dateText.text = now.toLocaleDateString(Qt.locale(), "dddd, MMM d yyyy")
-                    timeText.text = now.toLocaleTimeString(Qt.locale(), "hh:mm AP")
+                    var here = new Date(now.getTime()
+                                        + (now.getTimezoneOffset() + tzOffsetMinutes) * 60000)
+                    dateText.text = here.toLocaleDateString(Qt.locale(), "dddd, MMM d yyyy")
+                    timeText.text = here.toLocaleTimeString(Qt.locale(), "hh:mm AP")
                 }
             }
 
