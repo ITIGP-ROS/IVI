@@ -12,7 +12,7 @@ Item {
 
     property vector3d chaseOrigin:   Qt.vector3d(0, 0, 0)
     property vector3d chaseRotation: Qt.vector3d(-50, 0, 0)
-    property real     chaseDistance: 960
+    property real     chaseDistance: 1200
 
     property vector3d topOrigin:   Qt.vector3d(0, 0, 0)
     property vector3d topRotation: Qt.vector3d(-90, 0, 0)
@@ -27,9 +27,9 @@ Item {
     property int hdriIndex: -1
     property real probeExposure: 1.0
     // master look: light = asphalt road + wide-street HDRI (0.3) + white fog,
-    // dark = neon road + ferndale HDRI (0.1) + near-black fog. The preset
-    // writes the individual properties below, so the standalone toggles
-    // (road style, HDRI cycle, exposure slider) still work as overrides.
+    // dark = neon road + ferndale HDRI (0.1) + near-black fog. The theme
+    // switch lives in the settings drawer and applies the preset via
+    // applyTheme(), which writes the individual properties below.
     property bool darkTheme: true
     property var hdriList: [
         "qrc:/hdri/ferndale_studio_12_1k.hdr",
@@ -147,23 +147,6 @@ Item {
         OrbitCameraController {
             anchors.fill: parent; camera: camera; origin: orbitOrigin
             mouseEnabled: true; panEnabled: true; xSpeed: 0.05; ySpeed: 0.05
-        }
-
-        MouseArea {
-            anchors.fill: parent; acceptedButtons: Qt.MiddleButton; propagateComposedEvents: true
-            property real lastX: 0; property real lastY: 0
-            onPressed: (mouse) => {
-                           if (mouse.button === Qt.MiddleButton) { lastX = mouse.x; lastY = mouse.y; mouse.accepted = true }
-                           else mouse.accepted = false
-                       }
-            onPositionChanged: (mouse) => {
-                                   if (pressedButtons & Qt.MiddleButton) {
-                                       let dx = mouse.x-lastX, dy = mouse.y-lastY; lastX = mouse.x; lastY = mouse.y
-                                       let s = camera.position.length() * 0.001
-                                       camera.position      = Qt.vector3d(camera.position.x - dx*s,      camera.position.y,      camera.position.z - dy*s)
-                                       orbitOrigin.position = Qt.vector3d(orbitOrigin.position.x - dx*s, orbitOrigin.position.y, orbitOrigin.position.z - dy*s)
-                                   }
-                               }
         }
 
         Node {
@@ -603,150 +586,6 @@ Item {
     }
 
     Rectangle {
-        id: hdriCtrl
-        anchors.right: hdriBtn.right
-        anchors.bottom: hdriBtn.top
-        anchors.bottomMargin: _m * 0.4
-        width: 230
-        height: 74
-        radius: _r
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
-        opacity: 0.95
-        visible: hdriIndex >= 0
-
-        Text {
-            id: expLabel
-            anchors { top: parent.top; left: parent.left; right: parent.right; margins: 10 }
-            text: "HDRI Intensity: " + probeExposure.toFixed(2)
-            color: fsd.textSec
-            font.pixelSize: _fSm
-            font.family: "monospace"
-            font.letterSpacing: 1
-        }
-        Slider {
-            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 10 }
-            from: -1.0
-            to: 3.0
-            value: 1.0
-            onValueChanged: probeExposure = value
-        }
-    }
-
-    Rectangle {
-        id: themeBtn
-        anchors.right: hdriBtn.left
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: _m * 0.55
-        anchors.bottomMargin: _m
-        width: _btnW
-        height: _btnH
-        radius: _r
-        color: darkTheme ? Qt.rgba(0.05, 0.3, 0.55, 0.9) : fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
-        opacity: 0.95
-
-        Text {
-            anchors.centerIn: parent
-            text: darkTheme ? "DARK THEME" : "LIGHT THEME"
-            color: fsd.textPri
-            font.pixelSize: _fSm
-            font.letterSpacing: 1.2
-            font.family: "monospace"
-            width: parent.width * 0.9
-            height: implicitHeight
-            fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 8
-            horizontalAlignment: Text.AlignHCenter
-        }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: parent.opacity = 1.0
-            onExited: parent.opacity = 0.95
-            onClicked: darkTheme = !darkTheme
-        }
-    }
-
-    Rectangle {
-        id: hdriBtn
-        anchors.right: roadStyleBtn.left
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: _m * 0.55
-        anchors.bottomMargin: _m
-        width: _btnW
-        height: _btnH
-        radius: _r
-        color: hdriIndex >= 0 ? Qt.rgba(0.05, 0.3, 0.55, 0.9) : fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
-        opacity: 0.95
-
-        Text {
-            anchors.centerIn: parent
-            text: hdriIndex >= 0 ? "HDRI: " + hdriList[hdriIndex].split("/").pop().split("_")[0] : "HDRI OFF"
-            color: fsd.textPri
-            font.pixelSize: _fSm
-            font.letterSpacing: 1.2
-            font.family: "monospace"
-            width: parent.width * 0.9
-            height: implicitHeight
-            fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 8
-            horizontalAlignment: Text.AlignHCenter
-        }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: parent.opacity = 1.0
-            onExited: parent.opacity = 0.95
-            onClicked: hdriIndex = (hdriIndex + 2) % (hdriList.length + 1) - 1
-        }
-    }
-
-
-    Rectangle {
-        id: roadStyleBtn
-        anchors.right: resetViewBtn.left
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: _m * 0.55
-        anchors.bottomMargin: _m
-        width: _btnW
-        height: _btnH
-        radius: _r
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
-        opacity: 0.95
-
-        Text {
-            anchors.centerIn: parent
-            text: asphaltRoad ? "ASPHALT ROAD" : "NEON ROAD"
-            color: fsd.textPri
-            font.pixelSize: _fSm
-            font.letterSpacing: 1.2
-            font.family: "monospace"
-            width: parent.width * 0.9
-            height: implicitHeight
-            fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 8
-            horizontalAlignment: Text.AlignHCenter
-        }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: parent.opacity = 1.0
-            onExited: parent.opacity = 0.95
-            onClicked: asphaltRoad = !asphaltRoad
-        }
-    }
-
-    Rectangle {
         id: resetViewBtn
         anchors.right: viewToggle.left
         anchors.bottom: parent.bottom
@@ -786,10 +625,49 @@ Item {
     // ============================================================
     // LEFT DRAWER — Car Settings
     // ============================================================
+
+    // Volume-style slider: same chrome as the WindowBar volume control (dark
+    // track, white-ringed knob), but the fill and knob pick up the car colour
+    // like the theme toggle does.
+    component StyledSlider: Slider {
+        id: styled
+        height: 32
+
+        background: Rectangle {
+            x: styled.leftPadding
+            y: styled.topPadding + styled.availableHeight / 2 - height / 2
+            width: styled.availableWidth
+            height: 4
+            radius: 2
+            color: "#082839"
+
+            Rectangle {
+                x: 0
+                y: 0
+                width: styled.visualPosition * parent.width
+                height: parent.height
+                color: fsd.ego
+                radius: 2
+            }
+        }
+
+        handle: Rectangle {
+            x: styled.leftPadding + styled.visualPosition * (styled.availableWidth - width)
+            y: styled.topPadding + styled.availableHeight / 2 - height / 2
+            width: 14
+            height: 14
+            radius: 7
+            color: styled.pressed ? "#ffffff" : fsd.ego
+            border.color: "#ffffff"
+            border.width: 1.5
+        }
+    }
+
     Rectangle {
         id: settingsDrawer
         property bool open: false
         z: 100
+        clip: true
 
         y: 0
         width: parent.width * 0.26
@@ -803,201 +681,252 @@ Item {
         border.color: fsd.panelBorder
         border.width: 1
 
-        Flickable {
-            anchors.fill: parent
-            contentHeight: _drawerCol.implicitHeight + _m * 3
-            clip: true
+        Column {
+            id: _drawerCol
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: _m * 0.7 }
+            spacing: _m * 0.4
 
-            Column {
-                id: _drawerCol
-                anchors { left: parent.left; right: parent.right; top: parent.top; margins: _m * 1.1 }
-                spacing: _m * 0.8
+            // ---- Header: title + close button (anchored, no overlap) ----
+            Item {
+                width: parent.width
+                height: Math.max(_drawerTitle.implicitHeight, closeBtn.height)
 
-                Item { width: 1; height: _m * 0.4 }
-
-                // ---- Header: title + close button (anchored, no overlap) ----
-                Item {
-                    width: parent.width
-                    height: Math.max(_drawerTitle.implicitHeight, closeBtn.height)
-
-                    Text {
-                        id: _drawerTitle
-                        anchors.left: parent.left
-                        anchors.right: closeBtn.left
-                        anchors.rightMargin: _m * 0.5
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Car Settings"
-                        font.pixelSize: _fLg
-                        font.bold: true
-                        color: fsd.textPri
-                        height: implicitHeight
-                        fontSizeMode: Text.HorizontalFit
-                        minimumPixelSize: 8
-                        horizontalAlignment: Text.AlignLeft
-                    }
-
-                    Rectangle {
-                        id: closeBtn
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: _btnW * 0.85
-                        height: _btnH * 0.78
-                        radius: _r * 0.8
-                        color: fsd.panelBg
-                        border.color: fsd.panelBorder
-                        border.width: 1
-                        opacity: 0.95
-
-                        Text {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            text: "✕ Close"
-                            color: fsd.textPri
-                            font.pixelSize: _fSm
-                            minimumPixelSize: 9
-                            fontSizeMode: Text.Fit
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.letterSpacing: 0.8
-                            font.family: "monospace"
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onEntered: parent.opacity = 1.0
-                            onExited: parent.opacity = 0.95
-                            onClicked: settingsDrawer.open = false
-                        }
-                    }
-                }
-
-                Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
-
-                // ---- Car Color ----
                 Text {
-                    text: "Car Color"
-                    color: fsd.textSec
-                    font.pixelSize: _fSm
-                    width: parent.width
+                    id: _drawerTitle
+                    anchors.left: parent.left
+                    anchors.right: closeBtn.left
+                    anchors.rightMargin: _m * 0.5
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Car Settings"
+                    font.pixelSize: _fLg
+                    font.bold: true
+                    color: fsd.textPri
                     height: implicitHeight
+                    fontSizeMode: Text.HorizontalFit
+                    minimumPixelSize: 8
+                    horizontalAlignment: Text.AlignLeft
                 }
 
                 Rectangle {
-                    width: parent.width
-                    height: _m * 2.4
-                    radius: _r * 0.7
-                    color: fsd.ego
+                    id: closeBtn
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: _btnW * 0.85
+                    height: _btnH * 0.78
+                    radius: _r * 0.8
+                    color: fsd.panelBg
                     border.color: fsd.panelBorder
                     border.width: 1
+                    opacity: 0.95
+
+                    Text {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        text: "✕ Close"
+                        color: fsd.textPri
+                        font.pixelSize: _fSm
+                        minimumPixelSize: 9
+                        fontSizeMode: Text.Fit
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        font.letterSpacing: 0.8
+                        font.family: "monospace"
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: parent.opacity = 1.0
+                        onExited: parent.opacity = 0.95
+                        onClicked: settingsDrawer.open = false
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
+
+            // ---- Theme: same switch look as the ambient-light card ----
+            Item {
+                width: parent.width
+                height: Math.max(themeTextCol.height, themeToggle.height)
+
+                Column {
+                    id: themeTextCol
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 1
+
+                    Text {
+                        text: "Theme"
+                        color: fsd.textSec
+                        font.pixelSize: _fSm
+                        height: implicitHeight
+                    }
+                    Text {
+                        text: "Dark Theme"
+                        color: fsd.textPri
+                        font.pixelSize: _fSm
+                        font.bold: true
+                        height: implicitHeight
+                    }
                 }
 
-                Canvas {
-                    id: colorWheel
-                    width: parent.width
-                    height: width
+                Rectangle {
+                    id: themeToggle
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 44
+                    height: 26
+                    radius: height / 2
+                    color: darkTheme ? fsd.ego : Qt.rgba(1, 1, 1, 0.10)
+                    border.color: darkTheme ? Qt.lighter(fsd.ego, 1.3) : Qt.rgba(1, 1, 1, 0.22)
+                    border.width: 2
+                    Behavior on color { ColorAnimation { duration: 200 } }
 
-                    property real pickedHue: 0.583
-                    property real pickedSat: 1.0
-                    property real pickedVal: 1.0
-
-                    onPaint: {
-                        var ctx = getContext("2d")
-                        ctx.clearRect(0, 0, width, height)
-                        var cx = width/2, cy = height/2, r = Math.min(cx,cy) - 4
-                        for (var i = 0; i < 360; i++) {
-                            var a1 = (i/360)*2*Math.PI - Math.PI/2
-                            var a2 = ((i+1)/360)*2*Math.PI - Math.PI/2
-                            var g = ctx.createRadialGradient(cx,cy,0, cx,cy,r)
-                            g.addColorStop(0, "white")
-                            g.addColorStop(1, "hsl("+i+",100%,50%)")
-                            ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a1,a2); ctx.closePath()
-                            ctx.fillStyle = g; ctx.fill()
-                        }
-                        if (pickedVal < 1.0) {
-                            var alpha = (1 - pickedVal).toString()
-                            var ov = ctx.createRadialGradient(cx,cy,0,cx,cy,r)
-                            ov.addColorStop(0, "rgba(0,0,0,"+alpha+")")
-                            ov.addColorStop(1, "rgba(0,0,0,"+alpha+")")
-                            ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.fillStyle = ov; ctx.fill()
-                        }
-                        var sa = pickedHue*2*Math.PI - Math.PI/2
-                        var sx = cx + pickedSat*r*Math.cos(sa), sy = cy + pickedSat*r*Math.sin(sa)
-                        ctx.beginPath(); ctx.arc(sx,sy,8,0,2*Math.PI); ctx.strokeStyle="white";          ctx.lineWidth=3;   ctx.stroke()
-                        ctx.beginPath(); ctx.arc(sx,sy,8,0,2*Math.PI); ctx.strokeStyle="rgba(0,0,0,0.4)"; ctx.lineWidth=1.2; ctx.stroke()
-                    }
-
-                    function pick(mx, my) {
-                        var cx=width/2, cy=height/2, r=Math.min(cx,cy)-4
-                        var dx=mx-cx, dy=my-cy, dist=Math.sqrt(dx*dx+dy*dy)
-                        if (dist>r) { dx*=r/dist; dy*=r/dist; dist=r }
-                        var angle = Math.atan2(dy,dx)+Math.PI/2
-                        if (angle<<0) angle+=2*Math.PI
-                        if (angle>=2*Math.PI) angle-=2*Math.PI
-                        pickedHue = angle/(2*Math.PI); pickedSat = dist/r
-                        applyColor(); requestPaint()
+                    Rectangle {
+                        width: parent.height * 0.72; height: width
+                        radius: width / 2
+                        color: "#ffffff"
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: darkTheme ? parent.width - width - parent.height * 0.14
+                                     : parent.height * 0.14
+                        Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                     }
 
                     MouseArea {
                         anchors.fill: parent
-                        onPressed:         colorWheel.pick(mouseX, mouseY)
-                        onPositionChanged: if (pressed) colorWheel.pick(mouseX, mouseY)
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: darkTheme = !darkTheme
                     }
                 }
+            }
 
-                Text {
-                    text: "Brightness: " + brightnessSlider.value.toFixed(2)
-                    color: fsd.textSec
-                    font.pixelSize: _fSm
-                    width: parent.width
-                    height: implicitHeight
-                }
-                Slider {
-                    id: brightnessSlider
-                    width: parent.width
-                    from: 0.05
-                    to: 1.0
-                    value: 1.0
-                    onValueChanged: {
-                        colorWheel.pickedVal = value
-                        applyColor()
-                        colorWheel.requestPaint()
+            Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
+
+            // ---- Car Color ----
+            Text {
+                text: "Car Color"
+                color: fsd.textSec
+                font.pixelSize: _fSm
+                width: parent.width
+                height: implicitHeight
+            }
+
+            Rectangle {
+                width: parent.width
+                height: _m * 1.6
+                radius: _r * 0.7
+                color: fsd.ego
+                border.color: fsd.panelBorder
+                border.width: 1
+            }
+
+            Canvas {
+                id: colorWheel
+                width: parent.width
+                height: width * 0.62
+
+                property real pickedHue: 0.583
+                property real pickedSat: 1.0
+                property real pickedVal: 1.0
+
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    var cx = width/2, cy = height/2, r = Math.min(cx,cy) - 4
+                    for (var i = 0; i < 360; i++) {
+                        var a1 = (i/360)*2*Math.PI - Math.PI/2
+                        var a2 = ((i+1)/360)*2*Math.PI - Math.PI/2
+                        var g = ctx.createRadialGradient(cx,cy,0, cx,cy,r)
+                        g.addColorStop(0, "white")
+                        g.addColorStop(1, "hsl("+i+",100%,50%)")
+                        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a1,a2); ctx.closePath()
+                        ctx.fillStyle = g; ctx.fill()
                     }
+                    if (pickedVal < 1.0) {
+                        var alpha = (1 - pickedVal).toString()
+                        var ov = ctx.createRadialGradient(cx,cy,0,cx,cy,r)
+                        ov.addColorStop(0, "rgba(0,0,0,"+alpha+")")
+                        ov.addColorStop(1, "rgba(0,0,0,"+alpha+")")
+                        ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.fillStyle = ov; ctx.fill()
+                    }
+                    var sa = pickedHue*2*Math.PI - Math.PI/2
+                    var sx = cx + pickedSat*r*Math.cos(sa), sy = cy + pickedSat*r*Math.sin(sa)
+                    ctx.beginPath(); ctx.arc(sx,sy,8,0,2*Math.PI); ctx.strokeStyle="white";          ctx.lineWidth=3;   ctx.stroke()
+                    ctx.beginPath(); ctx.arc(sx,sy,8,0,2*Math.PI); ctx.strokeStyle="rgba(0,0,0,0.4)"; ctx.lineWidth=1.2; ctx.stroke()
                 }
 
-                Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
-
-                Text {
-                    text: "Metalness: " + metalSlider.value.toFixed(2)
-                    color: fsd.textSec
-                    font.pixelSize: _fSm
-                    width: parent.width
-                    height: implicitHeight
-                }
-                Slider {
-                    id: metalSlider
-                    width: parent.width
-                    from: 0
-                    to: 1
-                    value: egoCar.carMetalness
-                    onValueChanged: egoCar.carMetalness = value
+                function pick(mx, my) {
+                    var cx=width/2, cy=height/2, r=Math.min(cx,cy)-4
+                    var dx=mx-cx, dy=my-cy, dist=Math.sqrt(dx*dx+dy*dy)
+                    if (dist>r) { dx*=r/dist; dy*=r/dist; dist=r }
+                    var angle = Math.atan2(dy,dx)+Math.PI/2
+                    if (angle<<0) angle+=2*Math.PI
+                    if (angle>=2*Math.PI) angle-=2*Math.PI
+                    pickedHue = angle/(2*Math.PI); pickedSat = dist/r
+                    applyColor(); requestPaint()
                 }
 
-                Text {
-                    text: "Roughness: " + roughSlider.value.toFixed(2)
-                    color: fsd.textSec
-                    font.pixelSize: _fSm
-                    width: parent.width
-                    height: implicitHeight
+                MouseArea {
+                    anchors.fill: parent
+                    onPressed:         colorWheel.pick(mouseX, mouseY)
+                    onPositionChanged: if (pressed) colorWheel.pick(mouseX, mouseY)
                 }
-                Slider {
-                    id: roughSlider
-                    width: parent.width
-                    from: 0
-                    to: 1
-                    value: egoCar.carRoughness
-                    onValueChanged: egoCar.carRoughness = value
+            }
+
+            Text {
+                text: "Brightness: " + brightnessSlider.value.toFixed(2)
+                color: fsd.textSec
+                font.pixelSize: _fSm
+                width: parent.width
+                height: implicitHeight
+            }
+            StyledSlider {
+                id: brightnessSlider
+                width: parent.width
+                from: 0.05
+                to: 1.0
+                value: 1.0
+                onValueChanged: {
+                    colorWheel.pickedVal = value
+                    applyColor()
+                    colorWheel.requestPaint()
                 }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
+
+            Text {
+                text: "Metalness: " + metalSlider.value.toFixed(2)
+                color: fsd.textSec
+                font.pixelSize: _fSm
+                width: parent.width
+                height: implicitHeight
+            }
+            StyledSlider {
+                id: metalSlider
+                width: parent.width
+                from: 0
+                to: 1
+                value: egoCar.carMetalness
+                onValueChanged: egoCar.carMetalness = value
+            }
+
+            Text {
+                text: "Roughness: " + roughSlider.value.toFixed(2)
+                color: fsd.textSec
+                font.pixelSize: _fSm
+                width: parent.width
+                height: implicitHeight
+            }
+            StyledSlider {
+                id: roughSlider
+                width: parent.width
+                from: 0
+                to: 1
+                value: egoCar.carRoughness
+                onValueChanged: egoCar.carRoughness = value
             }
         }
     }
@@ -1039,8 +968,8 @@ Item {
             applyChaseView()
     }
 
-    // theme preset: writes the individual environment toggles, so the
-    // standalone buttons/slider can still override after the theme is set
+    // theme preset: writes the individual environment toggles. The theme
+    // switch in the drawer is the only control left for these.
     function applyTheme() {
         asphaltRoad = !darkTheme        // light = asphalt, dark = neon
         hdriIndex = darkTheme ? 0 : 1   // ferndale / wide_street
