@@ -5,7 +5,7 @@ project(IVI VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick Quick3D Location Positioning DBus Concurrent Multimedia)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick Quick3D DBus Concurrent Multimedia)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PULSE REQUIRED libpulse)
 
@@ -94,7 +94,6 @@ qt_add_qml_module(appIVI
         DriveView/qml/Scene3D.qml
         DriveView/qml/MiniScene3D.qml
         DriveView/qml/Environment3D.qml
-        DriveView/qml/MapOSM.qml
         DriveView/models_3d/audi_low_poly/Audi_rs7_free__low_poly.qml
     RESOURCES
         resources.qrc
@@ -111,8 +110,6 @@ set_target_properties(appIVI PROPERTIES
 target_link_libraries(appIVI PRIVATE
     Qt6::Quick
     Qt6::Quick3D
-    Qt6::Location
-    Qt6::Positioning
     Qt6::DBus
     Qt6::Concurrent
     Qt6::Multimedia
