@@ -1,768 +1,1469 @@
-# IVI Dashboard
+# IVI Head Unit
 
-> A modern, feature-rich **In-Vehicle Infotainment (IVI)** system built with **Qt 6 / QML** and a **C++ backend**, designed to run on embedded Linux platforms including the Raspberry Pi 3B+.
+> A production-shaped **In-Vehicle Infotainment** system built on **Qt 6 / QML**, a **C++ hardware layer**, and a **ROS 2** perception pipeline — rendering live 3D lidar detections, media, connectivity, climate-adjacent comfort features, and vehicle telemetry on a single 1024×600 frameless surface.
+
+This document describes **what the head unit is and how it works**. It is a reference for the software as it stands, not an installation guide — there are no build, flash, or deployment steps here.
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Architecture](#architecture)
-- [Features](#features)
-  - [Launcher / Home Screen](#launcher--home-screen)
-  - [Weather Page](#weather-page)
-  - [Media Player Page](#media-player-page)
-    - [Audio Player](#audio-player)
-    - [Video Player](#video-player)
-    - [Radio Player](#radio-player)
-  - [Settings Page](#settings-page)
-    - [Wi-Fi Settings](#wi-fi-settings)
-    - [Bluetooth Settings](#bluetooth-settings)
-- [Backend Components](#backend-components)
-  - [BluetoothManager](#bluetoothmanager)
-  - [BluetoothHWManager](#bluetoothhwmanager)
-  - [WifiManager](#wifimanager)
-  - [USBManager](#usbmanager)
-  - [SystemVolumeController](#systemvolumecontroller)
-  - [SpeechManager](#speechmanager)
-- [QML API Modules](#qml-api-modules)
-  - [WeatherAPI](#weatherapi)
-  - [RadioAPI](#radioapi)
-- [Reusable QML Components](#reusable-qml-components)
-  - [WindowBar](#windowbar)
-  - [MediaCard](#mediacard)
-  - [CarInfoPopup](#carinfopopup)
-- [Design System & UI Conventions](#design-system--ui-conventions)
-- [Build System](#build-system)
-  - [Dependencies](#dependencies)
-  - [Building on Desktop](#building-on-desktop)
-- [Raspberry Pi Deployment (Yocto)](#raspberry-pi-deployment-yocto)
-  - [Step 1 — `local.conf` Additions](#step-1--localconf-additions)
-  - [Step 2 — Yocto Recipe for the App](#step-2--yocto-recipe-for-the-app)
-  - [Step 3 — Vosk Recipe](#step-3--vosk-recipe)
-  - [Step 4 — Update the Vosk Model Path](#step-4--update-the-vosk-model-path)
-  - [Step 5 — `config.txt` on the RPi](#step-5--configtxt-on-the-rpi)
-  - [Step 6 — Launch Script or systemd Service](#step-6--launch-script-or-systemd-service)
-  - [Step 7 — Build and Flash](#step-7--build-and-flash)
-  - [Yocto Package Checklist](#yocto-package-checklist)
-- [Author](#author)
+- [1. Overview](#1-overview)
+  - [1.1 What this is](#11-what-this-is)
+  - [1.2 Design principles](#12-design-principles)
+  - [1.3 Feature matrix](#13-feature-matrix)
+- [2. Architecture](#2-architecture)
+  - [2.1 Layer model](#21-layer-model)
+  - [2.2 Process and thread model](#22-process-and-thread-model)
+  - [2.3 The context-property boundary](#23-the-context-property-boundary)
+  - [2.4 Data flow](#24-data-flow)
+- [3. Project Structure](#3-project-structure)
+- [4. The Screens](#4-the-screens)
+  - [4.1 Splash](#41-splash)
+  - [4.2 Launcher](#42-launcher)
+  - [4.3 Weather](#43-weather)
+  - [4.4 Media hub](#44-media-hub)
+  - [4.5 Drive View](#45-drive-view)
+  - [4.6 Settings hub](#46-settings-hub)
+- [5. Drive View in Depth](#5-drive-view-in-depth)
+  - [5.1 The pipeline](#51-the-pipeline)
+  - [5.2 Coordinate frames](#52-coordinate-frames)
+  - [5.3 Box reconstruction](#53-box-reconstruction)
+  - [5.4 Smoothing](#54-smoothing)
+  - [5.5 Track lifecycle](#55-track-lifecycle)
+  - [5.6 Duplicate and overlap gating](#56-duplicate-and-overlap-gating)
+  - [5.7 Placement rules](#57-placement-rules)
+  - [5.8 Instanced rendering](#58-instanced-rendering)
+  - [5.9 The 3D world](#59-the-3d-world)
+  - [5.10 Cameras](#510-cameras)
+  - [5.11 HUD and debug controls](#511-hud-and-debug-controls)
+  - [5.12 The launcher mini-scene](#512-the-launcher-mini-scene)
+  - [5.13 Tuning reference](#513-tuning-reference)
+- [6. C++ Backends](#6-c-backends)
+  - [6.1 BluetoothManager](#61-bluetoothmanager)
+  - [6.2 BluetoothHWManager](#62-bluetoothhwmanager)
+  - [6.3 BluetoothAgent](#63-bluetoothagent)
+  - [6.4 BlueZ](#64-bluez)
+  - [6.5 WifiManager](#65-wifimanager)
+  - [6.6 WifiCredSender](#66-wificredsender)
+  - [6.7 USBManager](#67-usbmanager)
+  - [6.8 MediaLibrary](#68-medialibrary)
+  - [6.9 SystemVolumeController](#69-systemvolumecontroller)
+  - [6.10 SpeechManager](#610-speechmanager)
+  - [6.11 AmbientLightManager](#611-ambientlightmanager)
+  - [6.12 Perception classes](#612-perception-classes)
+- [7. QML Logic Modules](#7-qml-logic-modules)
+  - [7.1 WeatherStore](#71-weatherstore)
+  - [7.2 WeatherAPI](#72-weatherapi)
+  - [7.3 RadioAPI](#73-radioapi)
+- [8. Reusable Components](#8-reusable-components)
+- [9. Vehicle Integration](#9-vehicle-integration)
+  - [9.1 ROS 2 topics](#91-ros-2-topics)
+  - [9.2 Ambient lighting over CAN](#92-ambient-lighting-over-can)
+  - [9.3 Wi-Fi credential handoff](#93-wi-fi-credential-handoff)
+- [10. Design System](#10-design-system)
+- [11. State, Navigation and Persistence](#11-state-navigation-and-persistence)
+- [12. Configuration Surface](#12-configuration-surface)
+- [13. Known Limitations](#13-known-limitations)
+- [14. Glossary](#14-glossary)
 
 ---
 
-## Overview
+## 1. Overview
 
-The **IVI Dashboard** is a full-featured infotainment application designed to replicate the experience of a production car head unit. It provides a unified interface for weather, media playback (USB audio, USB video, and internet radio), connectivity management (Wi-Fi and Bluetooth), and voice-activated navigation—all rendered in a polished dark-navy and amber design language.
+### 1.1 What this is
 
-The application is architected as a **Qt Quick (QML) frontend** backed by a **C++ engine**, communicating over Qt's property-binding and signal/slot system. The C++ backend handles all hardware-level interactions: PulseAudio for volume, D-Bus for Wi-Fi (via NetworkManager) and Bluetooth (via BlueZ 5), UDisks2 for USB drives, and the Vosk library for offline speech recognition.
+The IVI head unit is a single Qt application that occupies the whole display of an
+automotive centre stack. It runs frameless at 1024×600 with no window manager,
+boots into a branded splash, and lands on a launcher that routes to five
+functional areas: **Weather**, **Media**, **Drive View**, **Settings**, and the
+**ambient cabin lighting** quick controls.
 
-Key design goals:
-- **Frameless, embedded-first UI** — runs at 1024×600 without a window manager.
-- **Offline-capable** — speech recognition and core UI require no internet; weather and radio use public free APIs.
-- **Persistent state** — radio search state, last-used city, and media playback survive navigation between pages.
-- **Raspberry Pi ready** — ships with a detailed Yocto meta-layer integration guide.
+Three things separate it from a conventional Qt demo application:
+
+**It talks to real vehicle hardware.** Bluetooth pairing goes through BlueZ over
+D-Bus with a proper `org.bluez.Agent1` implementation; Wi-Fi goes through
+NetworkManager; USB mass storage through UDisks2; system volume through
+PulseAudio; the cabin LED strip through raw SocketCAN frames; and Wi-Fi
+credentials are handed to the vehicle host over an authenticated CAN transport.
+
+**It renders live perception output.** A ROS 2 node subscribes to a lidar
+detection topic and the vehicle's GNSS/IMU stream. Detected vehicles,
+pedestrians and cyclists are reconstructed from their 3D bounding-box corners,
+smoothed, filtered, and drawn as instanced meshes in a Qt Quick 3D scene at
+60 Hz — while the detector itself publishes at roughly 10 Hz.
+
+**It is written to survive a vehicle, not a demo.** Every network and hardware
+interaction is asynchronous, because a stalled daemon must never freeze the HMI.
+Every hardware link that can be absent has a simulation path. State that matters
+is persisted. Failure modes are handled where they occur rather than surfaced as
+a hang.
+
+### 1.2 Design principles
+
+| Principle | How it shows up |
+|---|---|
+| **Never block the UI thread** | Every D-Bus call is async with a callback scoped to a context object. ROS spins on its own thread. Media scanning is offloaded. A wedged `bluetoothd` costs nothing, where a synchronous call would freeze the HMI for the 25 s D-Bus timeout. |
+| **Degrade, don't disappear** | No CAN bus? The ambient page still works and prints frames. No network? The launcher shows the last weather reading from disk. No detector? Drive View says `OFFLINE` instead of printing garbage. |
+| **The vehicle is the source of truth** | Speed, heading, position and detections all come from the bus. Nothing on screen is invented, and where the app *does* extrapolate (Drive View coasting) it is bounded, gated, and documented as such. |
+| **One knob per concept** | Road width is a single derived value that the lane markings, texture tiling and city inset all key off. Weather is one shared cache, not one per screen. Ambient state is one object driving two screens. |
+| **Embedded-first sizing** | Fixed 1024×600 target, frameless, no window chrome, touch-sized hit targets, and a virtual keyboard because there is no physical one. |
+| **Explain the non-obvious in place** | The source carries the reasoning for decisions that look wrong without context — why a fixed `-90°` yaw exists, why `InstanceList` rejects a JS array, why credentials go on stdin. |
+
+### 1.3 Feature matrix
+
+| Area | Capability | Backing |
+|---|---|---|
+| **Launcher** | App tiles, live weather card, clock (UTC+3), online indicator, voice activation, car info, ambient quick controls, live 3D preview tile | QML + several backends |
+| **Weather** | Current conditions, 24 h hourly strip, 7-day forecast, city search, UV / wind / pressure / humidity / cloud cover, day-night awareness | Open-Meteo, `WeatherStore` |
+| **Audio** | USB and local library playback, playlist, seek, shuffle/repeat, Bluetooth A2DP source, album art | `MediaLibrary`, `USBManager`, `BluetoothManager` |
+| **Video** | Local and USB video playback, full-screen, transport controls, USB device panel | `MediaLibrary`, `USBManager` |
+| **Radio** | Station search by name, country and tag; streaming playback; persistent search state across navigation | radio-browser.info via `RadioAPI` |
+| **Drive View** | Live 3D lidar detections, ego vehicle, animated road and city, chase and top-down cameras, orbit control, speed readout, theme and HDRI switching, OSM map component | ROS 2 + Qt Quick 3D |
+| **Wi-Fi** | Enable/disable, scan, signal strength, secured-network indication, connect with password, disconnect, forget, credential handoff to the vehicle host | NetworkManager D-Bus, `WifiCredSender` |
+| **Bluetooth** | Adapter power, discoverable, scan, pair with numeric confirmation, connect, disconnect, remove, A2DP/AVRCP transport | BlueZ D-Bus, `BluetoothAgent` |
+| **Ambient light** | On/off, 5 effect modes, 8-colour palette, free colour picker, brightness, per-LED zone masking, heartbeat re-assertion | SocketCAN → ESP32 |
+| **System** | Global brightness overlay, system volume and mute, offline speech recognition | PulseAudio, Vosk |
 
 ---
 
-## Project Structure
+## 2. Architecture
+
+### 2.1 Layer model
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                             QML / UI LAYER                                │
+│                                                                           │
+│   Main.qml ── StackView ──┬── pages/WeatherPage.qml                       │
+│                           ├── pages/MediaPlayerPage.qml ── MediaPages/*   │
+│                           ├── pages/SettingPage.qml ────── SettingPages/* │
+│                           └── DriveView/DriveViewPage.qml ── qml/Scene3D  │
+│                                                                           │
+│   Components/  WindowBar · MediaCard · CarInfoPopup · AmbientCard ·        │
+│                VirtualKeyboard                                            │
+│                                                                           │
+│   Pure declarative. Binds to C++ properties; never calls blocking code.    │
+└─────────────────────────────────┬─────────────────────────────────────────┘
+                                  │  Q_PROPERTY bindings · signals · slots
+                                  ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                          QML LOGIC LAYER                                  │
+│                                                                           │
+│   API/WeatherStore.qml   singleton, stale-while-revalidate weather cache   │
+│   API/WeatherAPI.qml     Open-Meteo geocode + forecast transport           │
+│   API/RadioAPI.qml       radio-browser.info search + playback control      │
+│                                                                           │
+│   XMLHttpRequest only. No hardware access. Emits structured signals.       │
+└─────────────────────────────────┬─────────────────────────────────────────┘
+                                  │  QQmlContext::setContextProperty
+                                  ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                           C++ BACKEND LAYER                               │
+│                                                                           │
+│   Connectivity   BluetoothManager · BluetoothHWManager · BluetoothAgent ·  │
+│                  BlueZ · WifiManager · WifiCredSender                     │
+│   Media          USBManager · MediaLibrary · SystemVolumeController        │
+│   Comfort        AmbientLightManager                                      │
+│   Input          SpeechManager                                            │
+│   Perception     RosNode · DetectionModel · DetectionSmoother ·            │
+│                  DetectionInstancing · CarInfo · BoxTransform             │
+│                                                                           │
+│   Every one is a QObject exposed as a context property.                   │
+└─────────────────────────────────┬─────────────────────────────────────────┘
+                                  │  Linux system interfaces
+                                  ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                          HARDWARE / OS LAYER                              │
+│                                                                           │
+│   D-Bus        BlueZ 5 · NetworkManager · UDisks2                         │
+│   PulseAudio   system sink volume · Bluetooth audio · microphone capture   │
+│   SocketCAN    ambient lighting (0x500) · Wi-Fi credential transport       │
+│   ROS 2        rclcpp subscriptions on the perception and telemetry topics │
+│   Vosk         offline speech recognition                                 │
+│   Qt Multimedia / GStreamer   audio and video decode                      │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Process and thread model
+
+The application is a single process with several threads of execution:
+
+| Thread | Owner | Responsibility |
+|---|---|---|
+| **GUI thread** | Qt | All QML, all rendering, all `QObject` property updates that QML binds to. Everything that touches the scene graph. |
+| **ROS spin thread** | `RosSpinThread` | A `StaticSingleThreadedExecutor` spinning the `qt_pcl_visualizer` node. Detection, velocity, IMU and GNSS callbacks all land here. |
+| **Qt Concurrent pool** | `USBManager` | Filesystem scans of mounted media, which can take seconds on a large stick. |
+| **Audio callback** | `QAudioSource` | Microphone frames pushed into the Vosk recognizer. |
+
+The critical boundary is **ROS spin thread → GUI thread**. `DetectionSmoother::update()`
+is called from the ROS thread and only mutates target state under a mutex; a 60 Hz
+`QTimer` owned by the GUI thread advances the interpolation and pushes results into
+`DetectionModel`. The mutex is explicitly released before `setDetections()` is called,
+so the model — which QML binds to — is only ever touched from the GUI thread.
+
+### 2.3 The context-property boundary
+
+`main.cpp` is the single place where C++ becomes visible to QML. Every backend is
+constructed there and registered by name:
+
+| Context property | Type | Purpose |
+|---|---|---|
+| `btManager` | `BluetoothManager` | A2DP/AVRCP media transport |
+| `usbManager` | `UsbManager` | USB mass storage discovery and mounting |
+| `musicLibrary` | `MediaLibrary` | On-disk audio listing |
+| `videoLibrary` | `MediaLibrary` | On-disk video listing |
+| `WifiManager` | `WifiManager` | Wi-Fi radio and connection control |
+| `BluetoothManager` | `BluetoothHWManager` | Adapter, discovery and pairing |
+| `systemVolume` | `SystemVolumeController` | PulseAudio sink volume and mute |
+| `AmbientLight` | `AmbientLightManager` | Cabin LED strip over CAN |
+| `speechManager` | `SpeechManager` | Offline speech recognition |
+| `rosNodeInstance` | `RosNode` | Perception node handle |
+| `detectionModel` | `DetectionModel` | Smoothed detections as a list model |
+| `carInfo` | `CarInfo` | Live vehicle telemetry |
+| `planeInstancing` | `DetectionInstancing` | Pedestrian instance table (label 0) |
+| `cubeInstancing` | `DetectionInstancing` | Cyclist instance table (label 1) |
+| `carInstancing` | `DetectionInstancing` | Vehicle instance table (label 2) |
+
+> **Note on naming.** `BluetoothManager` the *context property* is a
+> `BluetoothHWManager` (settings/pairing), while `btManager` is the
+> `BluetoothManager` C++ class (media transport). The names are crossed; the
+> settings pages use `BluetoothManager`, the media pages use `btManager`.
+
+`main.cpp` also wires one cross-backend rule directly: when A2DP playback starts,
+`BluetoothHWManager::setMediaActive(true)` is asserted, because Bluetooth inquiry
+starves the ACL link and audibly breaks up music. The settings page therefore
+cannot scan while the media side is playing.
+
+`WeatherStore` is the exception to the context-property pattern — it is a QML
+singleton, declared via `QT_QML_SINGLETON_TYPE` in `CMakeLists.txt`. The
+`pragma Singleton` in the file alone is not sufficient: without the source
+property, `qt_add_qml_module` omits the `singleton` line from `qmldir` and every
+caller silently instantiates its own private copy, which defeats the entire
+purpose of a shared cache.
+
+### 2.4 Data flow
+
+**Perception, from bus to pixel:**
+
+```
+  /object_detections_3d  (Object3dArray, ~10 Hz, ROS thread)
+        │
+        ▼
+  RosNode::objectDetectionCallback
+        │   8 box corners → computeBoxTransform → position / scale / rotation
+        │   label → class colour
+        ▼
+  DetectionSmoother::update              [mutex, ROS thread]
+        │   associate by track_id · low-pass velocity · yaw flip guard
+        │   overlap suppression · placement rules · lifecycle transitions
+        ▼
+  DetectionSmoother::tick                [60 Hz QTimer, GUI thread]
+        │   dt-aware exponential follow toward target
+        │   velocity lead · coasting integration · opacity ramp
+        ▼
+  DetectionModel::setDetections          [GUI thread]
+        │
+        ├──▶ QML list model (detectCount, delegates)
+        └──▶ DetectionInstancing ×3      one per class, label-filtered
+                 │   builds a packed instance table
+                 ▼
+             Model { instancing: … }     Qt Quick 3D draws N copies in one pass
+```
+
+**Telemetry:**
+
+```
+  /kitti/oxts/gps/vel  ──▶ speed  ──▶ CarInfo.currVel ──▶ HUD readout, wheel spin
+  /kitti/oxts/imu      ──▶ orientation quaternion ──▶ CarInfo.currImu{X,Y,Z,W}
+  /kitti/oxts/gps/fix  ──▶ lat / lon / alt ──▶ CarInfo, map centring
+```
+
+---
+
+## 3. Project Structure
 
 ```
 IVI/
-├── main.cpp                     # Application entry point; registers all C++ backends
-├── Main.qml                     # Root ApplicationWindow; splash screen, StackView, global state
-├── CMakeLists.txt               # CMake build configuration (Qt 6.8+, PulseAudio, Vosk)
-├── resources.qrc                # Qt resource file (icons, images, videos, fonts)
+├── main.cpp                          Entry point; constructs and registers every backend
+├── Main.qml                          Root ApplicationWindow: splash, StackView, global state
+├── CMakeLists.txt                    Qt 6.8+, PulseAudio, Vosk, rclcpp, message packages
+├── resources.qrc                     Icons, images, fonts, splash clip
 │
 ├── API/
-│   ├── WeatherAPI.qml           # Open-Meteo geocoding + forecast integration
-│   └── RadioAPI.qml             # radio-browser.info station search + playback control
+│   ├── WeatherStore.qml              Singleton weather cache (stale-while-revalidate)
+│   ├── WeatherAPI.qml                Open-Meteo geocoding + forecast transport
+│   └── RadioAPI.qml                  radio-browser.info search and playback
 │
 ├── Backend/
-│   ├── BluetoothManager.cpp/hpp       # A2DP / AVRCP media player via BlueZ D-Bus
-│   ├── BluetoothHWManager.cpp/hpp     # Bluetooth adapter power, scan, pair, connect
-│   ├── WifiManager.cpp/hpp            # Wi-Fi enable/disable, scan, connect via NetworkManager D-Bus
-│   ├── USBManager.cpp/hpp             # UDisks2 USB detection, mount, async file scan
-│   ├── SystemVolumeController.cpp/hpp # PulseAudio system volume and mute control
-│   └── SpeechManager.cpp/hpp         # Vosk offline speech-to-text, QAudioSource capture
+│   ├── BluetoothManager.{hpp,cpp}    A2DP/AVRCP player: metadata, transport, position
+│   ├── BluetoothHWManager.{hpp,cpp}  Adapter power, discovery, pair/connect/remove
+│   ├── BluetoothAgent.{hpp,cpp}      org.bluez.Agent1, DisplayYesNo, delayed replies
+│   ├── BlueZ.{hpp,cpp}               Shared async D-Bus plumbing and type marshalling
+│   ├── WifiManager.{hpp,cpp}         NetworkManager: scan, connect, disconnect, forget
+│   ├── WifiCredSender.{hpp,cpp}      Credential handoff to the vehicle host over CAN
+│   ├── USBManager.{hpp,cpp}          UDisks2 discovery, mount, async media scan
+│   ├── MediaLibrary.{hpp,cpp}        Directory-backed list model, one per media type
+│   ├── SystemVolumeController.{hpp,cpp}  PulseAudio sink volume and mute
+│   ├── SpeechManager.{hpp,cpp}       Vosk offline recognition over QAudioSource
+│   ├── AmbientLightManager.{hpp,cpp} Cabin LED strip over SocketCAN
+│   ├── vosk_api.h · libvosk.so       Vendored speech recognition library
 │
 ├── Components/
-│   ├── MediaCard.qml            # Now-playing card with artwork, title, and transport controls
-│   ├── WindowBar.qml            # Shared top bar with title, back, brightness, and volume controls
-│   └── CarInfoPopup.qml         # Modal vehicle information overlay
-│
-├── MediaPages/
-│   ├── AudioPage.qml            # USB audio player (Bluetooth + USB sources, playlist)
-│   ├── VideoPage.qml            # USB video player with full-screen playback
-│   └── RadioPage.qml            # Internet radio browser and player
+│   ├── WindowBar.qml                 Shared top bar: title, back, brightness, volume, status
+│   ├── MediaCard.qml                 Now-playing card with artwork and transport
+│   ├── CarInfoPopup.qml              Modal vehicle information overlay
+│   ├── AmbientCard.qml               Launcher ambient-light quick controls
+│   └── VirtualKeyboard.qml           On-screen keyboard with shift, password mode, reveal
 │
 ├── pages/
-│   ├── WeatherPage.qml          # Full weather dashboard (current, hourly, 7-day forecast)
-│   ├── MediaPlayerPage.qml      # Media hub routing to Audio, Video, and Radio sub-pages
-│   └── SettingPage.qml          # Settings hub routing to Wi-Fi and Bluetooth sub-pages
+│   ├── WeatherPage.qml               Full weather dashboard and city search
+│   ├── MediaPlayerPage.qml           Media hub routing to Audio / Video / Radio
+│   └── SettingPage.qml               Settings hub routing to Wi-Fi / Bluetooth / Ambient
 │
-└── SettingPages/
-    ├── WiFiPage.qml             # Wi-Fi network list, connect/disconnect, password dialog
-    └── BluetoothPage.qml        # Bluetooth device list, pair, connect, disconnect
+├── MediaPages/
+│   ├── AudioPage.qml                 Audio player, playlist, Bluetooth and USB sources
+│   ├── VideoPage.qml                 Video player, full-screen, USB device panel
+│   └── RadioPage.qml                 Internet radio browser and player
+│
+├── SettingPages/
+│   ├── WiFiPage.qml                  Network list, connect dialog, credential handoff
+│   ├── BluetoothPage.qml             Device list, pairing confirmation, connection state
+│   └── AmbientLightPage.qml          Full ambient controls: modes, palette, zones, picker
+│
+└── DriveView/
+    ├── DriveViewPage.qml             Page shell: Scene3D + WindowBar
+    ├── res.qrc                       Meshes, textures, HDRI probes
+    ├── inc/
+    │   ├── ros_node.h                Subscriptions, callbacks, spin thread
+    │   ├── detection_data.h          The per-detection POD passed between layers
+    │   ├── detection_model.h         QAbstractListModel of smoothed detections
+    │   ├── detection_smoother.h      Track state, lifecycle flags, interpolation
+    │   ├── detection_instancing.h    QQuick3DInstancing subclass, label-filtered
+    │   ├── box_transform.h           8 corners → position / scale / quaternion
+    │   └── car_info.h                Vehicle telemetry properties
+    ├── src/                          Implementations of the above
+    ├── qml/
+    │   ├── Scene3D.qml               Full-screen scene, HUD, cameras, settings drawer
+    │   ├── MiniScene3D.qml           Launcher tile preview, same instancing tables
+    │   ├── Environment3D.qml         Road, ground, lane markings, scrolling city
+    │   └── MapOSM.qml                OpenStreetMap view via QtLocation
+    └── models_3d/
+        ├── audi_low_poly/            Ego vehicle, with driven wheel spin
+        ├── tesla_low_poly/           Detected vehicle mesh + silver texture
+        └── lowpoly_ps1_character…/   Detected pedestrian mesh, walk pose
 ```
 
 ---
 
-## Architecture
+## 4. The Screens
 
-The application follows a **layered architecture** that cleanly separates hardware access, application logic, and UI rendering.
+### 4.1 Splash
 
+An `AnimatedImage` plays a branded clip (`assets/videos/vpace_splash.gif`, 90
+frames, roughly 3 s) full-screen from embedded resources, cropped with
+`PreserveAspectCrop` over an opaque backdrop so no aspect ratio can expose bare
+window.
+
+`AnimatedImage` loops forever and offers no "finished" signal, so the end of the
+clip is detected by watching `currentFrame` reach `frameCount - 1`. Playback is
+stopped **on** that frame rather than after it — letting it wrap visibly restarts
+the logo underneath the fade. A 300 ms opacity animation then hands over to the
+UI.
+
+A 6 s backstop timer forces the same transition if the clip is missing or fails
+to decode. A bad resource must never strand a head unit on a splash screen it
+cannot leave.
+
+### 4.2 Launcher
+
+The home screen is a bento grid over an animated gradient background with
+floating blurred colour blobs.
+
+**Top glass bar** — carries the clock, the date, a "Drive Safe" greeting, an
+online/offline indicator bound to `WifiManager.connectedSsid`, and the vehicle
+logo. The whole bar is a hit target that opens the car info popup; it lifts on
+hover, because a header that reacts to nothing gives no hint it can be pressed.
+
+The clock is derived from the epoch rather than formatted from local time:
+
+```js
+var now  = new Date()
+var here = new Date(now.getTime() + (now.getTimezoneOffset() + tzOffsetMinutes) * 60000)
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         QML / UI Layer                           │
-│  Main.qml · pages/ · MediaPages/ · SettingPages/ · Components/  │
-│  Pure declarative UI; binds to C++ properties and signals        │
-└────────────────────────────┬─────────────────────────────────────┘
-                             │  Q_PROPERTY bindings, signals/slots
-                             ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      QML API / Logic Layer                       │
-│  WeatherAPI.qml  ·  RadioAPI.qml                                 │
-│  XMLHttpRequest to public REST APIs; emits structured signals    │
-└────────────────────────────┬─────────────────────────────────────┘
-                             │  context properties (setContextProperty)
-                             ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     C++ Backend Layer                            │
-│  BluetoothManager · BluetoothHWManager · WifiManager            │
-│  USBManager · SystemVolumeController · SpeechManager            │
-│  Each is a QObject registered in QQmlContext                     │
-└────────────────────────────┬─────────────────────────────────────┘
-                             │  Linux system APIs
-                             ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                       Hardware / OS Layer                        │
-│  D-Bus (BlueZ 5, NetworkManager, UDisks2)                        │
-│  PulseAudio (system volume, Bluetooth audio, microphone)         │
-│  Vosk (offline speech recognition)                               │
-│  Qt Multimedia / GStreamer (audio & video playback)              │
-└──────────────────────────────────────────────────────────────────┘
-```
 
-**State management** follows a "global window" pattern: `Main.qml`'s `ApplicationWindow` acts as the single source of truth for cross-page state (current media, radio state, preferred city, brightness). Individual pages receive state via required properties and write back through signals or direct property binding on `mainWindow`.
-
-**Navigation** uses a single `StackView` rooted in `Main.qml`. Each destination is a `Component` that gets pushed onto the stack when selected from the launcher, and popped when the back button in the `WindowBar` is pressed. The Settings and Media pages contain their own nested `StackView` for their sub-pages.
-
----
-
-## Features
-
-### Launcher / Home Screen
-
-The home screen is the entry point after the splash screen finishes. It presents four animated app tiles (Weather, Media, Drive View, Settings) alongside live status widgets.
-
-**App Tiles**
-
-The tiles are laid out inline in `Main.qml` rather than as a shared component. Each has:
-- A colored top accent bar that matches the app's theme color.
-- A circular icon container with a semi-transparent tinted background.
-- A title and subtitle text block.
-- A smooth scale + border-glow hover animation driven by `MouseArea` and `Behavior` animations.
-- Floating animation (`NumberAnimation` looping between y offsets) that adds a subtle "breathing" liveliness to the idle state.
-
-**Live Weather Widget**
-
-A compact card on the launcher displays:
-- Current temperature in degrees Celsius.
-- A weather emoji mapped from the WMO weather code (e.g., `☀️` for clear, `🌧️` for rain).
-- A short text description of the current condition.
-- The currently configured city name.
-
-The data is fetched automatically on launch and refreshed whenever `mainWindow.preferredCity` changes.
-
-**Splash Screen**
-
-On launch, an `AnimatedImage` plays the branded clip (`assets/videos/vpace_splash.gif`, 90 frames, ~3 s) full-screen from embedded resources, cropped to fill with `PreserveAspectCrop`.
-
-`AnimatedImage` loops forever and has no "finished" signal, so the end of the clip is detected by watching `currentFrame` reach `frameCount - 1`. Playback is stopped *on* that frame — letting it wrap would visibly restart the logo underneath the fade — and a 300 ms `NumberAnimation` fades the splash out, after which `splashDone` is set to `true` and the item is hidden. A 6 s backstop timer forces the same transition if the gif is missing or fails to decode, so a bad resource can never strand the head unit on a splash it cannot leave.
-
-**Voice Activation**
-
-A microphone button in the launcher activates offline voice recognition. When pressed, the button turns red and the `SpeechManager` starts listening. Recognized commands are routed to navigation actions:
-- "weather" / city names → opens `WeatherPage` for that city.
-- "media" / "music" / "video" → opens `MediaPlayerPage`.
-- "settings" → opens `SettingPage`.
-
-While listening, a partial result text updates live beneath the mic button to give visual feedback of what the system is hearing.
-
-**Car Info Popup**
-
-A car icon button opens a modal popup (`CarInfoPopup`) that shows static vehicle information (model, year, VIN, service status) in a centered card with a backdrop overlay. Clicking outside the card closes it.
-
----
-
-### Weather Page
-
-The Weather page is a full-screen meteorological dashboard powered by the **Open-Meteo** free API (no API key required).
-
-**Current Conditions Panel**
-
-The upper portion of the page displays:
-- A large weather emoji and temperature for the current moment.
-- Apparent ("feels like") temperature.
-- Wind speed and direction (the direction arrow SVG is rotated dynamically to match the wind bearing).
-- Relative humidity, surface pressure, UV index, and cloud cover percentage.
-- Rain accumulation for the last hour.
-- A day/night indicator from the `is_day` field.
-
-**Hourly Temperature Chart**
-
-A scrollable horizontal row of hourly temperature bubbles spans the next 24 hours. Each bubble shows a time label and temperature, with the current hour highlighted in the accent amber color.
-
-**7-Day Forecast Strip**
-
-A row of 7 day cards each show:
-- The abbreviated day name.
-- A weather emoji for that day's dominant condition.
-- Min and max temperature range.
-
-**City Search**
-
-A text input in the `WindowBar` (or a dedicated field) allows the user to type a new city name. The search flows through the geocoding API to resolve coordinates, then fetches forecast data. The resolved city name is persisted to Qt `Settings` (stored on disk) so it survives restarts. The default city is set to `"Giza"`.
-
-**Weather Code Mapping**
-
-The QML function `weatherEmoji(code, isDay)` maps all standard WMO weather interpretation codes (0–99) to human-readable emoji strings:
-- 0 = `☀️` / `🌙`
-- 1–2 = `🌤️`
-- 3 = `☁️`
-- 45–48 = `🌫️`
-- 51–55 = `🌦️`
-- 61–65 = `🌧️`
-- 71–75 = `❄️`
-- 80–82 = `🌦️`
-- 95–99 = `⛈️`
-
----
-
-### Media Player Page
-
-The Media Player page acts as a hub that routes into three distinct sub-pages via a nested `StackView`: Audio, Video, and Radio. A shared `MediaPlayer` instance (created in `Main.qml`) is injected into each sub-page so that audio playback is persistent across navigation — switching from the Radio page back to the launcher does not stop the stream.
-
-**Global Media State**
-
-`Main.qml` maintains these cross-page properties:
-- `currentMediaTitle` / `currentMediaSubtitle` / `currentMediaFavicon` — displayed in `MediaCard` on the launcher.
-- `currentMediaType` — integer discriminator (0 = none, 1 = radio, 2 = audio, 3 = video).
-- `mediaPlaying` — bound to the shared player's `playbackState`.
-
-#### Audio Player
-
-The Audio page (`MediaPages/AudioPage.qml`) provides:
-
-**Source Selection (Left Panel)**
-
-A narrow left panel lists available audio sources:
-- **Bluetooth** — streams audio from the connected A2DP device. Track metadata (title, artist, album) and playback state are read from `btManager` (the `BluetoothManager` C++ backend). Transport controls (play, pause, next, previous, stop) are wired directly to `btManager` slots.
-- **USB** — when a USB drive is detected by `usbManager`, its audio file list (`usbManager.audioFiles`) populates the playlist.
-- **URL** — a text input accepts any HTTP/HTTPS audio stream URL for direct playback.
-
-**Now-Playing Panel**
-
-The center/right area shows:
-- Cover art area (placeholder or favicon for radio).
-- Track title, artist, and album.
-- Playback position slider with elapsed and total time labels.
-- Transport buttons: previous, play/pause, next.
-- Shuffle and repeat toggle buttons.
-
-**Playlist Panel**
-
-A `ListView` of available tracks (from USB or a curated list) with the currently playing track highlighted. Tapping a track loads it immediately. The playlist scrolls independently and supports keyboard navigation in desktop mode.
-
-**Error Handling**
-
-The `Connections` block on the shared `MediaPlayer` maps `onErrorOccurred` to a human-readable error banner covering common failure cases: `NetworkError`, `FormatError`, `AccessDeniedError`, and `ResourceError`.
-
-#### Video Player
-
-The Video page (`MediaPages/VideoPage.qml`) has its own dedicated `MediaPlayer` (separate from the shared audio player) so that it can drive a `VideoOutput` component without conflicting with audio streams.
-
-**Source Selection**
-
-A left panel (same layout as Audio) supports:
-- **Local** — lists the on-disk video library. There is no file picker; the folder loads itself.
-- **USB** — populates a playlist from `usbManager.videoFiles`. Supported extensions are detected by `USBManager`'s internal scanner (`.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`, and others).
-
-**Video Output**
-
-A `VideoOutput` item fills the main area and is bound to the local `videoPlayer`. The aspect ratio is preserved (`fillMode: PreserveAspectFit`).
-
-**Full-Screen Toggle**
-
-A button in the control bar toggles full-screen playback by temporarily collapsing the left panel and control bar, expanding `VideoOutput` to fill the entire page.
-
-**Playback Controls**
-
-Position slider, elapsed/total time, play/pause, seek backward/forward (10-second jumps), and volume control overlay (independent from the system volume).
-
-#### Radio Player
-
-The Radio page (`MediaPages/RadioPage.qml`) fetches live internet radio stations from the public **radio-browser.info** API.
-
-**Station Search**
-
-A search bar at the top is bound to `mainWindow.radioSearchQuery`. When the user types and presses Enter, `RadioAPI.fetchStations()` is called, which queries the radio-browser.info REST endpoint for the top 100 stations matching the query, ordered by vote count. The loading spinner shows `radioIsLoading` state (managed globally so it can be shown in other contexts too).
-
-**Station List**
-
-Results appear in a scrollable `ListView`. Each row shows:
-- Station favicon (falls back to a radio icon if the favicon URL is empty or fails to load).
-- Station name.
-- Country flag emoji and codec string as subtitle.
-- Vote count badge.
-
-Tapping a row calls `RadioAPI.playStation(station)`, which updates global media state and begins streaming.
-
-**Transport Controls**
-
-Below the list a mini-player bar shows the currently playing station name, a play/pause toggle, and previous/next buttons that cycle through the fetched station list.
-
-**Status Indicator**
-
-A colored dot reflects the `MediaPlayer`'s `mediaStatus`:
-- Amber — buffering.
-- Green — buffered and playing.
-- Dark amber — stalled.
-- Dark — no media.
-
-**Persistent State**
-
-Because `globalStationsModel` and `globalRadioAPI` are properties of `mainWindow`, navigating away from the Radio page and returning does not clear the station list or stop playback. The user can open the Weather page, return to Media, and find the station still playing.
-
----
-
-### Settings Page
-
-The Settings page (`pages/SettingPage.qml`) is a navigation hub that uses its own nested `StackView`. The main page shows two large glassmorphism cards — one for Wi-Fi and one for Bluetooth — each showing the current connection status and navigating to the respective detail page on tap.
-
-**Glassmorphism Cards**
-
-Each card uses a `Rectangle` with:
-- Semi-transparent background (`rgba(255,255,255,0.08)`).
-- A subtle white border at 12% opacity.
-- Rounded corners (16 px radius).
-- A `DropShadow` effect from `Qt5Compat.GraphicalEffects`.
-- Scale animation on hover.
-
-The Wi-Fi card shows the connected SSID (from `WifiManager.connectedSsid`). The Bluetooth card shows whether Bluetooth is enabled.
-
-#### Wi-Fi Settings
-
-`SettingPages/WiFiPage.qml` is a full Wi-Fi management interface backed by `WifiManager`.
-
-**Enable / Disable Toggle**
-
-A `Switch` control at the top of the page is two-way bound to `WifiManager.wifiEnabled`. When toggled on, the backend enables the Wi-Fi adapter via D-Bus NetworkManager and automatically triggers a scan.
-
-**Network Scanning**
-
-A "Scan" button calls `WifiManager.scanNetworks()`. While scanning, a `BusyIndicator` is shown. When `onScanFinished(networks)` fires, `networkListModel` is populated with the returned SSID list. If `WifiManager.connectedSsid` matches any entry, that entry is marked `connected: true` and displayed with a checkmark.
-
-**Connecting to a Network**
-
-Tapping a network entry checks whether a stored profile exists:
-- If yes (already known network), `connectToSelectedNetwork(ssid)` is called directly.
-- If no, a password dialog appears — a `Rectangle` overlay with a `TextField` for password input. Confirming calls `connectToNetwork(ssid, password)`.
-
-The `WifiManager` emits `passwordRequired(ssid)` if an existing profile exists but authentication fails, re-triggering the password dialog.
-
-**Connection Status Feedback**
-
-`onConnectSuccess` / `onConnectFailed` signals from `WifiManager` update a small status text beneath the network list with success or failure messages. `onConnectedSsidChanged` refreshes the checkmark indicator in the list.
-
-**Disconnecting**
-
-A "Disconnect" button appears next to the connected network entry. It calls `WifiManager.disconnectFromNetwork()`.
-
-#### Bluetooth Settings
-
-`SettingPages/BluetoothPage.qml` provides hardware Bluetooth management via `BluetoothHWManager`, plus media metadata via `BluetoothManager`.
-
-**Enable / Disable Toggle**
-
-A `Switch` bound to `BluetoothHWManager.bluetoothEnabled`. Enabling triggers an automatic device scan.
-
-**Device List**
-
-`deviceListModel` is a `ListModel` populated from `onScanFinished(devices)`. Each entry shows:
-- Device address.
-- Device name (resolved asynchronously or shown as address until known).
-- Connection status badge (Connected / Paired / Discovered).
-- Three action buttons: Pair, Connect, Disconnect (shown/hidden based on current device state).
-
-The page tracks `connectedAddresses[]`, `connectingAddress`, and `disconnectingAddress` properties to manage per-device loading states without a full model refresh.
-
-**Signals from BluetoothHWManager**
-
-| Signal | UI Action |
+`tzOffsetMinutes` is fixed at `3 * 60`. Formatting `new Date()` directly would
+trust whatever zone the host is set to, and the target image comes up as UTC —
+so the bar read three hours behind while the underlying epoch was correct. This
+form produces the same wall clock on the vehicle and on a developer laptop in
+any zone.
+
+**App tiles** — Weather, Media, Drive View and Settings. Each has a coloured
+accent bar, a tinted circular icon, a title and subtitle, a scale-and-glow hover
+animation, and a slow looping vertical drift that keeps the idle screen alive.
+
+**Live weather card** — current temperature, a WMO-code-derived emoji, a short
+description, and the configured city. Reads synchronously from `WeatherStore`,
+so it paints on its first frame from cache and updates in place when a refresh
+lands.
+
+**Drive View tile** — a live `MiniScene3D`, sharing the same instancing tables
+as the full page. It shows real detections, not a mock-up, with no second
+subscription and no duplicated state.
+
+**Ambient card** — power, mode and the fixed palette. Brightness, zone masking
+and the free colour picker are deliberately left on the settings page: the
+launcher may be used while moving, and a hue wheel is not something to hand a
+driver at speed.
+
+**Voice activation** — a microphone button starts `SpeechManager`. While
+listening the button turns red and a live partial transcript appears beneath it.
+Recognised words route to navigation: weather and city names open the weather
+page, media/music/video open the media hub, settings opens the settings hub.
+
+**Global brightness overlay** — a black `Rectangle` parented to
+`Overlay.overlay` at `z: 99999`, with `opacity = 1.0 - appBrightness`. Because it
+is on the overlay layer it dims popups and dialogs too, which a plain sibling
+rectangle would not.
+
+### 4.3 Weather
+
+A full dashboard backed by **Open-Meteo**, which needs no API key.
+
+- **Current conditions** — temperature, apparent temperature, condition text and
+  icon, wind speed and direction, surface and mean-sea-level pressure, relative
+  humidity, cloud cover, and a day/night flag that the styling responds to.
+- **Hourly strip** — the next 24 hours, horizontally scrollable.
+- **Daily forecast** — 7 days with high/low and maximum UV index.
+- **City search** — a text field with the on-screen `VirtualKeyboard`, resolving
+  through Open-Meteo's geocoding endpoint. A successful search updates
+  `mainWindow.preferredCity`, which persists and re-points the launcher card.
+- **Not-found handling** — `WeatherStore` emits `notFound`, and the page shows an
+  inline message rather than an empty dashboard.
+
+All of it reads through `WeatherStore`, so entering the page from the launcher
+costs nothing when the cache is fresh.
+
+### 4.4 Media hub
+
+`MediaPlayerPage` is a router with its own nested `StackView`. Playback state is
+owned above it, in `Main.qml`, so audio survives navigation.
+
+**Shared now-playing state** lives on the root window:
+
+| Property | Meaning |
 |---|---|
-| `onScanStarted` | Shows scanning spinner |
-| `onScanFinished(devices)` | Populates device list |
-| `onPairSuccess(name)` | Shows success toast, updates row badge |
-| `onPairFailed(reason)` | Shows error toast |
-| `onConnectSuccess(name)` | Adds to `connectedAddresses` |
-| `onConnectFailed(reason)` | Shows error toast |
-| `onDisconnectSuccess(name)` | Removes from `connectedAddresses` |
-| `onDeviceConnectionChanged(address, connected)` | Immediately updates the row |
+| `currentMediaTitle` / `currentMediaSubtitle` | What is playing |
+| `currentMediaFavicon` | Station icon, radio only |
+| `currentMediaType` | `0` none · `1` radio · `2` local audio · `3` video · `4` Bluetooth |
+| `mediaPlaying` | Unified play state |
 
-**Media Metadata**
+`mediaPlaying` is not simply `sharedMediaPlayer.playbackState`. Bluetooth audio
+is driven by the phone, not by the local player, so for `currentMediaType === 4`
+the state comes from AVRCP (`btManager.playerStatus`) instead. `Connections` on
+`btManager` mirror the phone's stream into the shared state so it surfaces
+everywhere local sources do — and clearing only happens if Bluetooth is what is
+currently showing, so a locally started track is never stomped.
 
-When a Bluetooth device is connected and streaming via A2DP, `BluetoothManager` exposes `trackTitle`, `trackArtist`, `trackAlbum`, and `playerStatus` as live properties. These are reflected in the Audio page's now-playing panel.
+#### Audio player
+
+Sources are the on-disk library (`musicLibrary`), mounted USB devices
+(`usbManager`), and a connected phone over A2DP. The page offers a scrollable
+playlist with the active row highlighted, a seek bar with elapsed and total time,
+transport controls, and artwork.
+
+#### Video player
+
+Full-screen playback with an auto-hiding control overlay, a seek bar, and a
+device panel listing mounted USB volumes so a stick can be browsed without
+leaving the page.
+
+#### Radio
+
+Search by name, country or tag against **radio-browser.info**. Results list
+station name, country, codec and bitrate with the station favicon. Selecting one
+streams it through the shared player.
+
+Search state — query text, whether a search has been attempted, loading flag, and
+the current station — is held on `mainWindow`, not on the page. The page is
+pushed from a `Component` and therefore destroyed on back navigation; keeping the
+state above it means returning to radio restores the previous result list instead
+of an empty search box.
+
+### 4.5 Drive View
+
+The 3D perception view. Covered in full in [section 5](#5-drive-view-in-depth).
+
+### 4.6 Settings hub
+
+`SettingPage` routes to three sub-pages through a nested `StackView` and can be
+addressed directly from elsewhere: `Main.qml` exposes `openSettingsSection(name)`
+so the status icons in `WindowBar` can jump straight to Wi-Fi or Bluetooth. If
+settings is already on screen it switches section rather than pushing a second
+copy.
+
+#### Wi-Fi
+
+Radio toggle, scan, and a network list showing SSID, signal strength and a lock
+indicator for secured networks, with the connected network pinned and marked.
+Connecting to a secured network opens a password dialog backed by the virtual
+keyboard, with a reveal toggle. Disconnect and forget are available on the
+active connection.
+
+On a successful connection the credentials are additionally handed to the
+vehicle host through `WifiCredSender` (see [9.3](#93-wi-fi-credential-handoff)).
+
+#### Bluetooth
+
+Adapter power and discoverability, scan with live device arrival, and a device
+list split into paired and available. Pairing uses **numeric comparison**: BlueZ
+calls into `BluetoothAgent`, the six-digit passkey is shown in a modal, and the
+D-Bus reply is held open until the driver accepts or rejects.
+
+Scanning is suppressed while A2DP is playing, wired in `main.cpp`.
+
+#### Ambient light
+
+The full control surface for the cabin strip: power, the five effect modes
+(Static, Breathe, Chase, Scanner, Rainbow), an eight-colour preset palette, a
+free HSV colour picker, a brightness slider, and per-LED zone masking across the
+six LEDs.
+
+The palette contains **no alternating red/blue**. That pattern imitates emergency
+vehicles and is illegal on a road vehicle in most jurisdictions. Single static
+colours are not.
 
 ---
 
-## Backend Components
+## 5. Drive View in Depth
 
-All backend components are C++ classes that extend `QObject`, expose state via `Q_PROPERTY`, and are registered in the QML engine context in `main.cpp` using `setContextProperty`.
+### 5.1 The pipeline
 
-### BluetoothManager
+Drive View turns a sparse, noisy, ~10 Hz stream of 3D bounding boxes into a
+stable 60 Hz scene. The problem is not drawing boxes — it is that raw detector
+output, drawn directly, looks broken:
 
-**File:** `Backend/BluetoothManager.cpp/hpp`
-**Context key:** `btManager`
+- Objects step visibly at the message rate rather than moving.
+- Boxes jitter frame to frame as the detector's estimate wobbles.
+- Symmetric boxes flip 180° at random because yaw is ambiguous.
+- The tracker retires and re-acquires IDs, so one car becomes two.
+- Objects vanish instantly at the edge of the sensor's field of view.
+- The detector occasionally emits two boxes for one vehicle.
+- People appear in the middle of the carriageway and inside buildings.
 
-Handles **Bluetooth media (A2DP/AVRCP)** integration by communicating directly with the **BlueZ 5** D-Bus interface (`org.bluez`).
+Everything in `DetectionSmoother` exists to address one of those.
 
-| Property | Type | Description |
+### 5.2 Coordinate frames
+
+Two frames are in play, and the conversion is the source of most of the sign
+conventions in the code.
+
+| | ROS (`velo_link`) | Qt Quick 3D |
 |---|---|---|
-| `connected` | `bool` | Whether a Bluetooth device is currently connected |
-| `deviceName` | `QString` | Friendly name of the connected device |
-| `deviceAddress` | `QString` | MAC address of the connected device |
-| `trackTitle` | `QString` | Currently playing track title (from AVRCP) |
-| `trackArtist` | `QString` | Track artist |
-| `trackAlbum` | `QString` | Track album |
-| `playerStatus` | `QString` | BlueZ player status ("playing", "paused", "stopped") |
+| Handedness | Right | Left |
+| Forward | `+X` | `−Z` |
+| Left | `+Y` | `−X` |
+| Up | `+Z` | `+Y` |
+| Unit | metres | 1/100 m |
 
-**Public Slots:** `play()`, `pause()`, `next()`, `previous()`, `stop()` — all send AVRCP commands via D-Bus.
+```cpp
+static QVector3D rosToQt(const QVector3D& v)
+{
+    return QVector3D(-v.y(), v.z(), -v.x());
+}
+```
 
-**Polling mechanism:** A `QTimer` fires every 500 ms and calls `poll()`, which re-reads all properties from BlueZ using `getManagedObjects()` and `getProperties()`. This approach avoids the complexity of subscribing to BlueZ property-change signals while keeping the UI responsive to track changes.
+Two consequences worth internalising, because nearly every threshold in the
+smoother depends on them:
 
-**D-Bus interaction:** Uses raw `QDBusArgument` deserialization to avoid relying on auto-generated BlueZ bindings, which makes it more robust across BlueZ versions.
+1. **`+Z` is behind the ego.** Anything receding has positive Z velocity.
+2. **Positions are in hundredths of a metre.** A value of `850.5` is 8.5 m.
 
----
+That second point caused a real defect. The velocity sanity clamp was written as
+`kMaxSpeedMs = 40.0f` and documented as 40 m/s, but it was compared against a
+speed in Qt units per second — so it actually clamped to **0.4 m/s**. Every
+moving object had its velocity crushed by roughly 97%, which made the velocity
+lead worth about 3 cm instead of a metre and left `targetVel` useless for
+anything downstream. It is now `kMaxSpeedUnits = 4000.0f`.
 
-### BluetoothHWManager
+### 5.3 Box reconstruction
 
-**File:** `Backend/BluetoothHWManager.cpp/hpp`
-**Context key:** `BluetoothManager`
+The message carries eight corner points, not a pose. `computeBoxTransform()`
+recovers one:
 
-Controls the **Bluetooth hardware adapter** (power on/off, device scanning, pairing, and connection) via the BlueZ `org.bluez.Adapter1` and `org.bluez.Device1` D-Bus interfaces.
+```
+        ^ z   x     6 ------ 5
+        |   /      / |     / |
+        |  /      2 -|---- 1 |
+ y      | /       |  |     | |
+ <------|o        | 7 -----| 4
+                  |/   o   |/
+                  3 ------ 0
+```
 
-| Property | Type | Description |
+- `0→4`, `0→3` and `0→1` give the three box axes.
+- Their lengths give the three extents.
+- The centre is the midpoint of the `0↔6` diagonal.
+- A rotation matrix is assembled from the axes and re-orthogonalised via two
+  cross products before conversion to a quaternion.
+
+**A caveat that matters downstream:** the axis the code calls "length" is not
+reliably the vehicle's long axis. Measured on drive 0004, every car alongside the
+ego reports its `0→4` axis at approximately ±90° — i.e. across the vehicle, not
+along it. The renderer compensates with a fixed `-90°` yaw whenever the width
+slot exceeds the length slot, which is why `detection_instancing.cpp` contains
+what looks like an arbitrary constant. It is not arbitrary; it is the correction
+for a swapped axis.
+
+The sign of that ±90 is chosen arbitrarily by the detector, and that is the root
+of the "backwards car" behaviour handled in [5.7](#57-placement-rules).
+
+### 5.4 Smoothing
+
+Interpolation is **dt-aware exponential**, not fixed-step:
+
+```cpp
+const float alpha = 1.0f - qExp(-float(dtMs) / kTauPosMs);
+track.currentPos += (projected - track.currentPos) * alpha;
+```
+
+A fixed per-tick factor produces different motion at different frame rates. The
+exponential form is defined by a time constant, so identical motion results
+whether ticks land at 16 ms or 30 ms. `kTauPosMs = 70` reproduces the previous
+fixed `0.2` per 16 ms tick exactly.
+
+**Velocity lead.** Pure exponential following always lags a moving target. The
+target is therefore projected forward along its own smoothed velocity before the
+follow runs:
+
+```cpp
+const QVector3D projected = track.targetPos + track.targetVel * (kHorizonMs / 1000.0f);
+```
+
+With `kHorizonMs == kTauPosMs`, the lead exactly cancels the lag at constant
+velocity. When the object stops, `targetVel` decays and the correction term pulls
+the box in without overshoot.
+
+**Measurement velocity** is itself low-passed (`kTauVelMs = 150`) from successive
+message positions, clamped to a plausible maximum, and reset outright after a gap
+of 500 ms or more — a stale velocity is worse than no velocity.
+
+**Yaw flip guard.** Detector yaw carries a ±π ambiguity on symmetric boxes. Left
+alone, `slerp` spins the mesh through a full 180° every time the sign changes.
+When the measured rotation differs from the current one by more than
+`kFlipThresholdDeg` (120°), the guard tries the 180° alternative about the box's
+**own up axis** and accepts it if it is nearer.
+
+Two details make this correct rather than approximately correct:
+
+- The flip must be about the box's own up axis. Rotating 180° about any
+  horizontal world axis would turn the box upside down.
+- The difference quaternion must be sign-normalised (`w >= 0`) first.
+  `QQuaternion::getAxisAndAngle` reports angles in `(180°, 360°]` when the scalar
+  part is negative rather than normalising to the shortest rotation, so without
+  this the near-side flip is always rejected and the box spins anyway.
+
+### 5.5 Track lifecycle
+
+Each track moves through four observable states:
+
+```
+                 ┌──────────────────────────────────────────┐
+                 │              re-acquired                  │
+                 ▼                                           │
+   ┌───────────┐    2 hits    ┌────────┐    lost      ┌──────────┐
+   │ tentative │─────────────▶│  live  │─────────────▶│ coasting │
+   └───────────┘              └────────┘              └──────────┘
+        │  never seen again        │  suppressed           │  off screen
+        │                          │  by a rule            │  or capped
+        ▼                          ▼                       ▼
+   ┌────────────────────────── fading ──────────────────────────┐
+   │            opacity → 0 over ~40 ms, then reaped            │
+   └────────────────────────────────────────────────────────────┘
+```
+
+**Tentative.** A new track is not drawn until it has been measured
+`kMinHitsToShow` (2) times. A detection that appears for one message and is gone
+by the next is a false positive, and drawing it is what makes a car flash into
+existence beside the ego with nothing leading up to it. Tentative tracks are also
+pinned at zero opacity — otherwise they spend their entire fade-in invisible and
+then appear at two-thirds brightness the instant they confirm, which is the exact
+pop the gate exists to remove.
+
+**Coasting** is dead reckoning past the end of the sensor. The lidar's useful
+field of view ends at the ego vehicle, so an oncoming car is dropped the instant
+it draws level. That is correct detector output and it looks wrong: the car stops
+dead alongside and evaporates, when what you were watching was something closing
+at 15 m/s.
+
+A dropped track therefore keeps travelling on its own last measured velocity at
+full opacity until it is off screen, and only then fades:
+
+```cpp
+track.targetPos.setZ(track.targetPos.z() + track.targetVel.z() * dt);
+```
+
+Constant velocity, not decaying — traffic passing you does not slow down, and a
+decay reads as braking. **Z only**: the lateral component of a dead-reckoned
+velocity is mostly estimate noise, and integrating it for several seconds walked
+cars sideways out of their lane and off the tarmac, which is motion the object
+never had.
+
+Coasting is gated so it can never invent motion:
+
+| Gate | Value | Why |
 |---|---|---|
-| `bluetoothEnabled` | `bool` | Read/write; controls adapter power via `org.bluez.Adapter1.Powered` |
+| Must be receding | `v.z > 0` | A ghost drifting *toward* the camera is far more noticeable than one leaving. |
+| Must be moving | `≥ 0.6 m/s` | A track that vanishes while pacing us is not driving away. |
+| Must be established | `≥ 3 hits` | Below that the velocity is mostly the low-pass's initial zero. |
+| Must be on the road | `\|x\| ≤ roadHalfWidth` | Extrapolating a car through the pavement looks worse than letting it go. |
+| Hard time cap | 10 s | A bad velocity estimate can never leave a ghost parked in the scene. |
 
-**Invokable methods:**
-- `scanDevices()` — calls `StartDiscovery` on the adapter; subscribes to `InterfacesAdded` to collect new device paths.
-- `pairDevice(address)` — resolves the device path and calls `Pair()`.
-- `connectDevice(address)` — calls `Connect()` on the resolved device path.
-- `disconnectDevice(address)` — calls `Disconnect()`.
+The 0.6 m/s floor is deliberately low. It was 2 m/s, which covered oncoming
+traffic but excluded the case the feature is most wanted for: a car you overtake
+pulls away at the *difference* between the two speeds. Measured on drive 0004,
+track 55660 fell back at **0.93 m/s** over ten seconds — real, steady, and under
+the old gate, so it vanished at the bumper like everything else.
 
-**DeviceWatcher helper class:** A lightweight `QObject` that subscribes to `PropertiesChanged` on a specific device D-Bus path and emits `connectionChanged(address, bool)` when the `Connected` property changes. A `DeviceWatcher` instance is created for each known device to provide real-time connection status without polling.
+**The fade happens off screen.** `kCoastEndZ = 1400` (14 m back) is past both
+default cameras — the chase view's lower frustum edge crosses road level at
+z ≈ 680, and the top view sees to z ≈ 1220. That is the entire point: the object
+leaves the screen at full opacity, the way a real one does.
 
----
+**Fading** is asymmetric on purpose. Fading *in* can be leisurely (90 ms), because
+a car arriving at partial alpha is blending over the road behind it and looks
+like a car appearing. Fading *out* cannot: the vehicle mesh is concave, so while
+it is semi-transparent you see its own far side through it and it blends toward
+the dark background — which reads as the car changing colour just before it
+vanishes rather than dissolving. Nothing tints it; the instance RGB is white
+throughout. A long ramp simply gives the eye time to read the dimming as a colour
+shift, so the out-ramp is 40 ms and the track is reaped while still 12% visible.
 
-### WifiManager
+### 5.6 Duplicate and overlap gating
 
-**File:** `Backend/WifiManager.cpp/hpp`
-**Context key:** `WifiManager`
+Three separate mechanisms, because duplicates arise three different ways.
 
-Controls **Wi-Fi networking** through the **NetworkManager D-Bus API** (`org.freedesktop.NetworkManager`).
+**Live versus live.** Two boxes for one object — the detector occasionally emits
+a second, and the tracker occasionally carries both IDs forward — sit almost on
+top of each other. Two real vehicles cannot share a footprint, so overlapping
+same-label boxes are one object and the weaker one is dropped.
 
-| Property | Type | Description |
+The gate scales with the boxes rather than being a flat distance:
+
+```cpp
+gap < kOverlapFraction * (groundRadius(a) + groundRadius(b))
+```
+
+where `groundRadius` is half the diagonal of the box footprint. This stays
+correct across classes:
+
+| Pair | Merges below |
+|---|---|
+| car / car | 2.42 m |
+| pedestrian / pedestrian | 0.57 m |
+| lorry / lorry | 5.15 m |
+
+At 2.42 m for cars there is over a metre of margin against 3.5 m lane spacing, so
+traffic in the next lane is never suppressed however close it passes. Ties break
+on hit count, then confidence, so the established box survives and the newcomer
+goes.
+
+**Ghost versus live.** A coasting track is a *prediction* of something the sensor
+can no longer see. The moment a real detection appears where that prediction is,
+the prediction is redundant — and keeping both is what puts two or three copies
+of one car on screen. The upstream tracker reassigns IDs frequently, which lands
+one physical car in two entries: the old ID coasting, the new ID spawning on top.
+
+The displaced ghost hands its **alpha and its hit count** to the replacement.
+Both halves matter. Without the alpha the swap costs a visible dip, the ghost
+leaving at full opacity while its replacement ramps from zero. Without the hit
+count it is worse — the replacement counts as tentative and is withheld
+altogether, so the car vanishes for a message and returns, which reads as cars
+blinking on the way past.
+
+**Ghost versus ghost.** Repeated ID churn leaves one coasting copy per retired
+ID, and those never meet a live detection to be gated against. A final pairwise
+pass merges them by the same rule.
+
+### 5.7 Placement rules
+
+Two rules suppress detections that are real output but not plausible content.
+
+**The backwards car alongside the ego.** Because the detector's ±90 sign is
+arbitrary and the renderer applies a fixed `-90°` correction, a box reported at
+`+90` comes out facing forward and one reported at `-90` comes out facing
+backwards — a car driving the same way as you, drawn against the traffic, right
+alongside where it is most obvious.
+
+Such a box is **not rotated to fit**. Turning it would invent an orientation the
+sensor never reported, and the result would be indistinguishable from a real
+oncoming car — a worse lie on a driving display than an absent box. It is simply
+not drawn, and only under three simultaneous conditions:
+
+```cpp
+track.suppressed = alongside && facingBackwards && goingOurWay;
+```
+
+| Condition | Test |
+|---|---|
+| `alongside` | within 6 m either side and 6 m fore/aft |
+| `facingBackwards` | box length axis has positive Z |
+| `goingOurWay` | world Z velocity is negative |
+
+All three are required. *Backwards* alone would take every oncoming car on the
+road, since for those backwards is correct. *Alongside* alone would take the
+adjacent-lane traffic that renders fine. Only the combination — a box drawn
+backwards while the object is measurably travelling your way — is a
+contradiction worth hiding.
+
+The third condition needs **world** velocity, not ego-frame velocity: in the ego
+frame an oncoming car and one you are overtaking both simply fall behind you.
+Ego speed is therefore fed to the smoother purely to classify direction:
+
+```cpp
+const float worldVz = track.targetVel.z() - egoSpeed * 100.0f;
+```
+
+**Pedestrians on the pavement.** People are drawn only in the band between the
+road edge and the buildings. The detector puts them in the carriageway and inside
+the facades often enough to be distracting, and neither is somewhere a person can
+be in this scene — one is under the traffic, the other is inside a wall.
+
+```cpp
+suppressed = lat < kRoadHalfWidth || lat > kCityInset;
+```
+
+This is checked for untracked detections too, which skip the tracking branches
+entirely and would otherwise never be filtered.
+
+**Both rules ride the opacity ramp** rather than cutting, so an object crossing a
+boundary dissolves over ~40 ms instead of blinking, and returns the same way if
+it leaves the zone. Once faded it is dropped from the output entirely, which
+keeps the HUD's detection count honest about what is actually on screen.
+
+> **Coupling to watch.** `kRoadHalfWidth` and `kCityInset` in
+> `detection_smoother.cpp` are *mirrors* of `roadHalfWidth` and `cityInset` in
+> `Environment3D.qml`. C++ cannot read the QML values, so widening the road means
+> changing both. The pedestrian margin is currently thin — the nearest observed
+> pedestrian sits about 0.24 m outside the road edge.
+
+### 5.8 Instanced rendering
+
+All detections of a class are drawn in **one pass**. `DetectionInstancing`
+subclasses `QQuick3DInstancing` and builds a packed table of per-instance
+transforms and colours:
+
+```cpp
+const InstanceTableEntry entry =
+    calculateTableEntryFromQuaternion(d.position, scale, rotation, color);
+```
+
+Three instances exist, one per class, each with a `labelFilter`, all sharing the
+same `DetectionModel`. They rebuild on `modelReset` and `dataChanged` via queued
+connections.
+
+Per-class geometry fixes are applied here:
+
+| Label | Mesh | Adjustment |
 |---|---|---|
-| `wifiEnabled` | `bool` | Read/write; maps to the NetworkManager Wi-Fi device's managed state |
-| `connectedSsid` | `QString` | SSID of the currently active connection |
+| 0 pedestrian | walk-pose plane | ×100 upscale; pre-rotate pitch −90° to map Blender Z-up to Y-up |
+| 1 cyclist | `#Cube` | box dimensions used directly |
+| 2 vehicle | Tesla low-poly | uniform scale from box height; extra −90° yaw when the width slot holds the true length |
 
-**Invokable methods:**
-- `scanNetworks()` — triggers a Wi-Fi scan on the first detected Wi-Fi device; collects access point SSIDs from `org.freedesktop.NetworkManager.AccessPoint`.
-- `connectToNetwork(ssid, password)` — creates a new 802-11-wireless connection profile and activates it.
-- `connectToSelectedNetwork(ssid)` — activates an existing saved connection profile.
-- `disconnectFromNetwork()` — deactivates the current active connection.
+**Colour and alpha are handled separately.** Alpha always rides through, because
+it carries the spawn/despawn fade. RGB is opt-in (`useInstanceColor`, default
+false) because the class colours are raw primaries chosen as *data*, not as a
+look — applying them would repaint the silver vehicle pure blue and the
+pedestrian pure red.
 
-**Active connection watcher:** `watchActiveConnection()` subscribes to `PropertiesChanged` on the active connection path to detect when `State` transitions to `Activated` or `Deactivated`, emitting `connectSuccess` or `connectFailed` accordingly.
+### 5.9 The 3D world
 
----
+`Environment3D.qml` builds the road and surroundings in two styles: **neon**
+(default — near-black ground, dark road, glowing cyan edge lines) and **asphalt**
+(PBR textured road, white markings), switched by one boolean via QML states.
 
-### USBManager
+**Road width is a single knob.** `roadHalfWidth` (currently `893.0`, so 17.86 m
+across) drives the road quad, the edge-line positions (`× 0.96`) and the asphalt
+texture tiling. That last one is easy to miss: UVs run 0..1 across the quad
+regardless of its scale, so the tile count has to track the width or the grain
+stretches with it:
 
-**File:** `Backend/USBManager.cpp/hpp`
-**Context key:** `usbManager`
+```qml
+scaleU: 26 * root.roadHalfWidth / 500
+```
 
-Detects **USB storage devices** and **MTP devices** (phones connected via USB), mounts them, and scans for playable media files.
+**Ground plane** at `floorY = -142`, chosen a few units below the observed median
+detection box bottom (≈ −136) so nothing clips through.
 
-| Property | Type | Description |
+**The scrolling city** is instanced cubes on both sides, animated toward the
+camera in a seamless loop. The seamlessness is arithmetic rather than luck: a
+deterministic 12-row cycle at 800-unit spacing tiles exactly every 9600 units,
+and the animation translates by precisely one period (−9600 → 0), so there is no
+seam. Building depth stays below the row spacing (max 760 < 800) so cubes never
+intersect. Heights, widths, depths and facade jitter are all functions of
+`k % 12`.
+
+Depth haze is **not** baked into the city as per-row opacity — that produces
+banding and a visible flash at the loop boundary. It comes from world-space
+`SceneEnvironment` fog instead, which is smooth, seamless, and also hides the
+loop-wrap beyond the road end.
+
+**Lighting** is two directional lights (a warm key and a cool blue fill at
+opposing yaws) plus optional HDRI image-based lighting from one of two probes.
+Both `.hdr` files are loaded once into `Texture` objects at startup and a theme
+switch only re-points the `lightProbe` reference — decoding a compressed HDR and
+regenerating environment mipmaps on the GUI thread was a visible freeze.
+
+### 5.10 Cameras
+
+| View | Pivot | Rotation | Distance | FOV |
+|---|---|---|---|---|
+| Chase | origin | −50° pitch | 1200 | 70° |
+| Top-down | origin | −90° pitch | 1600 | 70° |
+| Mini-scene | `(0, 0, −185)` | −42° pitch | 1250 | 60° |
+
+Switching views animates the rig's rotation and the camera's distance with
+matched 700 ms `InOutCubic` curves, so the pitch does not snap while the camera
+glides. The rotation is animated by explicit from/to rather than a `Behavior`,
+because the `OrbitCameraController` writes `orbitOrigin` every frame while
+dragging and a `Behavior` would fight it.
+
+The mini-scene's pivot sits ahead of the car, which drops the vehicle below
+centre and gives most of the frame to the road ahead. It originally sat a full
+3 m forward, which pushed the rear bumper to within ~0.7 m of the bottom edge.
+Backing it off to 185 units lifts the bumper from roughly 7% to 17% of tile
+height. Only Z moves — the rotation and the camera's local offset are untouched,
+so the rig slides along the road without changing angle.
+
+### 5.11 HUD and debug controls
+
+Overlaid on the scene: a status card (detection count, active view), a legend, a
+live camera position and rotation readout, a large speed readout in km/h derived
+from `carInfo.currVel × 3.6`, and buttons for view switching and camera reset.
+
+A settings drawer exposes theme, ego vehicle colour via an HSV picker, light
+brightness, HDRI selection and exposure, road style, and the Tesla texture
+toggle.
+
+The detection count guards against uninitialised data with
+`Math.abs(detectCount) > 1000`, showing a dash instead of a nonsense number
+before the first message arrives. `MiniScene3D` exposes the same guard as a
+`hasSignal` flag so the tile can say `OFFLINE`.
+
+> These controls are development instrumentation, not shipping UI.
+
+### 5.12 The launcher mini-scene
+
+`MiniScene3D` renders the same ego vehicle and the same instancing tables as the
+full page — real detections, no second subscription, no duplicated state — with
+no HUD, no orbit controller, and no drawer. Leaving the controller out is
+deliberate: the tile below has to stay clickable, and a drag on the home screen
+should scroll the launcher, not spin a camera.
+
+It renders with a transparent background so the card's glass gradient shows
+through, and is masked to the card's corner radius using a QML-drawn `Rectangle`
+as a `MultiEffect` mask source. The mask is drawn rather than loaded as a bitmap
+because a bitmap gets stretched to the item, so a round corner in the file comes
+out as an ellipse on a non-square card. A `Rectangle`'s radius stays a radius.
+
+It also runs cheaper settings than the full page — `Medium` antialiasing rather
+than `High` — because it renders continuously behind the entire launcher.
+
+### 5.13 Tuning reference
+
+Every constant in `detection_smoother.cpp`, in one place:
+
+| Constant | Value | Governs |
 |---|---|---|
-| `connected` | `bool` | Whether a USB drive is currently mounted |
-| `scanning` | `bool` | Whether an async file scan is in progress |
-| `mountPath` | `QString` | Filesystem path where the drive is mounted |
-| `driveName` | `QString` | Friendly name of the drive |
-| `audioFiles` | `QStringList` | Absolute paths of all discovered audio files |
-| `videoFiles` | `QStringList` | Absolute paths of all discovered video files |
+| `kTickIntervalMs` | 16 | Interpolation tick (≈60 Hz) |
+| `kTauPosMs` | 70 | Position/scale/rotation follow time constant |
+| `kTauVelMs` | 150 | Measurement-velocity low-pass |
+| `kHorizonMs` | 70 | Velocity lead; equals `kTauPosMs` to cancel lag exactly |
+| `kMaxSpeedUnits` | 4000 | Velocity clamp (40 m/s) |
+| `kFlipThresholdDeg` | 120 | Above this a yaw change is treated as an ambiguity flip |
+| `kTauAlphaInMs` | 90 | Spawn fade-in |
+| `kTauAlphaOutMs` | 40 | Despawn fade-out |
+| `kAlphaGone` | 0.12 | Opacity at which a fading track is reaped |
+| `kCoastEndZ` | 1400 | Distance behind ego at which coasting ends (14 m) |
+| `kCoastMinSpeed` | 60 | Minimum recession speed to coast (0.6 m/s) |
+| `kMaxCoastMs` | 10000 | Hard cap on dead reckoning |
+| `kGhostMergeDist` | 300 | Ghost-to-detection association radius (3 m) |
+| `kMinHitsToCoast` | 3 | Measurements before a track may coast |
+| `kMinHitsToShow` | 2 | Measurements before a track is drawn |
+| `kMinHitsForTravelDir` | 2 | Measurements before travel direction is trusted |
+| `kOverlapFraction` | 0.5 | Fraction of combined ground radius treated as overlap |
+| `kBesideHalfX` / `kBesideHalfZ` | 600 | Alongside-suppression zone half-extents (6 m) |
+| `kRoadHalfWidth` | 893.0 | Mirror of the QML road half-width |
+| `kCityInset` | 2100 | Mirror of the QML building facade distance |
+| `kUntrackedKeyBase` | −1000 | Base for synthetic keys given to untracked detections |
 
-**File detection:** `USBManager` uses two parallel detection paths:
-1. **UDisks2** (`org.freedesktop.UDisks2`) — monitors D-Bus `InterfacesAdded` / `InterfacesRemoved` signals for block devices. When a new block device with a filesystem interface appears, `mountDrive()` is called.
-2. **GVFS MTP** — scans `/run/user/<uid>/gvfs/` for `mtp:` prefixed directories to detect phones mounted by GVFS.
-
-**Async file scanning:** Once mounted, `scanFiles()` launches a background task via `QtConcurrent::run` and `QFutureWatcher<void>`. The `scanDirectory()` static method recursively walks the mount point and sorts files into audio and video lists based on extension. `AUDIO_EXTENSIONS` and `VIDEO_EXTENSIONS` are defined as static `QStringList` constants in the class.
-
-**Invokable:** `fileName(path)` — returns the base name without extension for display in playlists.
+**On untracked detections:** every untracked object arrives carrying
+`track_id = -1` by the message's own definition. Keying the track hash on that
+value collapsed all of them into a single entry, so N untracked objects rendered
+as exactly one — and the same would happen to the entire scene if the tracker
+were ever disabled. They carry no identity worth preserving, so each gets a
+per-message synthetic negative key and passes straight through without smoothing.
 
 ---
 
-### SystemVolumeController
+## 6. C++ Backends
 
-**File:** `Backend/SystemVolumeController.cpp/hpp`
-**Context key:** `systemVolume`
+### 6.1 BluetoothManager
 
-Controls the **system audio volume and mute state** by directly interfacing with the **PulseAudio** C API.
+A2DP/AVRCP media transport for a connected phone.
 
-| Property | Type | Range | Description |
+Tracks `org.bluez.MediaPlayer1` and surfaces track metadata (title, artist,
+album), playback status, and position. Emits `connectedChanged`,
+`playerStatusChanged`, `trackInfoChanged` and `deviceNameChanged`, which
+`Main.qml` mirrors into the shared now-playing state.
+
+Playback control is issued as AVRCP commands to the phone; the head unit does not
+decode the stream itself.
+
+### 6.2 BluetoothHWManager
+
+Adapter and device management: power state, discoverability, discovery
+start/stop, pair, connect, disconnect and remove.
+
+Exposes discovered and paired devices as models with address, name, class icon,
+paired/trusted/connected flags and RSSI.
+
+Carries a `mediaActive` flag, asserted from `main.cpp`, which suppresses inquiry
+while A2DP is playing. Inquiry starves the ACL link and audibly breaks up music.
+
+### 6.3 BluetoothAgent
+
+Implements `org.bluez.Agent1`. BlueZ delegates **all** pairing interaction to a
+registered agent — without one, the Secure Simple Pairing methods that current
+phones use (numeric comparison, passkey entry) cannot be completed from the HMI
+at all.
+
+Capability is **`DisplayYesNo`**: the head unit can show a six-digit passkey and
+the driver confirms it matches the phone. That is the correct profile for a
+device with a display and no keyboard. `NoInputNoOutput` would silently downgrade
+every pairing to Just Works, which is weaker and shows the driver nothing.
+
+`RequestConfirmation` uses a **delayed D-Bus reply**: the call is held open while
+the driver decides and answered later from `resolvePending()`. Replying
+immediately would mean accepting a pairing nobody saw.
+
+### 6.4 BlueZ
+
+Shared D-Bus plumbing for both Bluetooth backends: service and interface name
+constants, `QDBusArgument` marshalling for the nested `GetManagedObjects` types,
+and async wrappers for `GetManagedObjects` and `Properties.GetAll`.
+
+It exists because both managers previously carried their own hand-rolled copy of
+object enumeration, with different bugs in each.
+
+Every call is asynchronous, and callbacks are scoped to a context object — if
+that object dies first, the callback never runs.
+
+### 6.5 WifiManager
+
+NetworkManager over D-Bus: radio enable/disable, scan, access-point enumeration
+with SSID/strength/security, connect (with or without a passphrase), disconnect,
+and forget.
+
+Exposes `connectedSsid`, which the launcher's online indicator and the
+`WindowBar` status icon both bind to — so the two can never disagree about
+whether the vehicle has a link.
+
+### 6.6 WifiCredSender
+
+Hands Wi-Fi credentials to the vehicle host over CAN by invoking the
+`wifi_cred_send` tool, which performs SecOC authentication and ISO-TP
+segmentation.
+
+Two properties of this class are deliberate and load-bearing:
+
+**Credentials go in on stdin, never in argv.** Anything in `argv` is readable by
+every user on the machine through `ps aux` and `/proc/<pid>/cmdline`. A password
+must not go there.
+
+**It is asynchronous.** The transfer waits on ISO-TP flow control from the host,
+and blocking the GUI thread on that would freeze the head unit.
+
+Exit code 0 means **delivered**, not **accepted**. The host returns no verdict
+over CAN, so a MAC or freshness rejection is only visible in the host's own log.
+
+### 6.7 USBManager
+
+UDisks2-based mass-storage handling: device arrival and removal, mount and
+unmount, and an asynchronous recursive scan of mounted volumes for playable
+media. The scan runs on the Qt Concurrent pool because it can take seconds on a
+large stick.
+
+### 6.8 MediaLibrary
+
+A directory-backed `QAbstractListModel` with `fileName` and `filePath` roles. Two
+instances are constructed — `MediaLibrary::music()` and `MediaLibrary::video()` —
+differing only in their glob filters.
+
+It deliberately does **not** use `Qt.labs.folderlistmodel`. That is a separate QML
+plugin, not part of the base `qtdeclarative` install, and an image that omits it
+fails at load time with *"FolderListModel is not a type"* — taking down the whole
+UI, not just the page that used it. Listing a directory is a few lines of `QDir`,
+so the runtime dependency is not worth the risk on a head unit.
+
+Location is resolved at runtime, in priority order:
+
+1. The environment override (`IVI_MUSIC_DIR` / `IVI_VIDEO_DIR`)
+2. `/var/lib/ivi/media` on the target board
+3. The XDG user directory, else `$HOME/<fallback>`, on a developer machine
+
+Hardcoding a path would fail silently: the developer machine and the vehicle do
+not share a username, so a literal `/home/<someone>/Music` lists nothing on the
+target. A `QFileSystemWatcher` triggers `refresh()` when the directory changes.
+
+### 6.9 SystemVolumeController
+
+PulseAudio sink volume and mute, exposed as `volume`, `maxVolume` and `muted`
+with a `toggleMute()` invokable. Bound by `WindowBar`, so the volume control is
+available from every page.
+
+### 6.10 SpeechManager
+
+Offline speech recognition via **Vosk**. Captures from the default input through
+`QAudioSource`, feeds frames to a `VoskRecognizer`, and exposes `listening` and a
+live `partialResult` alongside a `resultReady(text)` signal for finalised
+utterances.
+
+Offline by design — voice navigation must work with no network.
+
+### 6.11 AmbientLightManager
+
+Drives the cabin WS2812 strip over SocketCAN.
+
+**It sends intent, not pixels.** The head unit says "static, this colour, this
+brightness" and the ESP32 renders it. Six LEDs is 18 bytes of pixel data, which
+would need ISO-TP segmentation on every animation tick — a continuous flood on a
+bus that also carries ultrasonic telemetry and OTA traffic. Intent fits in a
+single classic 8-byte frame, and the strip keeps doing the right thing when the
+head unit reboots.
+
+Four mechanisms make the link robust:
+
+| Mechanism | Purpose |
+|---|---|
+| **Coalescing timer** | Dragging a brightness slider emits changes every frame. Writes are collapsed and sent at a fixed rate, with the final value always going out because the timer fires once more after the last change. |
+| **Duplicate suppression** | The last payload (bytes 0–6, excluding the rolling sequence counter) is retained so a frame telling the ECU nothing new is dropped. |
+| **Reopen timer** | `can0` is usually not up when the UI starts, same as the network. One failed open at startup must not disable the feature for the session. |
+| **Heartbeat** | The ECU boots dark and keeps no state. A purely event-driven link would leave it dark forever after an ECU reset, because the head unit already sent its only frame. Periodic re-assertion is how state signals normally work on CAN, and it makes a reset heal itself. |
+
+There is deliberately **no SecOC** here, unlike `WifiCredSender`: a MAC plus
+freshness counter would not fit in 8 bytes and would drag ISO-TP back in for what
+is a comfort feature. The safety envelope belongs in the ECU instead — it must
+refuse unsafe modes whatever arrives on the wire, because anything can inject on
+a shared bus and nothing here can be trusted to be the only sender.
+
+### 6.12 Perception classes
+
+| Class | Role |
+|---|---|
+| **RosNode** | Owns the `qt_pcl_visualizer` node and its spin thread. Subscribes to detections, velocity, IMU and GNSS. Converts message corners into `DetectionData` and feeds the smoother. |
+| **DetectionData** | Plain struct passed between layers: position, scale, rotation, colour, label, confidence, track ID. |
+| **DetectionSmoother** | Track association, interpolation, lifecycle, gating and placement rules. The bulk of the perception logic. |
+| **DetectionModel** | `QAbstractListModel` of smoothed detections, plus a `detectCount` property for the HUD. |
+| **DetectionInstancing** | `QQuick3DInstancing` subclass building a packed instance table, filtered by label. |
+| **CarInfo** | Vehicle telemetry as bindable properties: velocity, IMU quaternion, latitude, longitude, altitude. |
+| **BoxTransform** | Free function converting eight corners into position, scale and quaternion. |
+
+---
+
+## 7. QML Logic Modules
+
+### 7.1 WeatherStore
+
+A singleton, stale-while-revalidate cache — the only weather state in the
+application.
+
+The launcher card and the weather page previously owned a `WeatherAPI` each, and
+because the page is pushed from a `Component` it was rebuilt from scratch on
+every entry and fired a fresh geocode-plus-forecast pair each time. Those two
+round trips run in sequence: roughly two seconds of empty page, every entry, for
+numbers the upstream service only recomputes every quarter hour.
+
+The store fixes that with four properties:
+
+- **Synchronously readable.** `entryFor(city)` returns cached data immediately,
+  so a page paints on its first frame.
+- **TTL-gated.** A request only leaves the vehicle when the cached reading has
+  aged past `ttlMs` (10 minutes). Open-Meteo recomputes its current block roughly
+  every 15.
+- **Keyed by city**, capped at `maxEntries` (8), so the page's search box and the
+  launcher's preferred city cannot evict one another and the cache cannot grow
+  unbounded across a long session.
+- **Persisted.** The most recent entry is written to disk, so a cold boot with no
+  network starts populated rather than blank. Only the 24 hourly samples the page
+  actually reads are retained (`hourlyKeep`), which is what keeps the saved copy
+  small.
+
+An `inFlight` city doubles as the guard that stops the page and the launcher
+requesting the same thing at the same moment on entry. Signals are `updated`,
+`notFound` and `failed`.
+
+### 7.2 WeatherAPI
+
+The transport underneath the store: Open-Meteo geocoding to resolve a city name
+to coordinates, then a forecast request for current conditions, daily and hourly
+blocks. `timezone=auto` so returned timestamps are local to the queried city.
+
+### 7.3 RadioAPI
+
+radio-browser.info search by name, country and tag, returning station name,
+stream URL, favicon, codec and bitrate into a shared `ListModel`. Emits
+`loadingStarted` and `loadingFinished`, which `Main.qml` maps onto the global
+`radioIsLoading` flag.
+
+---
+
+## 8. Reusable Components
+
+| Component | Purpose | Notable behaviour |
+|---|---|---|
+| **WindowBar** | Shared top bar on every non-launcher page | Title, back button, brightness and volume sliders, and Wi-Fi/Bluetooth status icons that navigate straight into the relevant settings section |
+| **MediaCard** | Now-playing summary | Artwork, title, subtitle and transport; binds to the unified `mediaPlaying` state so it is correct for both local and Bluetooth sources |
+| **CarInfoPopup** | Modal vehicle information | Centered card over a dimming backdrop; click-outside dismisses |
+| **AmbientCard** | Launcher ambient controls | Power, mode and palette only — the free colour picker stays in settings, deliberately not offered to a moving driver |
+| **VirtualKeyboard** | On-screen text entry | Shift, 64-character limit, password mode with a reveal toggle, live preview area, `accepted`/`cancelled` signals. Required because the head unit has no physical keyboard |
+
+---
+
+## 9. Vehicle Integration
+
+### 9.1 ROS 2 topics
+
+| Topic | Type | Direction | Use |
 |---|---|---|---|
-| `volume` | `int` | 0–100 | System output volume percentage |
-| `muted` | `bool` | — | Whether the default sink is muted |
+| `/kitti/velo` | `sensor_msgs/PointCloud2` | in | Raw lidar (callback currently inactive) |
+| `/object_detections_3d` | `object_detection_msgs/Object3dArray` | in | Detections with label, confidence, track ID, 8 corners |
+| `/kitti/oxts/gps/vel` | `geometry_msgs/TwistStamped` | in | Ego speed → HUD, wheel spin, travel-direction classification |
+| `/kitti/oxts/imu` | `sensor_msgs/Imu` | in | Orientation quaternion |
+| `/kitti/oxts/gps/fix` | `sensor_msgs/NavSatFix` | in | Latitude, longitude, altitude |
 
-**Invokable methods:** `setVolume(int)`, `setMuted(bool)`, `toggleMute()`.
+`Object3d` carries `label` (0 pedestrian, 1 cyclist, 2 car), `confidence_score`,
+`track_id` (−1 when untracked), and a `BoundingBox3d` of eight corner points.
 
-**PulseAudio event loop integration:**
-A `pa_mainloop` and `pa_context` are created at construction time. A `QTimer` fires every 50 ms and calls `pa_mainloop_iterate()` in non-blocking mode, draining any pending PulseAudio callbacks without blocking Qt's event loop. This bridges PulseAudio's callback-driven model into Qt's timer-driven world.
+### 9.2 Ambient lighting over CAN
 
-**Volume update flow:**
+**Frame `0x500`**, classic 8-byte, one shot per state change:
 
-```
-QML Slider changes value
-       │
-       ▼
-  setVolume(int)
-       │
-       ▼
-  applyVolume()  ──► pa_context_set_sink_volume_by_index()
-                                 │
-                                 ▼
-                      PulseAudio confirms success
-                                 │
-                                 ▼
-                      sinkInfoCallback() fires
-                                 │
-                                 ▼
-                      m_volume updated → volumeChanged() signal
-                                 │
-                                 ▼
-                      QML Slider/display updates
-```
-
-**Connection lifecycle:** `contextStateCallback` monitors the PulseAudio connection state. If the connection drops (e.g., PulseAudio restarts), `connectPulse()` is called again after a short delay.
-
----
-
-### SpeechManager
-
-**File:** `Backend/SpeechManager.cpp/hpp`
-**Context key:** `speechManager`
-
-Provides **offline speech-to-text** using the **Vosk** speech recognition library. Audio is captured from the default microphone via `QAudioSource` and fed in chunks to the Vosk recognizer.
-
-| Property | Type | Description |
+| Byte | Field | Values |
 |---|---|---|
-| `listening` | `bool` | `true` while the microphone is active |
-| `partialResult` | `QString` | Live partial transcription as the user speaks |
+| 0 | mode | 0 off · 1 static · 2 breathe · 3 chase · 4 scanner · 5 rainbow |
+| 1 | red | 0–255 |
+| 2 | green | 0–255 |
+| 3 | blue | 0–255 |
+| 4 | brightness | 0–255 |
+| 5 | speed | effect period; unused while static |
+| 6 | zone mask | one bit per LED; `0x3F` is all six |
+| 7 | sequence | rolling, lets the ECU spot a dropped update |
 
-**Invokable methods:**
-- `startListening()` — opens the default audio input at 16 kHz mono 16-bit PCM; connects `QIODevice::readyRead` to `onAudioData()`.
-- `stopListening()` — closes the audio input; retrieves the final result from Vosk and emits `resultReady(text)`.
+`0x500` is a **high ID on purpose**: CAN arbitration is lowest-ID-wins, so
+decoration always loses to ultrasonic telemetry at `0x160` and warnings at
+`0x400`.
 
-**Grammar restriction:** The Vosk recognizer is initialized with a JSON grammar whitelist containing about two dozen keywords (weather, city names, media and volume commands). This dramatically reduces false positives and improves recognition speed on embedded hardware by constraining the search space.
+Mode `0` on the wire means off and is derived from the `on` property rather than
+stored in `mode` — turning the strip off and back on must return to the effect
+that was running.
 
-**Audio pipeline:**
+### 9.3 Wi-Fi credential handoff
 
-```
-  Microphone (16kHz/16bit/mono)
-         │
-         ▼
-    QAudioSource  ──► QIODevice::readyRead
-         │
-         ▼
-    onAudioData()  ──► vosk_recognizer_accept_waveform()
-         │
-         ├── partial result → partialResultChanged()
-         │
-         └── final result   → resultReady(text)
-```
+On a successful Wi-Fi connection the SSID and passphrase are forwarded to the
+vehicle host through `WifiCredSender`, which runs the `wifi_cred_send` tool with
+SecOC authentication and ISO-TP segmentation over `can0`, keyed from
+`/etc/wifi_secoc.key`.
 
-**Model:** The Vosk acoustic model is loaded from `../assets/models/vosk` at startup. A small English model (e.g., `vosk-model-small-en-us-0.15`, ~40 MB) is recommended for embedded deployment. For Raspberry Pi, the model path is updated to `/opt/ivi/vosk-model` (see the Yocto section).
+Credentials are passed on **stdin**. See [6.6](#66-wificredsender).
 
 ---
 
-## QML API Modules
+## 10. Design System
 
-### WeatherAPI
+**Palette**
 
-**File:** `API/WeatherAPI.qml`
-
-A `QtObject` that wraps two HTTP requests to the **Open-Meteo** free weather API (no API key required).
-
-**Signals:**
-
-| Signal | Parameters | Description |
+| Token | Value | Use |
 |---|---|---|
-| `weatherReceived` | `current, daily, hourly, location, population` | Emitted with parsed weather data objects |
-| `cityNotFound` | `city: string` | Emitted when the geocoding API returns no results |
-| `networkError` | `message: string` | Emitted on HTTP errors |
+| Deep navy | `#0e0e14` → `#1a1a2e` → `#2e2e4a` | Page and bar gradients |
+| Scene background | `#080a0d` | Drive View clear colour and fog |
+| Amber accent | `#D08831` | Primary accent, focus, active states |
+| Ego blue | `#0066cc` | Ego vehicle, "Ego" legend entry |
+| Detection grey | `#a6a6a6` | Detected objects |
+| Neon cyan | `#00e5ff` | Lane markings, neon city accent |
+| Neon magenta | `#ff2ea6` | Secondary neon city accent |
+| Primary text | `#f2f5f8` | Headings and values |
+| Secondary text | `#9aa4b0` / `#8899bb` | Labels and captions |
+| Online green | `#3ad07a` | Connectivity indicator |
 
-**Public method:** `fetch(city)` — the single entry point. Triggers `openMeteoWeatherAPI(city)`.
+Panels are translucent white over the scene — `rgba(1,1,1,0.05)` fill with an
+`rgba(1,1,1,0.12)` border — with 16–28 px corner radii.
 
-**Request chain:**
+The Drive View HUD is **inverted relative to the earlier design**: it was dark
+ink on a light grey void, which over a real road surface reads as unlit text on
+unlit tarmac. It is light-on-dark instead, rather than fighting the ground for
+contrast. Panel backgrounds are opaque enough to sit over texture; the previous
+9%-black wash was invisible over paving.
 
-1. `GET https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1`
-   — resolves city name to latitude, longitude, country, and population.
+**Responsive scaling.** Rather than fixed pixel sizes, the 3D page derives
+everything from its own dimensions:
 
-2. `GET https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&timezone=auto&current=temperature_2m,wind_speed_10m,...&daily=uv_index_max,...&hourly=temperature_2m`
-   — fetches current conditions, 7-day daily forecast, and 24-hour hourly data.
+```qml
+readonly property real _m:    width * 0.022     // margin
+readonly property real _fLg:  Math.max(16, height * 0.030)
+readonly property real _btnW: width  * 0.125
+```
 
-Both requests use a shared `fetchData(url, callback)` helper built on `XMLHttpRequest`. The callback pattern allows the two requests to be chained without Promises.
+Font sizes carry a `Math.max` floor so text never becomes unreadable on a small
+viewport.
+
+**Motion.** 200 ms for hover and colour transitions; 300 ms for the splash fade;
+700 ms `InOutCubic` for camera view changes; multi-second looping animations for
+ambient drift. Every state change that a user causes is animated; nothing snaps
+except where snapping is the point (the first frame of a new track).
+
+**Interaction rules.**
+
+- Touch targets are sized for a finger, not a cursor.
+- Anything pressable reacts on hover, so affordance is visible before contact.
+- Destructive actions (forget network, remove device) require confirmation.
+- Text entry always raises the virtual keyboard; there is no physical one.
+- Controls that could distract while driving are kept off the launcher.
 
 ---
 
-### RadioAPI
+## 11. State, Navigation and Persistence
 
-**File:** `API/RadioAPI.qml`
+**The global window pattern.** `Main.qml`'s `ApplicationWindow` is the single
+source of truth for anything that must outlive a page: current media, radio
+search state, preferred city, and application brightness. Pages receive state
+through required properties and write back through signals or direct binding on
+`mainWindow`.
 
-A `QtObject` that manages station discovery and playback control for the **radio-browser.info** public API.
+This exists because pages are pushed from `Component`s and destroyed on back
+navigation. State held inside a page does not survive leaving it.
 
-**Required properties:** `stationsModel` (ListModel), `radioPlayer` (MediaPlayer), `mainWindow` (ApplicationWindow).
+**Navigation** is a single root `StackView`. Each destination is pushed on
+selection and popped by the `WindowBar` back button. The Settings and Media hubs
+each contain their own nested `StackView` for sub-pages, so back inside a hub
+returns to the hub rather than to the launcher.
 
-**Signals:** `loadingStarted()`, `loadingFinished()`.
+`openSettingsSection(section)` lets the status icons in `WindowBar` reach Wi-Fi
+or Bluetooth from anywhere; if Settings is already current it switches section
+instead of pushing a duplicate.
 
-**Key methods:**
+**Persistence** uses `QtCore.Settings`, which requires organisation and
+application identifiers set before any QML `Settings` element is created:
 
-| Method | Description |
+```cpp
+QGuiApplication::setOrganizationName(QStringLiteral("IVI"));
+QGuiApplication::setOrganizationDomain(QStringLiteral("ivi.local"));
+QGuiApplication::setApplicationName(QStringLiteral("IVI"));
+```
+
+Without these, `QSettings` refuses to initialise and **every** saved value is
+silently discarded at every boot.
+
+| Key | Purpose |
 |---|---|
-| `fetchStations()` | Clears the model; fetches top-100 stations from radio-browser.info (filtered by search query if set); populates `stationsModel` |
-| `playStation(station)` | Updates global media state on `mainWindow`; sets `radioPlayer.source`; calls the radio-browser.info click-counter endpoint; plays the stream |
-| `togglePlayPause()` | Checks `radioPlayer.playbackState` and calls `play()` or `pause()` |
-| `playNext()` | Finds the current station's index in `stationsModel` and advances by 1 (wraps to 0) |
-| `playPrevious()` | Finds the current station's index and steps back by 1 (wraps to last) |
+| `savedCity` | Preferred weather city |
+| `lastTemp` / `lastDesc` / `lastEmoji` | Last successful reading, so a boot with no network shows real numbers rather than a placeholder |
 
-**URL construction:** `buildURL()` builds the query string, appending `&name=encodeURIComponent(query)` when a search query is set.
-
-Each station object stored in `stationsModel` contains: `stationuuid`, `name`, `url`, `favicon`, `codec`, `tags`, `country`, `votes`.
+`WeatherStore` additionally persists its most recent cache entry, and
+`AmbientLightManager` saves and restores its own state so the cabin returns to
+the driver's chosen lighting.
 
 ---
 
-## Reusable QML Components
+## 12. Configuration Surface
 
-### WindowBar
+**Environment variables**
 
-**File:** `Components/WindowBar.qml`
+| Variable | Effect |
+|---|---|
+| `IVI_MUSIC_DIR` | Overrides the audio library location |
+| `IVI_VIDEO_DIR` | Overrides the video library location |
+| `IVI_CAN_IFACE` | SocketCAN interface for ambient lighting; lets a bench point at a `vcan` without displacing a real `can0` |
 
-A shared top bar used on every page of the application. It provides consistent system controls and drag-to-move behavior for the frameless window.
+**Build option**
 
-**Required properties:**
-- `window` — reference to the containing `Window` (enables `startSystemMove()`).
-- `titleName` — string displayed in the center of the bar.
-- `showBackButton` — whether the back/home arrow button is shown.
-- `color0`, `color1`, `color2` — gradient stops for the horizontal bar gradient (allows each page to theme its bar).
-
-**Optional properties:**
-- `brightnessValue` / `volumeValue` / `volumeMuted` — bound to global state for the system-wide controls.
-
-**Signals:** `backRequested()`, `brightnessChanged(value)`, `volumeChanged(value)`, `volumeMuteToggled()`.
-
-**Controls included:**
-- **Back / Home button** — amber-bordered square with a home icon; triggers `backRequested()`.
-- **Title text** — centered, amber, bold.
-- **Brightness popup** — triggered by a sun icon button; shows a vertical `Slider` in a floating `Rectangle`. Value is mapped to `mainWindow.appBrightness` which drives a full-screen semi-transparent black overlay.
-- **Volume popup** — triggered by a speaker icon; shows a vertical `Slider` and a mute toggle. Bound to `systemVolume.volume` and `systemVolume.muted`.
-- **Close / minimize buttons** (on the right end) — calls `window.close()` and `window.showMinimized()`.
-
-**Drag behavior:** The `MouseArea` covering the bar calls `window.startSystemMove()` on press, allowing the frameless window to be dragged by the title bar on desktop deployments.
-
-**Opacity animation:** On mouse enter the bar fades to full opacity (1.0); on exit it settles at 0.9, giving a subtle depth effect.
-
----
-
-### MediaCard
-
-**File:** `Components/MediaCard.qml`
-
-A compact now-playing card shown on the launcher while media is active. Displays the current track/station and provides basic transport controls without leaving the home screen.
-
-**Bound to:** `mainWindow.currentMediaTitle`, `currentMediaSubtitle`, `currentMediaFavicon`, `currentMediaType`, `mediaPlaying`.
-
-**Features:**
-- Favicon/artwork image with a fallback icon.
-- Scrolling marquee for long track names.
-- Play/pause button wired to `sharedMediaPlayer`.
-- Media type badge indicating whether the source is Radio, Audio, or Video.
-
----
-
-### CarInfoPopup
-
-**File:** `Components/CarInfoPopup.qml`
-
-A modal overlay popup showing static vehicle information.
-
-**Signal:** `closePopup()`.
-
-**Visual structure:**
-- Full-screen semi-transparent backdrop (`rgba(0.02, 0.04, 0.08, 0.85)`).
-- Centered card (440×340 px, 24 px radius) with a dark background and a thin amber top-accent bar.
-- Close button (`✕`) in the top-right corner with a red hover state.
-- Vehicle data rows (label + value) for model, year, VIN, and next service date.
-- Animated fade-in via `Behavior on opacity` on `Component.onCompleted`.
-- Clicking outside the card emits `closePopup()`.
-
----
-
-## Design System & UI Conventions
-
-The IVI Dashboard follows a consistent visual language across all pages:
-
-**Color Palette**
-
-| Role | Value | Usage |
+| Option | Default | Effect |
 |---|---|---|
-| Background dark | `#082839` | Gradient start and end stops |
-| Background mid | `#10475E` | Gradient center stop |
-| Accent amber | `#D08831` | Titles, icons, active controls, accents |
-| Text primary | `#ffffff` | Main labels |
-| Text secondary | `#8899bb` | Subtitles, metadata |
-| Success | `#00ffaa` | Connected / playing indicators |
-| Warning | `#D08831` | Buffering indicators |
-| Error | `#ff4444` | Error text, close button hover |
+| `AMBIENT_CAN_SIMULATE` | `OFF` | Prints ambient CAN frames to the terminal instead of opening the bus |
 
-**Typography**
+The simulation flag is defined **either way** rather than only when enabled.
+Defining it conditionally meant a build could never turn simulation back off —
+whatever the source happened to default to won — and a head unit could ship
+printing frames to its log while driving nothing.
 
-All text uses the `"Arial"` font family (or system fallback). Title text in `WindowBar` is 14 pt bold amber. Body text is sized proportionally using `(width + height) / 60` to scale correctly across display resolutions from 800×480 to 1280×800.
+**Compile-time dependencies**
 
-**Background Pattern**
-
-Every page uses the same three-stop dark navy gradient as its background. Overlaid on this is a `Canvas` element that draws a dot grid at 40 px spacing in the accent color at 4% opacity. This provides a subtle depth cue without distracting from the UI content.
-
-**Brightness Overlay**
-
-A `Rectangle` with `parent: Overlay.overlay` and `z: 99999` sits above all content including popups. Its `opacity` is `1.0 - mainWindow.appBrightness`. This universal overlay means any page or popup respects the brightness setting without each component needing to implement it individually.
-
-**Animation Conventions**
-- Hover scale transitions: `NumberAnimation { duration: 150; easing.type: Easing.OutQuad }`.
-- Page transitions: `StackView` default slide animation.
-- Floating idle animations on launcher tiles: `SequentialAnimation` looping `NumberAnimation` between ±3–5 px on the Y axis over 4–6 seconds with `Easing.InOutSine`.
-- Popup fade-in: `Behavior on opacity { NumberAnimation { duration: 200 } }` with `Component.onCompleted: opacity = 1`.
-
----
-## Demo
-> 🎬 **[Watch the full demo video →](https://drive.google.com/file/d/1Oj1QQaDpHGheh9F3O2MxpUNavDnGgvdd/view?usp=drive_link)**
-
----
-## Author
-
-**Ehab Magdy**
+Qt 6.8+ (Quick, Quick3D, Location, Positioning, DBus, Concurrent, Multimedia),
+PulseAudio (`libpulse`), Vosk, and ROS 2 (`rclcpp`, `sensor_msgs`,
+`geometry_msgs`, `std_msgs`, `object_detection_msgs`).
 
 ---
 
-*IVI Dashboard — Qt 6 · QML · C++ · PulseAudio · BlueZ · NetworkManager · Vosk*
+## 13. Known Limitations
+
+Recorded honestly, because a reader will otherwise assume these are bugs
+nobody noticed.
+
+- **The point cloud callback is inactive.** `RosNode::pointCloudCallback` is
+  fully written but commented out. The subscription still exists, so the topic is
+  received and discarded.
+- **`detectCount` includes coasting ghosts.** They are real rows in the model, so
+  the HUD reads slightly higher than the detector reports while objects are
+  leaving. Suppressed tracks *are* excluded once faded.
+- **Road geometry is mirrored, not shared.** `kRoadHalfWidth` and `kCityInset` in
+  C++ duplicate QML values because C++ cannot read them. Widening the road
+  requires changing both, and the pedestrian pavement band currently has only
+  about 0.24 m of margin.
+- **Coasting is bounded extrapolation.** A slowly overtaken vehicle may be dead
+  reckoned for several seconds. If it brakes or turns off while behind you, the
+  prediction will not know. It is capped at 10 s and confined to the road, but it
+  is still a guess.
+- **The alongside-suppression rule hides a real vehicle.** A car drawn backwards
+  while travelling your way is not rendered at all while it is beside you. This
+  is a deliberate trade — an absent box over a misleading one — but it does mean
+  a real vehicle in the blind spot goes undrawn.
+- **A stale detector doubles everything.** If two detector nodes publish to
+  `/object_detections_3d`, every object appears twice with different track IDs.
+  The overlap gating absorbs much of it, but the real fix is to check
+  `ros2 topic info /object_detections_3d` reports exactly one publisher.
+- **Wi-Fi credential delivery is unacknowledged.** Exit code 0 means delivered,
+  not accepted; a MAC or freshness rejection is only visible in the host log.
+- **Ambient lighting is unauthenticated.** Deliberately — see
+  [6.11](#611-ambientlightmanager) — with the safety envelope pushed into the
+  ECU.
+- **Drive View controls are debug instrumentation.** The settings drawer, camera
+  readout and view buttons are development aids, not shipping UI.
+
+---
+
+## 14. Glossary
+
+| Term | Meaning |
+|---|---|
+| **A2DP** | Advanced Audio Distribution Profile — Bluetooth stereo audio streaming |
+| **AVRCP** | Audio/Video Remote Control Profile — transport control and metadata |
+| **AB3DMOT** | The upstream 3D multi-object tracker assigning track IDs |
+| **Coasting** | Dead reckoning a detection past the end of the sensor's field of view |
+| **Ego** | The vehicle the head unit is installed in |
+| **Ghost** | A coasting track: a prediction, not a measurement |
+| **HDRI** | High Dynamic Range Image used as an environment light probe |
+| **IBL** | Image-Based Lighting |
+| **ISO-TP** | ISO 15765-2 transport protocol; segments payloads larger than 8 bytes over CAN |
+| **Instancing** | Drawing many copies of one mesh in a single pass from a transform table |
+| **KITTI** | The autonomous-driving dataset whose topic layout the perception input follows |
+| **SecOC** | AUTOSAR Secure Onboard Communication — MAC plus freshness on CAN frames |
+| **Tentative** | A track seen too few times to be drawn yet |
+| **WMO code** | World Meteorological Organization weather code, mapped to icon and text |
+
+---
+
+<div align="center">
+
+**IVI Head Unit** — Qt 6 · Quick 3D · ROS 2 · C++
+
+</div>
