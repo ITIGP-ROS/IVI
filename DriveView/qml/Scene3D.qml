@@ -219,10 +219,15 @@ Item {
                     emissiveFactor: root.useTeslaTexture ? Qt.vector3d(0.65, 0.65, 0.65)
                                                          : Qt.vector3d(0, 0, 0)
                     metalness: 0.0; roughness: 0.9
-                    // Carries the per-instance spawn/despawn fade. The RGB of
-                    // the instance colour is left at white upstream, so this
-                    // does not tint the silver texture.
-                    alphaMode: PrincipledMaterial.Blend
+                    // Deliberately left Opaque, i.e. the per-instance
+                    // spawn/despawn alpha is discarded for cars. Blend was
+                    // tried so they would fade in like the other classes and it
+                    // wrecked them: this mesh is one concave body with the
+                    // wheels as separate surfaces inside the arches, and a
+                    // blended material sorts per object instead of per pixel —
+                    // so the wheels drew over the bodywork and appeared to hang
+                    // outside the car. Cars pop in instead. Do not add Blend
+                    // back here without OpaquePrePassDepthDraw alongside it.
                 }
             }
         }
