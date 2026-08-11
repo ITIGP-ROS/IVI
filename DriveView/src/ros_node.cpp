@@ -313,6 +313,10 @@ void RosNode::velocityCallback(const geometry_msgs::msg::TwistStamped::ConstShar
     double speed_mps = sqrt(pow(msg->twist.linear.x, 2) + pow(msg->twist.linear.y, 2) + pow(msg->twist.linear.z, 2));
 
     carInfo_.setCurrVel(speed_mps);
+
+    // Classification only: lets the smoother tell an oncoming car from one we
+    // are overtaking. Nothing about how a box is drawn depends on this.
+    detectionSmoother_.setEgoSpeed(float(speed_mps));
 }
 
 void RosNode::imuCallback(const sensor_msgs::msg::Imu::ConstSharedPtr msg)

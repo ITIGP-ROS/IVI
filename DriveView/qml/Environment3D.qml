@@ -31,7 +31,9 @@ Node {
     // asphalt tiling and the gap to the city all key off this, so widening the
     // road means changing this one number and nothing else — the edge lines
     // used to be a separate literal that silently had to match.
-    readonly property real roadHalfWidth: 810   // 16.2 m across
+    // NOTE: mirrored in detection_smoother.cpp as kRoadHalfWidth, which uses it
+    // to keep coasting cars on the tarmac and pedestrians off it. Change both.
+    readonly property real roadHalfWidth: 893.0   // 17.9 m across
 
     // ---- GROUND ----------------------------------------------------------
     Model {
