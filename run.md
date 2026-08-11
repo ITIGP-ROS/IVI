@@ -57,10 +57,22 @@ pip install --user filterpy
 ## Terminal 1 — KITTI bag
 
 ```bash
-source /opt/ros/humble/setup.bash && source ~/Documents/ITI_9Months/GP/ros2_ws_gp/install/setup.bash && ros2 bag play ~/Documents/ITI_9Months/GP/2011_09_26_drive_0005_sync_bag --loop
+source /opt/ros/humble/setup.bash && source ~/Documents/ITI_9Months/GP/ros2_ws_gp/install/setup.bash && ros2 bag play ~/Documents/ITI_9Months/GP/2011_09_29_drive_0004_sync_bag --loop
 ```
 
-The bag is 15.8 s / 154 frames, hence `--loop`.
+35.2 s / 339 lidar frames at ~9.6 Hz, hence `--loop`.
+
+Any KITTI bag converted the same way works — the topic names are what matter,
+not the drive. `main.cpp` hard-codes `/kitti/velo`, `/kitti/oxts/gps/vel`,
+`/kitti/oxts/imu` and `/kitti/oxts/gps/fix`, and the detector subscribes to
+`kitti/velo`, so a bag carrying those needs no rebuild. Check a new one before
+wondering why the scene stays empty:
+
+```bash
+ros2 bag info ~/Documents/ITI_9Months/GP/<bag_dir>
+```
+
+Previously used here: `2011_09_26_drive_0005_sync_bag` (15.8 s / 154 frames).
 
 ## Terminal 2 — detector
 
@@ -98,7 +110,7 @@ is running the `pkill` itself.
   Drive View.
 - **Start the detector before or with the bag.** It drops messages that arrive
   before its subscription is up, and with `--loop` you would otherwise wait out
-  a full 15.8 s pass before any detections appear.
+  a full 35.2 s pass before any detections appear.
 - To confirm the offload took effect, `nvidia-smi` should list `appIVI` under
   its process table while the app is running.
 
