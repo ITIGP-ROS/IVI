@@ -9,6 +9,9 @@ Item {
     id: root
     clip: true
     property bool topDownView: false
+    // false until the initial view is applied in Component.onCompleted, so the
+    // startup camera snaps into place instead of sweeping
+    property bool viewReady: false
 
     property vector3d chaseOrigin:   Qt.vector3d(0, 0, 0)
     property vector3d chaseRotation: Qt.vector3d(-50, 0, 0)
@@ -141,6 +144,30 @@ Item {
                 fieldOfView: 70; clipNear: 1; clipFar: 100000
                 Behavior on position      { Vector3dAnimation { duration: 700; easing.type: Easing.InOutCubic } }
                 Behavior on eulerRotation { Vector3dAnimation { duration: 700; easing.type: Easing.InOutCubic } }
+            }
+        }
+
+        // View-switch glide for the orbit origin. The camera distance rides
+        // its Behavior above; this animates the rig's rotation (and any pan
+        // drift) with the same duration/easing so the pitch doesn't snap
+        // while the camera glides. Manually from/to'd per switch because a
+        // Behavior here would fight the OrbitCameraController, which writes
+        // orbitOrigin every frame while dragging.
+        ParallelAnimation {
+            id: viewSwitchAnim
+            Vector3dAnimation {
+                id: viewPosAnim
+                target: orbitOrigin
+                property: "position"
+                duration: 700
+                easing.type: Easing.InOutCubic
+            }
+            Vector3dAnimation {
+                id: viewRotAnim
+                target: orbitOrigin
+                property: "eulerRotation"
+                duration: 700
+                easing.type: Easing.InOutCubic
             }
         }
 
@@ -955,15 +982,35 @@ Item {
     }
 
     function applyChaseView() {
-        orbitOrigin.position = chaseOrigin
-        orbitOrigin.eulerRotation = chaseRotation
+        if (!viewReady) {
+            orbitOrigin.position = chaseOrigin
+            orbitOrigin.eulerRotation = chaseRotation
+            camera.position = Qt.vector3d(0, 0, chaseDistance)
+            return
+        }
+        viewSwitchAnim.stop()
+        viewPosAnim.from = orbitOrigin.position
+        viewRotAnim.from = orbitOrigin.eulerRotation
+        viewPosAnim.to = chaseOrigin
+        viewRotAnim.to = chaseRotation
         camera.position = Qt.vector3d(0, 0, chaseDistance)
+        viewSwitchAnim.start()
     }
 
     function applyTopView() {
-        orbitOrigin.position = topOrigin
-        orbitOrigin.eulerRotation = topRotation
+        if (!viewReady) {
+            orbitOrigin.position = topOrigin
+            orbitOrigin.eulerRotation = topRotation
+            camera.position = Qt.vector3d(0, 0, topDistance)
+            return
+        }
+        viewSwitchAnim.stop()
+        viewPosAnim.from = orbitOrigin.position
+        viewRotAnim.from = orbitOrigin.eulerRotation
+        viewPosAnim.to = topOrigin
+        viewRotAnim.to = topRotation
         camera.position = Qt.vector3d(0, 0, topDistance)
+        viewSwitchAnim.start()
     }
 
     function resetCurrentView() {
@@ -985,5 +1032,6 @@ Item {
     Component.onCompleted: {
         applyChaseView()
         applyTheme()
+        viewReady = true
     }
 }
