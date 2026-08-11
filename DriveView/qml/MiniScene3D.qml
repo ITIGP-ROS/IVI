@@ -118,6 +118,8 @@ Item {
                 carColor: root.accent
                 carMetalness: 0.3
                 carRoughness: 0.15
+                // deg/s per m/s — wheels spin with the car, stop at standstill
+                wheelSpeed: carInfo.currVel * 120
             }
         }
 

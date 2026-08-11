@@ -84,7 +84,7 @@ Item {
         environment: SceneEnvironment {
             id: sceneEnv
             backgroundMode: SceneEnvironment.Color
-            clearColor: root.darkTheme ? "#0d0d12" : fsd.bg
+            clearColor: root.darkTheme ? "#0d0d12" : "#ffffff"
             antialiasingMode: SceneEnvironment.MSAA
             antialiasingQuality: SceneEnvironment.High
             // HDRI probe: one Texture per file, both loaded once at startup;
@@ -103,11 +103,7 @@ Item {
             // the road end.
             fog: Fog {
                 enabled: true
-                // IVI keeps the dark backdrop in both themes (dark HUD), so
-                // the light-theme fog follows the background instead of the
-                // white dev fog, which read as a glowing white wall over the
-                // near-black clear color.
-                color: root.darkTheme ? "#101015" : "#0d0d12"
+                color: root.darkTheme ? "#101015" : "#ffffff"
                 depthEnabled: true
                 depthNear: 4000
                 depthFar: 6800
@@ -179,6 +175,8 @@ Item {
                 scale: Qt.vector3d(137, 250, 137)
                 eulerRotation: Qt.vector3d(0, -90, 0)
                 carColor: fsd.ego; carMetalness: 0.6; carRoughness: 0.1
+                // deg/s per m/s — wheels spin with the car, stop at standstill
+                wheelSpeed: carInfo.currVel * 120
             }
         }
 

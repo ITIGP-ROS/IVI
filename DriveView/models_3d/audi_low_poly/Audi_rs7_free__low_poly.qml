@@ -16,6 +16,18 @@ Node {
     property real carMetalness: 0.37638211250305176
     property real carRoughness: 0.1
 
+    // wheel spin: wheelSpeed is the angular velocity in deg/s (driven by the
+    // car's velocity from outside); wheelAngle accumulates it while moving
+    property real wheelSpeed: 0
+    property real wheelAngle: 0
+
+    Timer {
+        interval: 16
+        repeat: true
+        running: Math.abs(node.wheelSpeed) > 0.01
+        onTriggered: node.wheelAngle += node.wheelSpeed * 0.016
+    }
+
     Texture {
         id: _0_texture
         generateMipmaps: true
@@ -505,6 +517,7 @@ Node {
                         id: object_4_________1_0
                         objectName: "Object_4_��������1_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_________1_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             material_18_material
                         ]
@@ -513,6 +526,7 @@ Node {
                         id: object_4_________2_0
                         objectName: "Object_4_��������2_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_________2_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             material_19_material
                         ]
@@ -521,6 +535,7 @@ Node {
                         id: object_4_DiffuseGrey_0
                         objectName: "Object_4_DiffuseGrey_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_DiffuseGrey_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             diffuseGrey_material
                         ]
@@ -529,6 +544,7 @@ Node {
                         id: object_4_2232_0
                         objectName: "Object_4_2232_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_2232_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             node2232_material
                         ]
@@ -537,6 +553,7 @@ Node {
                         id: object_4__________0
                         objectName: "Object_4_��������_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4__________0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             material_22_material
                         ]
@@ -552,6 +569,7 @@ Node {
                         id: object_4_001_________1_0
                         objectName: "Object_4.001_��������1_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_001_________1_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             material_18_material
                         ]
@@ -560,6 +578,7 @@ Node {
                         id: object_4_001_________2_0
                         objectName: "Object_4.001_��������2_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_001_________2_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             material_19_material
                         ]
@@ -568,6 +587,7 @@ Node {
                         id: object_4_001_DiffuseGrey_0
                         objectName: "Object_4.001_DiffuseGrey_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_001_DiffuseGrey_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             diffuseGrey_material
                         ]
@@ -576,6 +596,7 @@ Node {
                         id: object_4_001_2232_0
                         objectName: "Object_4.001_2232_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_001_2232_0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             node2232_material
                         ]
@@ -584,6 +605,7 @@ Node {
                         id: object_4_001__________0
                         objectName: "Object_4.001_��������_0"
                         source: "qrc:/audi/models_3d/audi_low_poly/meshes/object_4_001__________0_mesh.mesh"
+                        eulerRotation.x: -node.wheelAngle
                         materials: [
                             material_22_material
                         ]
