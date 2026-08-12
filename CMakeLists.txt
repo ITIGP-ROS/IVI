@@ -44,6 +44,7 @@ qt_add_executable(appIVI
     DriveView/inc/car_info.h
     DriveView/inc/box_transform.h
     DriveView/inc/detection_data.h
+    Backend/OtaManager.cpp
 )
 
 target_include_directories(appIVI PRIVATE ${PULSE_INCLUDE_DIRS}
@@ -90,6 +91,7 @@ qt_add_qml_module(appIVI
         Components/MediaCard.qml
         Components/CarInfoPopup.qml
         Components/AmbientCard.qml
+        Components/OtaPopup.qml
         Components/VirtualKeyboard.qml
         MediaPages/AudioPage.qml
         MediaPages/VideoPage.qml

@@ -13,6 +13,7 @@
 #include "Backend/AmbientLightManager.hpp"
 #include "DriveView/inc/ros_node.h"
 #include "DriveView/inc/detection_instancing.h"
+#include "Backend/OtaManager.hpp"
 
 int main(int argc, char *argv[]){
     rclcpp::init(argc, argv);
@@ -100,6 +101,12 @@ int main(int argc, char *argv[]){
     engine.rootContext()->setContextProperty("planeInstancing", planeInstancing.get());
     engine.rootContext()->setContextProperty("cubeInstancing", cubeInstancing.get());
     engine.rootContext()->setContextProperty("carInstancing", carInstancing.get());
+    // OTA approval. Watches the spool for firmware-update requests from the
+    // update coordinator and the OTA agent, and writes back the user's answer.
+    // Constructed last so its first scan happens with everything else already
+    // up — an offer can be waiting from before this app started.
+    OtaManager otaManager;
+    engine.rootContext()->setContextProperty("otaManager", &otaManager);
 
     engine.loadFromModule("IVI", "Main");
 

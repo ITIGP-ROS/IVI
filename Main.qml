@@ -97,6 +97,23 @@ ApplicationWindow {
         }
     }
 
+    // OTA APPROVAL PROMPT
+    // Lives on Overlay.overlay so it covers whatever page is on the stack —
+    // an update request has to be answerable from media, settings, anywhere.
+    // Below brightnessOverlay's z on purpose: the prompt is still subject to
+    // the screen dimming, like every other thing on this display.
+    OtaPopup {
+        parent: Overlay.overlay
+        anchors.fill: parent
+        z: 9000
+        ota: otaManager
+
+        // Hold it back until the splash has finished. An offer waiting from
+        // before boot would otherwise render underneath the splash clip and be
+        // answered blind by whoever touches the screen first.
+        visible: mainWindow.splashDone && opacity > 0
+    }
+
     // Shared Media Player (persistent across all pages)
     MediaPlayer {
         id: sharedMediaPlayer
