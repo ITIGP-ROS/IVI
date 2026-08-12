@@ -72,6 +72,8 @@ target_compile_definitions(appIVI PRIVATE
 # to prevent, and the breakage is silent.
 set_source_files_properties(API/WeatherStore.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(DriveView/qml/CarColors.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(appIVI
     URI IVI
@@ -99,6 +101,8 @@ qt_add_qml_module(appIVI
         DriveView/qml/Scene3D.qml
         DriveView/qml/MiniScene3D.qml
         DriveView/qml/Environment3D.qml
+        DriveView/qml/CarColors.qml
+        DriveView/qml/MyOrbitCameraController.qml
         DriveView/models_3d/audi_low_poly/Audi_rs7_free__low_poly.qml
     RESOURCES
         resources.qrc

@@ -54,7 +54,7 @@ Item {
         // Shows through where the road has faded out — this is the colour the
         // detection range ends in, so it wants to be near-black, not grey.
         property color bg:          "#080a0d"
-        property color ego:         "#0066cc"
+        property color ego:         CarColors.ego
         property color detection:   "#a6a6a6"
         property color textPri:     "#f2f5f8"
         property color textSec:     "#9aa4b0"
@@ -67,11 +67,9 @@ Item {
     /*
      * Everything the car-settings drawer can change, kept across restarts.
      *
-     * The colour is stored as the three inputs the picker actually works in
-     * (hue, saturation, value) rather than as the resulting RGB. Storing the
-     * RGB would restore the right paint but leave the wheel marker and the
-     * brightness slider sitting wherever they defaulted to, so the controls
-     * would disagree with the car in front of them.
+     * The car colour itself is owned by CarColors (shared with the launcher
+     * preview, which needs it from the first frame, before this scene is even
+     * created), stored there as the three inputs the picker works in.
      *
      * QSettings is usable here because main.cpp sets the organisation and
      * application identifiers before the engine loads — without those it
@@ -82,9 +80,6 @@ Item {
         category: "DriveView"
 
         property bool darkTheme:    true
-        property real carHue:       0.583
-        property real carSat:       1.0
-        property real carVal:       1.0
         property real carMetalness: 0.6
         property real carRoughness: 0.1
     }
@@ -211,9 +206,9 @@ Item {
             }
         }
 
-        OrbitCameraController {
+        MyOrbitCameraController {
             anchors.fill: parent; camera: camera; origin: orbitOrigin
-            mouseEnabled: true; panEnabled: true; xSpeed: 0.05; ySpeed: 0.05
+            mouseEnabled: true; panEnabled: false; zoomEnabled: false; xSpeed: 0.05; ySpeed: 0.05
         }
 
         Node {
@@ -747,7 +742,13 @@ Item {
 
         x: open ? 0 : -width
 
-        Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
+        Behavior on x {
+            NumberAnimation {
+                duration: 260; easing.type: Easing.InOutQuad
+                onRunningChanged: if (!running && settingsDrawer.open) colorWheel.requestPaint()
+            }
+        }
+        onOpenChanged: if (open) colorWheel.requestPaint()
 
         color: fsd.panelBg
         border.color: fsd.panelBorder
@@ -802,7 +803,7 @@ Item {
                     Text {
                         anchors.fill: parent
                         anchors.margins: 6
-                        text: "✕ Close"
+                        text: "× Close"
                         color: fsd.textPri
                         font.pixelSize: _fSm
                         minimumPixelSize: 9
@@ -1032,14 +1033,13 @@ Item {
     }
 
     function applyColor() {
-        fsd.ego = hsvToRgb(colorWheel.pickedHue, colorWheel.pickedSat, brightnessSlider.value)
-
         // Single funnel for every colour change — the wheel and the brightness
         // slider both come through here — so this is the only place the stored
-        // copy has to be kept up to date.
-        driveSettings.carHue = colorWheel.pickedHue
-        driveSettings.carSat = colorWheel.pickedSat
-        driveSettings.carVal = brightnessSlider.value
+        // copy has to be kept up to date. CarColors persists it from its own
+        // Settings block and restores itself at boot, when the launcher
+        // preview is created, so the persisted colour is visible from the
+        // first frame.
+        CarColors.setColor(colorWheel.pickedHue, colorWheel.pickedSat, brightnessSlider.value)
     }
 
     function applyChaseView() {
@@ -1100,11 +1100,13 @@ Item {
         //
         // Assigning brightnessSlider.value fires its onValueChanged, which
         // calls applyColor() — so hue and saturation are set ahead of it.
+        // The colour itself lives in CarColors (shared with the launcher
+        // preview, restored at boot), so this scene only syncs its picker.
         root.darkTheme         = driveSettings.darkTheme
-        colorWheel.pickedHue   = driveSettings.carHue
-        colorWheel.pickedSat   = driveSettings.carSat
-        colorWheel.pickedVal   = driveSettings.carVal
-        brightnessSlider.value = driveSettings.carVal
+        colorWheel.pickedHue   = CarColors.carHue
+        colorWheel.pickedSat   = CarColors.carSat
+        colorWheel.pickedVal   = CarColors.carVal
+        brightnessSlider.value = CarColors.carVal
         egoCar.carMetalness    = driveSettings.carMetalness
         egoCar.carRoughness    = driveSettings.carRoughness
         applyColor()

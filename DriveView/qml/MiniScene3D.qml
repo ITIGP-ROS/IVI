@@ -23,8 +23,6 @@ Item {
     readonly property bool hasSignal: detectionModel.detectCount >= 0
                                       && detectionModel.detectCount < 1000
 
-    property color accent: "#4a9eff"
-
     // Corner radius of the card this sits in. A View3D renders a plain
     // rectangle, so without masking the road spills out past the card's rounded
     // corners and the tile is the only square one on the launcher.
@@ -125,7 +123,7 @@ Item {
             Audi_rs7_free__low_poly {
                 scale: Qt.vector3d(137, 250, 137)
                 eulerRotation: Qt.vector3d(0, -90, 0)
-                carColor: root.accent
+                carColor: CarColors.ego
                 carMetalness: 0.3
                 carRoughness: 0.15
                 // deg/s per m/s — wheels spin with the car, stop at standstill
