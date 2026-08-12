@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick3D
 import QtQuick3D.Helpers
@@ -61,6 +62,31 @@ Item {
         // 9%-black wash, which is invisible over the paving.
         property color panelBg:     "#b4121619"
         property color panelBorder: "#30ffffff"
+    }
+
+    /*
+     * Everything the car-settings drawer can change, kept across restarts.
+     *
+     * The colour is stored as the three inputs the picker actually works in
+     * (hue, saturation, value) rather than as the resulting RGB. Storing the
+     * RGB would restore the right paint but leave the wheel marker and the
+     * brightness slider sitting wherever they defaulted to, so the controls
+     * would disagree with the car in front of them.
+     *
+     * QSettings is usable here because main.cpp sets the organisation and
+     * application identifiers before the engine loads — without those it
+     * refuses to initialise and every value is silently dropped.
+     */
+    Settings {
+        id: driveSettings
+        category: "DriveView"
+
+        property bool darkTheme:    true
+        property real carHue:       0.583
+        property real carSat:       1.0
+        property real carVal:       1.0
+        property real carMetalness: 0.6
+        property real carRoughness: 0.1
     }
 
     /*
@@ -964,7 +990,10 @@ Item {
                 from: 0
                 to: 1
                 value: egoCar.carMetalness
-                onValueChanged: egoCar.carMetalness = value
+                onValueChanged: {
+                    egoCar.carMetalness = value
+                    driveSettings.carMetalness = value
+                }
             }
 
             Text {
@@ -980,7 +1009,10 @@ Item {
                 from: 0
                 to: 1
                 value: egoCar.carRoughness
-                onValueChanged: egoCar.carRoughness = value
+                onValueChanged: {
+                    egoCar.carRoughness = value
+                    driveSettings.carRoughness = value
+                }
             }
         }
     }
@@ -1001,6 +1033,13 @@ Item {
 
     function applyColor() {
         fsd.ego = hsvToRgb(colorWheel.pickedHue, colorWheel.pickedSat, brightnessSlider.value)
+
+        // Single funnel for every colour change — the wheel and the brightness
+        // slider both come through here — so this is the only place the stored
+        // copy has to be kept up to date.
+        driveSettings.carHue = colorWheel.pickedHue
+        driveSettings.carSat = colorWheel.pickedSat
+        driveSettings.carVal = brightnessSlider.value
     }
 
     function applyChaseView() {
@@ -1049,9 +1088,28 @@ Item {
         hdriIndex = darkTheme ? 0 : 1   // ferndale / wide_street
         probeExposure = darkTheme ? 0.1 : 0.3
     }
-    onDarkThemeChanged: applyTheme()
+    onDarkThemeChanged: {
+        applyTheme()
+        driveSettings.darkTheme = darkTheme
+    }
 
     Component.onCompleted: {
+        // Restore first: applyTheme() below reads darkTheme, and the colour
+        // has to be rebuilt from the stored hue/sat/value before anything
+        // paints, or the car flashes its default blue on every start.
+        //
+        // Assigning brightnessSlider.value fires its onValueChanged, which
+        // calls applyColor() — so hue and saturation are set ahead of it.
+        root.darkTheme         = driveSettings.darkTheme
+        colorWheel.pickedHue   = driveSettings.carHue
+        colorWheel.pickedSat   = driveSettings.carSat
+        colorWheel.pickedVal   = driveSettings.carVal
+        brightnessSlider.value = driveSettings.carVal
+        egoCar.carMetalness    = driveSettings.carMetalness
+        egoCar.carRoughness    = driveSettings.carRoughness
+        applyColor()
+        colorWheel.requestPaint()
+
         applyChaseView()
         applyTheme()
         viewReady = true
