@@ -46,7 +46,12 @@ qt_add_executable(appIVI
     DriveView/inc/detection_data.h
 )
 
-target_include_directories(appIVI PRIVATE ${PULSE_INCLUDE_DIRS})
+target_include_directories(appIVI PRIVATE ${PULSE_INCLUDE_DIRS}
+                                          ${rclcpp_INCLUDE_DIRS}
+                                          ${geometry_msgs_INCLUDE_DIRS}
+                                          ${std_msgs_INCLUDE_DIRS}
+                                          ${sensor_msgs_INCLUDE_DIRS}
+                                          ${object_detection_msgs_INCLUDE_DIRS})
 target_include_directories(appIVI PRIVATE DriveView)
 
 # Bench switch for the ambient light CAN link. ON prints the frames to the
@@ -116,10 +121,10 @@ target_link_libraries(appIVI PRIVATE
     ${PULSE_LIBRARIES}
     vosk
     rclcpp::rclcpp
-    sensor_msgs::sensor_msgs
-    geometry_msgs::geometry_msgs
-    std_msgs::std_msgs
-    object_detection_msgs::object_detection_msgs
+    ${geometry_msgs_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    ${sensor_msgs_LIBRARIES}
+    ${object_detection_msgs_LIBRARIES}
 )
 
 include(GNUInstallDirs)
