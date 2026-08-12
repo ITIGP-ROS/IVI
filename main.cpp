@@ -1,6 +1,8 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <memory>
+#include <rclcpp/rclcpp.hpp>
 #include "Backend/BluetoothManager.hpp"
 #include "Backend/USBManager.hpp"
 #include "Backend/WifiManager.hpp"
@@ -9,8 +11,12 @@
 #include "Backend/SpeechManager.hpp"
 #include "Backend/MediaLibrary.hpp"
 #include "Backend/AmbientLightManager.hpp"
+#include "DriveView/inc/ros_node.h"
+#include "DriveView/inc/detection_instancing.h"
 
 int main(int argc, char *argv[]){
+    rclcpp::init(argc, argv);
+
     QGuiApplication app(argc, argv);
 
     // Required before any QML Settings element will work. Without these,
@@ -70,7 +76,35 @@ int main(int argc, char *argv[]){
     SpeechManager speechManager;
     engine.rootContext()->setContextProperty("speechManager", &speechManager);
 
+    // --- DriveView: 3D surroundings visualization (ROS2) ---
+    RosNode *rosNode = new RosNode(&app);
+    rosNode->initialize("/kitti/velo", "/object_detections_3d",
+                        "/kitti/oxts/gps/vel", "/kitti/oxts/imu",
+                        "/kitti/oxts/gps/fix", 20000);
+    engine.rootContext()->setContextProperty("rosNodeInstance", rosNode);
+    engine.rootContext()->setContextProperty("detectionModel", rosNode->detectionModel());
+    engine.rootContext()->setContextProperty("carInfo", rosNode->carInfo());
+
+    std::unique_ptr<DetectionInstancing> planeInstancing =
+        std::make_unique<DetectionInstancing>();
+    std::unique_ptr<DetectionInstancing> cubeInstancing =
+        std::make_unique<DetectionInstancing>();
+    std::unique_ptr<DetectionInstancing> carInstancing =
+        std::make_unique<DetectionInstancing>();
+    planeInstancing->setLabelFilter(0);
+    cubeInstancing->setLabelFilter(1);
+    carInstancing->setLabelFilter(2);
+    for (DetectionInstancing *inst : {
+             planeInstancing.get(), cubeInstancing.get(), carInstancing.get() })
+        inst->setModel(rosNode->detectionModel());
+    engine.rootContext()->setContextProperty("planeInstancing", planeInstancing.get());
+    engine.rootContext()->setContextProperty("cubeInstancing", cubeInstancing.get());
+    engine.rootContext()->setContextProperty("carInstancing", carInstancing.get());
+
     engine.loadFromModule("IVI", "Main");
 
-    return app.exec();
+    int result = app.exec();
+
+    rclcpp::shutdown();
+    return result;
 }

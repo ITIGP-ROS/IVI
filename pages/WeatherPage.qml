@@ -148,7 +148,8 @@ Item {
             onEntered:  refreshBtn.opacity = 1.0
             onExited:   refreshBtn.opacity = 0.9
             onPressed:  refreshBtn.scale   = 0.88
-            onReleased: { refreshBtn.scale = 1.0; weatherAPI.fetch(cityInputHidden.text) }
+            // Forced: the refresh button exists precisely to overrule the TTL.
+            onReleased: { refreshBtn.scale = 1.0; root.showCity(cityInputHidden.text, true) }
         }
     }
 
@@ -608,7 +609,7 @@ Item {
                 maxLength: 32
 
                 onAccepted: {
-                    weatherAPI.fetch(cityInputHidden.text)
+                    root.showCity(cityInputHidden.text)
                     keyboard.clear()
                     keyboardPopup.close()
                 }
@@ -626,66 +627,105 @@ Item {
     }
 
     // API
-    WeatherAPI {
-        id: weatherAPI
-        onWeatherReceived: function(current, daily, hourly, location) {
-            cityName.text         = location.name + ", " + location.country
-            temperature.text      = Math.round(current.temperature_2m) + "°C"
-            feelsLike.text        = "Feels like: " + Math.round(current.apparent_temperature) + "°C"
-            weatherEmojiText.text = root.weatherEmoji(current.weather_code, current.is_day)
-            populationValue.text  = location.population.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-            root.currentHour      = parseInt(current.time.split("T")[1].split(":")[0])
+    /*
+     * Painting is a plain function rather than only a signal handler, because
+     * the page has to be able to fill itself in from cache the instant it is
+     * constructed — the same code has to run for a reply that has just landed
+     * and for one that landed ten minutes ago.
+     */
+    function applyWeather(current, daily, hourly, location) {
+        cityName.text         = location.name + ", " + location.country
+        temperature.text      = Math.round(current.temperature_2m) + "°C"
+        feelsLike.text        = "Feels like: " + Math.round(current.apparent_temperature) + "°C"
+        weatherEmojiText.text = root.weatherEmoji(current.weather_code, current.is_day)
+        populationValue.text  = location.population.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+        root.currentHour      = parseInt(current.time.split("T")[1].split(":")[0])
 
-            var code = current.weather_code
-            if      (code === 0)  weatherDescription.text = current.is_day ? "Clear Sky" : "Clear Night"
-            else if (code <= 2)   weatherDescription.text = "Partly Cloudy"
-            else if (code === 3)  weatherDescription.text = "Overcast"
-            else if (code <= 48)  weatherDescription.text = "Foggy"
-            else if (code <= 55)  weatherDescription.text = "Drizzle"
-            else if (code <= 65)  weatherDescription.text = "Rainy"
-            else if (code <= 75)  weatherDescription.text = "Snowy"
-            else if (code <= 82)  weatherDescription.text = "Rain Showers"
-            else if (code <= 99)  weatherDescription.text = "Thunderstorm"
+        var code = current.weather_code
+        if      (code === 0)  weatherDescription.text = current.is_day ? "Clear Sky" : "Clear Night"
+        else if (code <= 2)   weatherDescription.text = "Partly Cloudy"
+        else if (code === 3)  weatherDescription.text = "Overcast"
+        else if (code <= 48)  weatherDescription.text = "Foggy"
+        else if (code <= 55)  weatherDescription.text = "Drizzle"
+        else if (code <= 65)  weatherDescription.text = "Rainy"
+        else if (code <= 75)  weatherDescription.text = "Snowy"
+        else if (code <= 82)  weatherDescription.text = "Rain Showers"
+        else if (code <= 99)  weatherDescription.text = "Thunderstorm"
 
-            weatherInfoModel.setProperty(0, "value", Math.round(current.wind_speed_10m)   + " km/h")
-            weatherInfoModel.setProperty(1, "value", current.relative_humidity_2m         + "%")
-            weatherInfoModel.setProperty(2, "value", current.wind_direction_10m           + "°")
-            weatherInfoModel.setProperty(3, "value", Math.round(current.surface_pressure) + " hPa")
+        weatherInfoModel.setProperty(0, "value", Math.round(current.wind_speed_10m)   + " km/h")
+        weatherInfoModel.setProperty(1, "value", current.relative_humidity_2m         + "%")
+        weatherInfoModel.setProperty(2, "value", current.wind_direction_10m           + "°")
+        weatherInfoModel.setProperty(3, "value", Math.round(current.surface_pressure) + " hPa")
 
-            hourlyWeatherModel.clear()
-            for (var i = 0; i < 24; i++) {
-                var amPm = i < 12 ? "AM" : "PM"
-                var hour = i % 12 === 0 ? "12" : (i % 12).toString()
-                hourlyWeatherModel.append({ "time": hour + " " + amPm, "temp": Math.round(hourly.temperature_2m[i]) + "°C" })
-            }
-            var dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
-            dailyWeatherModel.clear()
-            for (var j = 0; j < daily.time.length; j++) {
-                var date = new Date(daily.time[j])
-                dailyWeatherModel.append({
-                    "day":     j === 0 ? "Today" : j === 1 ? "Tomorrow" : dayNames[date.getDay()],
-                    "maxTemp": Math.round(daily.temperature_2m_max[j]) + "°C",
-                    "minTemp": Math.round(daily.temperature_2m_min[j]) + "°C",
-                    "uvIndex": daily.uv_index_max[j]
-                })
-            }
+        hourlyWeatherModel.clear()
+        for (var i = 0; i < 24; i++) {
+            var amPm = i < 12 ? "AM" : "PM"
+            var hour = i % 12 === 0 ? "12" : (i % 12).toString()
+            hourlyWeatherModel.append({ "time": hour + " " + amPm, "temp": Math.round(hourly.temperature_2m[i]) + "°C" })
         }
-        onCityNotFound:  function(city)    { cityInputHidden.text = ""; cityPlaceholder.visible = true }
-        onNetworkError:  function(message) { cityInputHidden.text = ""; cityPlaceholder.visible = true }
-    }
-
-    // Auto-fetch when page loads or city changes
-    onCityChanged: {
-        if(city !== "" && weatherAPI) {
-            weatherAPI.fetch(city)
-            cityInputHidden.text = city
+        var dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+        dailyWeatherModel.clear()
+        for (var j = 0; j < daily.time.length; j++) {
+            var date = new Date(daily.time[j])
+            dailyWeatherModel.append({
+                "day":     j === 0 ? "Today" : j === 1 ? "Tomorrow" : dayNames[date.getDay()],
+                "maxTemp": Math.round(daily.temperature_2m_max[j]) + "°C",
+                "minTemp": Math.round(daily.temperature_2m_min[j]) + "°C",
+                "uvIndex": daily.uv_index_max[j]
+            })
         }
     }
-    
-    Component.onCompleted: {
-        if(root.city !== "") {
-            cityInputHidden.text = root.city
-            weatherAPI.fetch(root.city)
-        }
+
+    /*
+     * The city this page is currently displaying.
+     *
+     * Not the same thing as `city`, which is bound to the launcher's preferred
+     * city: typing somewhere into the search box has to move the page without
+     * moving the home screen. Kept as its own property so replies can be
+     * matched against what is actually on screen.
+     */
+    property string shownCity: ""
+
+    /* Paint from cache. Returns false when there is nothing cached yet. */
+    function showCached(name) {
+        var e = WeatherStore.entryFor(name)
+        if (e === null)
+            return false
+        applyWeather(e.current, e.daily, e.hourly, e.location)
+        return true
     }
+
+    /* Point the page at a city: cache first so it is instant, then revalidate. */
+    function showCity(name, force) {
+        if (name === "")
+            return
+        root.shownCity = name
+        cityInputHidden.text = name
+        showCached(name)
+        WeatherStore.request(name, force === true)
+    }
+
+    Connections {
+        target: WeatherStore
+
+        // Only react to the city this page is showing. The launcher refreshes
+        // the preferred city on its own schedule, and without this guard that
+        // reply would redraw the page out from under a search.
+        function onUpdated(city) {
+            if (WeatherStore.normalise(city) === WeatherStore.normalise(root.shownCity))
+                root.showCached(city)
+        }
+        function onNotFound(city)       { cityInputHidden.text = ""; cityPlaceholder.visible = true }
+        function onFailed(city, reason) { cityInputHidden.text = ""; cityPlaceholder.visible = true }
+    }
+
+    onCityChanged: root.showCity(root.city)
+
+    /*
+     * The point of the cache: on re-entry this paints the page from memory
+     * before the first frame is drawn, and request() then does nothing at all
+     * unless the reading has aged past the store's TTL. Entering, leaving and
+     * entering again no longer costs a geocode + forecast pair every time.
+     */
+    Component.onCompleted: root.showCity(root.city)
 }

@@ -16,7 +16,6 @@
     - [Audio Player](#audio-player)
     - [Video Player](#video-player)
     - [Radio Player](#radio-player)
-  - [Climate Control (HVAC) Page](#climate-control-hvac-page)
   - [Settings Page](#settings-page)
     - [Wi-Fi Settings](#wi-fi-settings)
     - [Bluetooth Settings](#bluetooth-settings)
@@ -53,7 +52,7 @@
 
 ## Overview
 
-The **IVI Dashboard** is a full-featured infotainment application designed to replicate the experience of a production car head unit. It provides a unified interface for weather, media playback (USB audio, USB video, and internet radio), climate control, connectivity management (Wi-Fi and Bluetooth), and voice-activated navigation—all rendered in a polished dark-navy and amber design language.
+The **IVI Dashboard** is a full-featured infotainment application designed to replicate the experience of a production car head unit. It provides a unified interface for weather, media playback (USB audio, USB video, and internet radio), connectivity management (Wi-Fi and Bluetooth), and voice-activated navigation—all rendered in a polished dark-navy and amber design language.
 
 The application is architected as a **Qt Quick (QML) frontend** backed by a **C++ engine**, communicating over Qt's property-binding and signal/slot system. The C++ backend handles all hardware-level interactions: PulseAudio for volume, D-Bus for Wi-Fi (via NetworkManager) and Bluetooth (via BlueZ 5), UDisks2 for USB drives, and the Vosk library for offline speech recognition.
 
@@ -99,7 +98,6 @@ IVI/
 ├── pages/
 │   ├── WeatherPage.qml          # Full weather dashboard (current, hourly, 7-day forecast)
 │   ├── MediaPlayerPage.qml      # Media hub routing to Audio, Video, and Radio sub-pages
-│   ├── ClimateControlPage.qml   # Dual-zone HVAC controller (front + rear)
 │   └── SettingPage.qml          # Settings hub routing to Wi-Fi and Bluetooth sub-pages
 │
 └── SettingPages/
@@ -155,7 +153,7 @@ The application follows a **layered architecture** that cleanly separates hardwa
 
 ### Launcher / Home Screen
 
-The home screen is the entry point after the splash screen finishes. It presents four animated app tiles (Weather, Media, Climate, Settings) alongside live status widgets.
+The home screen is the entry point after the splash screen finishes. It presents four animated app tiles (Weather, Media, Drive View, Settings) alongside live status widgets.
 
 **App Tiles**
 
@@ -176,16 +174,6 @@ A compact card on the launcher displays:
 
 The data is fetched automatically on launch and refreshed whenever `mainWindow.preferredCity` changes.
 
-**HVAC Quick-Control Widget**
-
-A mini version of the Climate Control page lives on the launcher, giving the driver immediate access to:
-- Air direction mode buttons (three icons for vent, floor, defrost).
-- Temperature adjustment (arc-style canvas gauge).
-- Fan speed control.
-- Power toggle.
-
-All HVAC state is stored directly on `launcherItem` and is two-way synced with the full `ClimateControlPage` so that changes made on the launcher are reflected in the full page and vice versa.
-
 **Splash Screen**
 
 On launch, an `AnimatedImage` plays the branded clip (`assets/videos/vpace_splash.gif`, 90 frames, ~3 s) full-screen from embedded resources, cropped to fill with `PreserveAspectCrop`.
@@ -197,7 +185,6 @@ On launch, an `AnimatedImage` plays the branded clip (`assets/videos/vpace_splas
 A microphone button in the launcher activates offline voice recognition. When pressed, the button turns red and the `SpeechManager` starts listening. Recognized commands are routed to navigation actions:
 - "weather" / city names → opens `WeatherPage` for that city.
 - "media" / "music" / "video" → opens `MediaPlayerPage`.
-- "climate" / "hvac" → opens `ClimateControlPage`.
 - "settings" → opens `SettingPage`.
 
 While listening, a partial result text updates live beneath the mic button to give visual feedback of what the system is hearing.
@@ -298,8 +285,8 @@ The Video page (`MediaPages/VideoPage.qml`) has its own dedicated `MediaPlayer` 
 **Source Selection**
 
 A left panel (same layout as Audio) supports:
+- **Local** — lists the on-disk video library. There is no file picker; the folder loads itself.
 - **USB** — populates a playlist from `usbManager.videoFiles`. Supported extensions are detected by `USBManager`'s internal scanner (`.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`, and others).
-- **URL** — direct stream URL input.
 
 **Video Output**
 
@@ -346,36 +333,6 @@ A colored dot reflects the `MediaPlayer`'s `mediaStatus`:
 **Persistent State**
 
 Because `globalStationsModel` and `globalRadioAPI` are properties of `mainWindow`, navigating away from the Radio page and returning does not clear the station list or stop playback. The user can open the Weather page, return to Media, and find the station still playing.
-
----
-
-### Climate Control (HVAC) Page
-
-The Climate Control page (`pages/ClimateControlPage.qml`) provides a **dual-zone HVAC controller** for both the front and rear cabin zones.
-
-**Dual-Zone Layout**
-
-The page is split into a Front zone (left) and a Rear zone (right), each with identical controls:
-- **Temperature Dial** — an arc-shaped `Canvas` gauge that updates live as the value changes. The arc is drawn in the accent amber color, and the numeric temperature is displayed in the center.
-- **Fan Speed Slider** — a styled horizontal `Slider` (Qt Quick Controls 2) labeled with the current speed number (0–8).
-- **Air Direction Mode** — three icon buttons selecting the airflow direction (face vents, floor, windshield). The selected mode is highlighted in the accent green color.
-- **Power Toggle** — an on/off button that enables or disables the zone.
-
-**Global Controls**
-
-Between the two zones a center column provides:
-- **Sync Toggle** — when active, changes to the front zone are mirrored to the rear zone automatically.
-- **Auto Mode** — single button that sets both zones to automatic temperature management.
-- **Recirculation Toggle** — enables cabin air recirculation.
-- **Air Quality Toggle** — enables the cabin air filter / ionizer.
-
-**Two-Way Sync with Launcher**
-
-HVAC state is stored as properties on `launcherItem` in `Main.qml`. The `ClimateControlPage` receives these values as required properties and writes changes back via property bindings, so the mini HVAC widget on the launcher always reflects the current state even when the full page is not open.
-
-**Visual Design**
-
-The page background is a dark navy gradient (`#082839` → `#10475E` → `#082839`) with a subtle dot-grid pattern drawn on a `Canvas` at 4% opacity. The accent color for active elements is `#18b78f` (teal-green). Temperature values below 18°C show a blue tint; above 25°C an amber tint.
 
 ---
 
@@ -618,7 +575,7 @@ Provides **offline speech-to-text** using the **Vosk** speech recognition librar
 - `startListening()` — opens the default audio input at 16 kHz mono 16-bit PCM; connects `QIODevice::readyRead` to `onAudioData()`.
 - `stopListening()` — closes the audio input; retrieves the final result from Vosk and emits `resultReady(text)`.
 
-**Grammar restriction:** The Vosk recognizer is initialized with a JSON grammar whitelist containing approximately 20 keywords (weather, city names, HVAC terms, media commands). This dramatically reduces false positives and improves recognition speed on embedded hardware by constraining the search space.
+**Grammar restriction:** The Vosk recognizer is initialized with a JSON grammar whitelist containing about two dozen keywords (weather, city names, media and volume commands). This dramatically reduces false positives and improves recognition speed on embedded hardware by constraining the search space.
 
 **Audio pipeline:**
 
@@ -773,7 +730,6 @@ The IVI Dashboard follows a consistent visual language across all pages:
 | Background dark | `#082839` | Gradient start and end stops |
 | Background mid | `#10475E` | Gradient center stop |
 | Accent amber | `#D08831` | Titles, icons, active controls, accents |
-| Accent teal | `#18b78f` | HVAC active states, selected items |
 | Text primary | `#ffffff` | Main labels |
 | Text secondary | `#8899bb` | Subtitles, metadata |
 | Success | `#00ffaa` | Connected / playing indicators |

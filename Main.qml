@@ -197,6 +197,9 @@ ApplicationWindow {
      * a second time.
      */
     function openSettingsSection(section) {
+        // Reachable from Drive View's window bar, which is not on the stack —
+        // step off it first, or the pushed page lands under a hidden StackView.
+        driveViewLoader.shown = false
         const settings = stackView.currentItem as SettingPage
         if (settings)
             settings.showSection(section)
@@ -211,6 +214,101 @@ ApplicationWindow {
         id: stackView
         anchors.fill: parent
         initialItem: launcherPage
+        // Above the loader while it warms up, below it once Drive View opens.
+        z: 1
+
+        // Nothing under Drive View is worth drawing: it covers the screen
+        // opaquely, and leaving the launcher rendering behind it costs a full
+        // extra scene every frame on top of the 3D view.
+        //
+        // Gated on Ready, not just on `shown`. Tapping the card before the
+        // asynchronous loader has finished would otherwise hide this while
+        // Drive View is still not visible either — a black screen for however
+        // long the scene takes to build. The launcher stays up until there is
+        // something to replace it with.
+        visible: !(driveViewLoader.shown && driveViewLoader.status === Loader.Ready)
+    }
+
+    /*
+     * DRIVE VIEW — built once, then kept.
+     *
+     * It used to be a Component pushed onto the StackView, which destroys a
+     * page when it is popped. So every trip back into Drive View re-created
+     * the whole 3D world from nothing: two 1k HDRI probes (1.6 MB + 1.5 MB,
+     * and an IBL probe has to be decoded and pre-filtered before the first
+     * frame), the Audi ego model with its thirteen meshes and ~1.7 MB of maps,
+     * the Tesla detection mesh, and 42 dynamically-created city instances.
+     * That is the delay on the Jetson, and it was paid on every single entry.
+     *
+     * Now: `active` latches true and never goes back, so the cost is paid at
+     * most once per boot; `shown` is what actually opens and closes it. A
+     * hidden Item is not rendered, so keeping it costs memory, not frame time.
+     *
+     * asynchronous: the scene is incubated in slices instead of blocking the
+     * GUI thread, so the launcher stays responsive while it builds rather than
+     * freezing solid for the duration.
+     */
+    Loader {
+        id: driveViewLoader
+        anchors.fill: parent
+        asynchronous: true
+        active: false
+        sourceComponent: driveViewPage
+
+        // Separate from `active` on purpose: closing must not unload it.
+        property bool shown: false
+
+        /*
+         * Warm frame.
+         *
+         * Building the QML objects is only half the first-open cost. The other
+         * half is GPU-side — pre-filtering the two HDRI probes into an IBL
+         * environment, uploading the Audi and Tesla maps, compiling shaders —
+         * and none of that happens until something actually renders. An
+         * invisible Item never renders, so a purely hidden warm-up would have
+         * left the whole GPU bill to be paid on the first open anyway.
+         *
+         * So for a short window after it loads, the scene renders for real,
+         * underneath the launcher. Qt Quick has no occlusion culling: a covered
+         * item is still drawn, still uploads its textures, still compiles its
+         * shaders. The launcher's background is fully opaque (#020408 plus an
+         * opaque gradient over it), so nothing of this is visible.
+         *
+         * Then it goes properly invisible and costs nothing per frame.
+         */
+        property bool warming: false
+
+        // Below the launcher while warming, above everything once opened.
+        z: shown ? 5 : 0
+
+        visible: shown ? status === Loader.Ready : warming
+
+        onStatusChanged: {
+            if (status === Loader.Ready && !shown) {
+                warming = true
+                warmTimer.restart()
+            }
+        }
+    }
+
+    // How long to leave the scene rendering behind the launcher. There is no
+    // signal for "all resources are resident", so this is a fixed window —
+    // ~150 frames, far more than the handful the uploads and the probe
+    // pre-filter actually need, and it only ever runs once per boot.
+    Timer {
+        id: warmTimer
+        interval: 2500
+        onTriggered: driveViewLoader.warming = false
+    }
+
+    // Warm Drive View up shortly after the splash clears, so the first tap on
+    // the card is as quick as the ones after it. Deliberately not during the
+    // splash: the video and the scene build would fight for the same GPU, and
+    // a stuttering splash is more visible than a delay nobody is waiting on.
+    Timer {
+        interval: 1200
+        running: mainWindow.splashDone && !driveViewLoader.active
+        onTriggered: driveViewLoader.active = true
     }
 
     // LAUNCHER PAGE
@@ -220,16 +318,21 @@ ApplicationWindow {
         Item {
             id: launcherItem
             signal openWeather()
-            signal openClimateControl()
             signal openMedia()
             signal openSettings()
             signal openCarInfo()
+            signal openDriveView()
 
             onOpenWeather:        stackView.push(weatherPage)
-            onOpenClimateControl: stackView.push(climatePage)
             onOpenMedia:          stackView.push(mediaPage)
             onOpenSettings:       stackView.push(settingPage)
             onOpenCarInfo:        carInfoPopup.visible = true
+            // active latches on first use in case the warm-up timer has not
+            // fired yet; after that this is just a visibility flip.
+            onOpenDriveView: {
+                driveViewLoader.active = true
+                driveViewLoader.shown = true
+            }
 
             // Weather Data (updated via WeatherAPI component below)
             //
@@ -258,37 +361,34 @@ ApplicationWindow {
                                                  : mainWindow.preferredCity)
                       + (weatherIsLive ? "" : " · not live")
 
-            // shared HVAC quick-state (tile + page)
-            property int  hvacMode:          0
-            property int  hvacTemp:          23
-            property int  hvacFan:           3
-            property bool recircActive:      false
-            property bool airQualityActive:  false
-            property bool autoActive:        false
-            property bool climatePower:      false
-            property bool hvacSyncActive:    true
-            property int  hvacRearTemp:     23
-            property int  hvacRearFan:      3
-            property int  hvacRearMode:     0
-            property bool hvacRearPower:    false
-
             Component.onCompleted: {
-                if (appSettings.lastTemp !== "") {
+                /*
+                 * Cache first, summary second. WeatherStore keeps the full last
+                 * reading on disk, so on a warm start the card is not just
+                 * seeded but genuinely current. appSettings.last* stays as the
+                 * fallback for a unit whose stored payload is missing or was
+                 * written by an older build that had no store.
+                 */
+                if (!applyCached(mainWindow.preferredCity)
+                        && appSettings.lastTemp !== "") {
                     currentTemp  = appSettings.lastTemp
                     currentEmoji = appSettings.lastEmoji
                     currentDesc  = appSettings.lastDesc
                 }
-                weatherAPI.fetch(mainWindow.preferredCity)
+                WeatherStore.request(mainWindow.preferredCity)
             }
 
             Connections {
                 target: mainWindow
                 function onPreferredCityChanged() {
                     // What is on screen belongs to the old city, so it is not
-                    // live any more until the new one comes back.
+                    // live any more until the new one comes back — unless the
+                    // new city is already sitting in the cache, in which case
+                    // there is nothing to wait for.
                     launcherItem.weatherIsLive    = false
                     launcherItem.resolvedLocation = ""
-                    weatherAPI.fetch(mainWindow.preferredCity)
+                    launcherItem.applyCached(mainWindow.preferredCity)
+                    WeatherStore.request(mainWindow.preferredCity)
                 }
             }
 
@@ -300,73 +400,96 @@ ApplicationWindow {
                 target: WifiManager
                 function onConnectedSsidChanged() {
                     if (WifiManager.connectedSsid !== "")
-                        weatherAPI.retryNow()
+                        WeatherStore.retryNow()
                 }
             }
 
-            WeatherAPI {
-                id: weatherAPI
+            /* Cached reading for a city onto the card. False if nothing cached. */
+            function applyCached(city) {
+                var e = WeatherStore.entryFor(city)
+                if (e === null)
+                    return false
+                applyWeather(e.current, e.location)
+                // A cached reading is real data, but it is not necessarily now.
+                // Only a reply that just landed earns the "live" badge.
+                weatherIsLive = WeatherStore.isFresh(city)
+                return true
+            }
 
-                // No handler for networkError: the card is already showing the
+            Connections {
+                target: WeatherStore
+
+                // No handler for failed(): the card is already showing the
                 // seeded reading with "not live" beside the city, which says
                 // more than "Offline" did, and WeatherAPI keeps retrying
                 // underneath. A wrong city name is different — that one never
                 // resolves itself, so it has to be said out loud.
-                onCityNotFound: function(city) {
+                function onNotFound(city) {
                     launcherItem.currentDesc = "City not found"
                 }
 
-                onWeatherReceived: function(current, daily, hourly, location) {
+                function onUpdated(city) {
+                    if (WeatherStore.normalise(city)
+                            !== WeatherStore.normalise(mainWindow.preferredCity))
+                        return
+                    var e = WeatherStore.entryFor(city)
+                    if (e === null)
+                        return
                     launcherItem.weatherIsLive = true
-                    launcherItem.currentTemp = Math.round(current.temperature_2m) + "°C"
-                    var code = current.weather_code
-                    var d    = current.is_day
+                    launcherItem.applyWeather(e.current, e.location)
 
-                    if (code === 0)
-                        launcherItem.currentDesc = d ? "Clear Sky" : "Clear Night"
-                    else if (code <= 2)
-                        launcherItem.currentDesc = "Partly Cloudy"
-                    else if (code === 3)
-                        launcherItem.currentDesc = "Overcast"
-                    else if (code <= 48)
-                        launcherItem.currentDesc = "Foggy"
-                    else if (code <= 55)
-                        launcherItem.currentDesc = "Drizzle"
-                    else if (code <= 65)
-                        launcherItem.currentDesc = "Rainy"
-                    else if (code <= 75)
-                        launcherItem.currentDesc = "Snowy"
-                    else if (code <= 82)
-                        launcherItem.currentDesc = "Rain Showers"
-                    else
-                        launcherItem.currentDesc = "Thunderstorm"
-
-                    if (code === 0)
-                        launcherItem.currentEmoji = d ? "☀️" : "🌙"
-                    else if (code <= 2)
-                        launcherItem.currentEmoji = d ? "🌤️" : "🌙"
-                    else if (code === 3)
-                        launcherItem.currentEmoji = "☁️"
-                    else if (code <= 48)
-                        launcherItem.currentEmoji = "🌫️"
-                    else if (code <= 57)
-                        launcherItem.currentEmoji = "🌦️"
-                    else if (code <= 65)
-                        launcherItem.currentEmoji = "🌧️"
-                    else if (code <= 75)
-                        launcherItem.currentEmoji = "❄️"
-                    else if (code <= 82)
-                        launcherItem.currentEmoji = "🌦️"
-                    else
-                        launcherItem.currentEmoji = "⛈️"
-                    
-                    launcherItem.resolvedLocation = location.name + ", " + location.country
-
-                    // Remember it for the next cold boot.
+                    // Tiny always-writable fallback, separate from the store's
+                    // full payload — see Component.onCompleted above.
                     appSettings.lastTemp  = launcherItem.currentTemp
                     appSettings.lastDesc  = launcherItem.currentDesc
                     appSettings.lastEmoji = launcherItem.currentEmoji
                 }
+            }
+
+            function applyWeather(current, location) {
+                launcherItem.currentTemp = Math.round(current.temperature_2m) + "°C"
+                var code = current.weather_code
+                var d    = current.is_day
+
+                if (code === 0)
+                    launcherItem.currentDesc = d ? "Clear Sky" : "Clear Night"
+                else if (code <= 2)
+                    launcherItem.currentDesc = "Partly Cloudy"
+                else if (code === 3)
+                    launcherItem.currentDesc = "Overcast"
+                else if (code <= 48)
+                    launcherItem.currentDesc = "Foggy"
+                else if (code <= 55)
+                    launcherItem.currentDesc = "Drizzle"
+                else if (code <= 65)
+                    launcherItem.currentDesc = "Rainy"
+                else if (code <= 75)
+                    launcherItem.currentDesc = "Snowy"
+                else if (code <= 82)
+                    launcherItem.currentDesc = "Rain Showers"
+                else
+                    launcherItem.currentDesc = "Thunderstorm"
+
+                if (code === 0)
+                    launcherItem.currentEmoji = d ? "☀️" : "🌙"
+                else if (code <= 2)
+                    launcherItem.currentEmoji = d ? "🌤️" : "🌙"
+                else if (code === 3)
+                    launcherItem.currentEmoji = "☁️"
+                else if (code <= 48)
+                    launcherItem.currentEmoji = "🌫️"
+                else if (code <= 57)
+                    launcherItem.currentEmoji = "🌦️"
+                else if (code <= 65)
+                    launcherItem.currentEmoji = "🌧️"
+                else if (code <= 75)
+                    launcherItem.currentEmoji = "❄️"
+                else if (code <= 82)
+                    launcherItem.currentEmoji = "🌦️"
+                else
+                    launcherItem.currentEmoji = "⛈️"
+                
+                launcherItem.resolvedLocation = location.name + ", " + location.country
             }
 
             // ============================================================
@@ -423,9 +546,16 @@ ApplicationWindow {
                 anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
                 anchors.margins: 24; anchors.topMargin: 20
                 height: 56; radius: 16
-                color: Qt.rgba(1,1,1,0.04)
-                border.color: Qt.rgba(1,1,1,0.08)
+                // Lifts on hover. The bar is the only way into car info now
+                // that the About card is gone, and a header that reacts to
+                // nothing gives no hint that it can be pressed at all.
+                color: topBarClick.containsMouse ? Qt.rgba(1,1,1,0.08)
+                                                 : Qt.rgba(1,1,1,0.04)
+                border.color: topBarClick.containsMouse ? Qt.rgba(1,1,1,0.18)
+                                                        : Qt.rgba(1,1,1,0.08)
                 border.width: 1
+                Behavior on color        { ColorAnimation { duration: 200 } }
+                Behavior on border.color { ColorAnimation { duration: 200 } }
 
                 Column {
                     id: timeColumn
@@ -449,15 +579,23 @@ ApplicationWindow {
                     id: welcomeColumn
                     anchors.centerIn: parent;
                     spacing: 2
+
+                    // Same signal the window bar's WiFi icon watches, so the two
+                    // can never disagree about whether we are connected.
+                    readonly property bool online: WifiManager.connectedSsid !== ""
+
                     Text {
-                        text: "Welcome"
+                        text: "Drive Safe"
                         color: "#ffffff"
                         font { pixelSize: 20; bold: true; family: "Arial" }
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Text {
-                        text: "Drive Safe"
-                        color: "#8899bb"
+                        text: welcomeColumn.online ? "Online" : "Offline"
+                        // Coloured, not just worded: at 16 px the two read alike
+                        // at a glance, and this line is the only thing on the
+                        // home screen that says whether the car has a link.
+                        color: welcomeColumn.online ? "#3ad07a" : "#8899bb"
                         font { pixelSize: 16; family: "Arial" }
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
@@ -470,14 +608,37 @@ ApplicationWindow {
                     anchors.right: parent.right; anchors.rightMargin: 25
                     anchors.verticalCenter: parent.verticalCenter
                 }
+
+                // Last child, so it sits above the clock and the logo and gets
+                // the press wherever on the bar it lands.
+                MouseArea {
+                    id: topBarClick
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: launcherItem.openCarInfo()
+                }
             }
 
             Timer {
                 interval: 1000; running: true; repeat: true; triggeredOnStart: true
+
+                // The car runs on UTC+3. Formatting `new Date()` directly means
+                // trusting whatever zone the host is set to, and the Jetson's
+                // image comes up as UTC — so the bar read three hours behind
+                // even though the epoch time underneath was right.
+                //
+                // Deriving the wall clock from the epoch instead gives the same
+                // answer on the Jetson and on a dev laptop in any zone: undo the
+                // host's own offset, then add ours. getTimezoneOffset() is
+                // UTC-minus-local, so adding it back lands on UTC.
+                readonly property int tzOffsetMinutes: 3 * 60
+
                 onTriggered: {
                     var now = new Date()
-                    dateText.text = now.toLocaleDateString(Qt.locale(), "dddd, MMM d yyyy")
-                    timeText.text = now.toLocaleTimeString(Qt.locale(), "hh:mm AP")
+                    var here = new Date(now.getTime()
+                                        + (now.getTimezoneOffset() + tzOffsetMinutes) * 60000)
+                    dateText.text = here.toLocaleDateString(Qt.locale(), "dddd, MMM d yyyy")
+                    timeText.text = here.toLocaleTimeString(Qt.locale(), "hh:mm AP")
                 }
             }
 
@@ -492,9 +653,14 @@ ApplicationWindow {
                 Column {
                     width: parent.width * 0.305; height: parent.height; spacing: 20
 
+                    // Fractions below are of this, not of `height`: the three
+                    // add up to 100% on their own, so they have to share what is
+                    // left after the gaps or the column overruns by 40 px.
+                    readonly property real slot: height - spacing * 2
+
                     // Weather
                     Item {
-                        width: parent.width; height: parent.height * 0.4
+                        width: parent.width; height: parent.slot * 0.32
                         Rectangle {
                             anchors.fill: parent; radius: 28
                             color: Qt.rgba(1,1,1,0.05)
@@ -525,32 +691,86 @@ ApplicationWindow {
                                 NumberAnimation { target: wFloat; property: "y"; to: 5;  duration: 4000; easing.type: Easing.InOutSine }
                             }
 
-                            Column {
-                                anchors.centerIn: parent; spacing: 10
-                                Text { 
-                                    text: launcherItem.currentEmoji
-                                    font { pixelSize: 64 }
+                            /*
+                             * Two columns either side of a hairline: icon and
+                             * conditions on the left, the reading on the right.
+                             *
+                             * Stacked in one column this card was tall and
+                             * narrow with dead space down both sides; split
+                             * across the width it fits fonts 15% larger in the
+                             * same 35% of the panel.
+                             *
+                             * Everything is a fraction of the card, not a fixed
+                             * pixel size — the panel proportions have moved
+                             * twice already and hard-coded sizes overflowed
+                             * onto the card below both times.
+                             */
+                            Item {
+                                id: weatherBody
+                                anchors.fill: parent
+                                anchors.margins: Math.round(parent.width * 0.07)
+
+                                Rectangle {
+                                    id: weatherSep
                                     anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 1
+                                    height: Math.round(parent.height * 0.62)
+                                    color: Qt.rgba(1,1,1,0.12)
                                 }
-                                Text { 
-                                    text: launcherItem.currentTemp
-                                    color: "#ffffff"
-                                    font { pixelSize: 42; bold: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter 
+
+                                // ---- left: icon + conditions
+                                Column {
+                                    anchors.right: weatherSep.left
+                                    anchors.rightMargin: Math.round(weatherBody.width * 0.04)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.round(weatherBody.width * 0.44)
+                                    spacing: Math.round(weatherBody.height * 0.04)
+
+                                    Text {
+                                        text: launcherItem.currentEmoji
+                                        font { pixelSize: Math.round(weatherBody.height * 0.5) }
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                    }
+                                    Text {
+                                        text: launcherItem.currentDesc
+                                        color: "#aaccff"
+                                        font { pixelSize: Math.max(14, Math.round(weatherBody.height * 0.12)); family: "Arial" }
+                                        // Elided, not wrapped: "Thunderstorm With
+                                        // Heavy Hail" is a real API string and a
+                                        // second line pushes the icon off the card.
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                    }
                                 }
-                                Text { 
-                                    text: launcherItem.currentDesc
-                                    color: "#aaccff"
-                                    font { pixelSize: 16; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Text { 
-                                    text: launcherItem.locationText
-                                    color: "#6677aa"
-                                    font { pixelSize: 13; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter 
+
+                                // ---- right: reading + place
+                                Column {
+                                    anchors.left: weatherSep.right
+                                    anchors.leftMargin: Math.round(weatherBody.width * 0.04)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.round(weatherBody.width * 0.44)
+                                    spacing: Math.round(weatherBody.height * 0.04)
+
+                                    Text {
+                                        text: launcherItem.currentTemp
+                                        color: "#ffffff"
+                                        font { pixelSize: Math.round(weatherBody.height * 0.35); bold: true; family: "Arial" }
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                    Text {
+                                        text: launcherItem.locationText
+                                        color: "#6677aa"
+                                        font { pixelSize: Math.max(12, Math.round(weatherBody.height * 0.15)); family: "Arial" }
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                    }
                                 }
                             }
+
 
                             MouseArea {
                                 anchors.fill: parent; hoverEnabled: true
@@ -561,9 +781,17 @@ ApplicationWindow {
                         }
                     }
 
+                    // Ambient — quick controls only; the picker, brightness and
+                    // zones stay in Settings.
+                    Item {
+                        width: parent.width; height: parent.slot * 0.48
+                        AmbientCard { anchors.fill: parent }
+                    }
+
+
                     // Voice Bar
                     Item {
-                        width: parent.width; height: parent.height * 0.2
+                        width: parent.width; height: parent.slot * 0.18
                         Rectangle {
                             anchors.fill: parent; radius: 24
                             color: Qt.rgba(1,1,1,0.05)
@@ -702,8 +930,6 @@ ApplicationWindow {
                                     var lowerText = text.toLowerCase().trim()
                                     if (lowerText.includes("weather"))
                                         launcherItem.openWeather()
-                                    else if (lowerText.includes("hvac") || lowerText.includes("climate") || lowerText.includes("ac"))
-                                        launcherItem.openClimateControl()
                                     else if (lowerText.includes("media") || lowerText.includes("music") || lowerText.includes("radio"))
                                         launcherItem.openMedia()
                                     else if (lowerText.includes("settings") || lowerText.includes("setting"))
@@ -731,28 +957,6 @@ ApplicationWindow {
                                             systemVolume.toggleMute()
                                         console.log("Volume unmuted")
                                     }
-                                    // FAN COMMANDS
-                                    else if (lowerText.includes("fan up")) {
-                                        var newFan = Math.min(7, launcherItem.hvacFan + 1)
-                                        launcherItem.hvacFan = newFan
-                                        console.log("Fan up →", newFan)
-                                    }
-                                    else if (lowerText.includes("fan down")) {
-                                        var newFan = Math.max(0, launcherItem.hvacFan - 1)
-                                        launcherItem.hvacFan = newFan
-                                        console.log("Fan down →", newFan)
-                                    }
-                                    // TEMPERATURE COMMANDS
-                                    else if (lowerText.includes("temp up")) {
-                                        var newTemp = Math.min(30, launcherItem.hvacTemp + 1)
-                                        launcherItem.hvacTemp = newTemp
-                                        console.log("Temp up →", newTemp + "°")
-                                    }
-                                    else if (lowerText.includes("temp down")) {
-                                        var newTemp = Math.max(16, launcherItem.hvacTemp - 1)
-                                        launcherItem.hvacTemp = newTemp
-                                        console.log("Temp down →", newTemp + "°")
-                                    }
                                 }
 
                                 function onListeningChanged() {
@@ -761,10 +965,96 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+
+                // ---- MIDDLE COLUMN (35%) — CENTERED ----
+                Column {
+                    width: parent.width * 0.35; height: parent.height; spacing: 20
+
+                    // Drive View (3D surroundings)
+                    // 0.73 leaves room for the voice bar below it while the
+                    // column still reaches the same depth as the two either
+                    // side of it.
+                    Item {
+                        width: parent.width; height: parent.height * 0.64
+                        Rectangle {
+                            anchors.fill: parent; radius: 28
+                            color: Qt.rgba(1,1,1,0.05)
+                            border.color: hovered ? Qt.rgba(0.4,0.7,1,0.5) : Qt.rgba(1,1,1,0.12)
+                            border.width: 1
+                            property bool hovered: false
+                            scale: hovered ? 1.02 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 200 } }
+                            Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                            Rectangle {
+                                anchors.fill: parent; radius: parent.radius
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
+                                    GradientStop { position: 0.5; color: "transparent" }
+                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
+                                }
+                            }
+                            Rectangle {
+                                anchors.fill: parent; radius: parent.radius
+                                color: "#4a9eff"; opacity: 0.06; z: -1; anchors.margins: -2
+                            }
+
+                            // Live preview of the same scene the full page
+                            // draws. Fills the card — it masks itself to the
+                            // card's corners, so it no longer needs an inset to
+                            // stay clear of them.
+                            MiniScene3D {
+                                id: drivePreview
+                                anchors.fill: parent
+                                // Follow the card, so the preview can never be
+                                // the one square-cornered tile on the launcher.
+                                cornerRadius: parent.radius
+                            }
+
+                            // ROS link indicator. Grey and still when nothing is
+                            // publishing, so a dead pipeline is visible from the
+                            // home screen instead of looking like an empty road.
+                            Row {
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.margins: 20
+                                spacing: 6
+
+                                Rectangle {
+                                    width: 8; height: 8; radius: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
+                                    SequentialAnimation on opacity {
+                                        running: drivePreview.hasSignal
+                                        loops: Animation.Infinite
+                                        NumberAnimation { to: 0.25; duration: 900; easing.type: Easing.InOutSine }
+                                        NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
+                                    }
+                                }
+                                Text {
+                                    text: drivePreview.hasSignal ? "LIVE" : "OFFLINE"
+                                    color: drivePreview.hasSignal ? "#3ad07a" : "#6b7280"
+                                    font { pixelSize: 11; bold: true; letterSpacing: 1.2; family: "Arial" }
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            // Below the overlays, so the badges and the expand
+                            // button get the clicks that land on them.
+                            MouseArea {
+                                anchors.fill: parent; hoverEnabled: true
+                                z: -1
+                                onEntered: parent.hovered = true
+                                onExited:  parent.hovered = false
+                                onClicked: launcherItem.openDriveView()
+                            }
+                        }
+                    }
 
                     // Volume Control — wired to shared C++ controller
                     Item {
-                        width: parent.width; height: parent.height * 0.3
+                        width: parent.width; height: parent.height * 0.305
                         Rectangle {
                             id: volumeCardRect
                             anchors.fill: parent; radius: 28
@@ -881,433 +1171,6 @@ ApplicationWindow {
 
                             HoverHandler {
                                 onHoveredChanged: parent.hovered = hovered
-                            }
-                        }
-                    }
-                }
-
-                // ---- MIDDLE COLUMN (35%) — CENTERED ----
-                Column {
-                    width: parent.width * 0.35; height: parent.height; spacing: 20
-
-                    // Mercedes Status
-                    Item {
-                        width: parent.width; height: parent.height * 0.3
-                        Rectangle {
-                            anchors.fill: parent; radius: 28
-                            color: Qt.rgba(1,1,1,0.05)
-                            border.color: hovered ? Qt.rgba(1,0.6,0.2,0.4) : Qt.rgba(1,1,1,0.12)
-                            border.width: 1
-                            property bool hovered: false
-                            scale: hovered ? 1.02 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 200 } }
-                            Behavior on border.color { ColorAnimation { duration: 200 } }
-
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
-                                    GradientStop { position: 0.5; color: "transparent" }
-                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
-                                }
-                            }
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                color: "#f79b55"; opacity: 0.06; z: -1; anchors.margins: -2
-                            }
-
-                            transform: Translate { id: cFloat }
-                            SequentialAnimation {
-                                loops: Animation.Infinite; running: true
-                                NumberAnimation { target: cFloat; property: "y"; to: 4;  duration: 5000; easing.type: Easing.InOutSine }
-                                NumberAnimation { target: cFloat; property: "y"; to: -4; duration: 5000; easing.type: Easing.InOutSine }
-                            }
-
-                            Column {
-                                anchors.centerIn: parent; spacing: 8
-                                Image {
-                                    source: "qrc:/assets/images/vpace.png"
-                                    width: 65; height: 65; fillMode: Image.PreserveAspectFit
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Text { 
-                                    text: "V-PACE"
-                                    color: "#e7f1ef"
-                                    font { pixelSize: 20; bold: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Text { 
-                                    text: "System Online"
-                                    color: "#21cfa4"
-                                    font { pixelSize: 13; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter 
-                                }
-                                // NEW: hint text
-                                Text {
-                                    text: "Tap for info"
-                                    color: Qt.rgba(1, 1, 1, 0.3)
-                                    font { pixelSize: 10; italic: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onEntered: parent.hovered = true
-                                onExited:  parent.hovered = false
-                                onClicked: launcherItem.openCarInfo()
-                            }
-                        }
-                    }
-
-                    // HVAC
-                    Item {
-                        width: parent.width; height: parent.height * 0.65
-                        Rectangle {
-                            id: hvacRect
-                            anchors.fill: parent; radius: 28
-                            color: Qt.rgba(1,1,1,0.05)
-                            border.color: hovered ? Qt.rgba(0.6,0.3,1,0.4) : Qt.rgba(1,1,1,0.12)
-                            border.width: 1
-                            property bool hovered: false
-                            scale: hovered ? 1.02 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 200 } }
-                            Behavior on border.color { ColorAnimation { duration: 200 } }
-
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.08) }
-                                    GradientStop { position: 0.5; color: "transparent" }
-                                    GradientStop { position: 1.0; color: Qt.rgba(0,0,0,0.08) }
-                                }
-                            }
-                            Rectangle {
-                                anchors.fill: parent; radius: parent.radius
-                                color: "#a855f7"; opacity: 0.06; z: -1; anchors.margins: -2
-                            }
-
-                            transform: Translate { id: hFloat }
-                            SequentialAnimation {
-                                loops: Animation.Infinite; running: true
-                                NumberAnimation { target: hFloat; property: "y"; to: 3;  duration: 6000; easing.type: Easing.InOutSine }
-                                NumberAnimation { target: hFloat; property: "y"; to: -3; duration: 6000; easing.type: Easing.InOutSine }
-                            }
-
-                            // Hover glow only — does NOT block clicks
-                            HoverHandler {
-                                onHoveredChanged: parent.hovered = hovered
-                            }
-
-                            // Small expand button (top-right) to open full page
-                            Rectangle {
-                                anchors.top: parent.top; anchors.right: parent.right
-                                anchors.margins: 18
-                                width: 35; height: 35; radius: 8
-                                color: expandMa.containsMouse ? Qt.rgba(1,1,1,0.15) : Qt.rgba(1,1,1,0.05)
-                                border.color: Qt.rgba(1,1,1,0.2)
-                                border.width: 1
-                                Image{
-                                    anchors.centerIn: parent
-                                    width: 20; height: 20
-                                    source: "qrc:/assets/icons/pagenavigation.png"
-                                    fillMode: Image.PreserveAspectFit
-                                }
-                                MouseArea {
-                                    id: expandMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: launcherItem.openClimateControl()
-                                }
-                            }
-
-                            Column {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                anchors.topMargin: 20
-                                spacing: 5
-
-                                Text {
-                                    text: "HVAC"
-                                    color: "#ffffff"
-                                    font { pixelSize: 22; bold: true; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-
-                                // Spacer
-                                Item { height: 8; width: 1 }
-
-                                // ---- 3 air direction modes ----
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 12
-                                    Repeater {
-                                        model: [
-                                            "qrc:/assets/icons/parallel.png",
-                                            "qrc:/assets/icons/feet.png",
-                                            "qrc:/assets/icons/parallel-feet.png"
-                                        ]
-                                        Rectangle {
-                                            width: 38; height: 38; radius: 8
-                                            color: launcherItem.hvacMode === index ? '#18b78f' : Qt.rgba(1, 1, 1, 0.23)
-                                            border.width: launcherItem.hvacMode === index ? 2 : 0
-                                            border.color: "#FFFFFF"
-                                            Image {
-                                                anchors.centerIn: parent
-                                                width: 22; height: 22
-                                                source: modelData
-                                                fillMode: Image.PreserveAspectFit
-                                            }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: launcherItem.hvacMode = index
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Spacer
-                                Item { height: 6; width: 1 }
-
-                                // ---- Temp + Fan mini gauges ----
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 16
-
-                                    // Mini Temp
-                                    Item {
-                                        width: 135; height: 142
-
-                                        Canvas {
-                                            id: miniTempCanvas
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: parent.top
-                                            width: 120; height: 120
-                                            property real val: launcherItem.hvacTemp
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                var cx = width/2, cy = height/2, r = 50
-                                                var t = (val - 16) / (30 - 16)
-                                                var s = 0.8 * Math.PI, e = 2.2 * Math.PI, c = s + t*(e-s)
-                                                ctx.clearRect(0,0,width,height)
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=9; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=9; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
-                                            }
-                                            onValChanged: requestPaint()
-                                            Component.onCompleted: requestPaint()
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: miniTempCanvas
-                                            text: Math.round(launcherItem.hvacTemp) + "°"
-                                            color: "#FFFFFF"
-                                            font { pixelSize: 32; bold: true; family: "Arial" }
-                                        }
-
-                                        Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: miniTempCanvas.bottom
-                                            anchors.topMargin: -18
-                                            text: "Temperature"
-                                            color: '#f5eee6'
-                                            font { pixelSize: 14; bold: true; family: "Arial" }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            preventStealing: true
-
-                                            function setTempFromMouse(mx, my) {
-                                                var cx = parent.width / 2
-                                                var cy = miniTempCanvas.height / 2
-                                                var dx = mx - cx
-                                                var dy = my - cy
-                                                var rad = Math.atan2(dy, dx)
-                                                var deg = rad * 180 / Math.PI
-                                                if (deg < 0) deg += 360
-
-                                                var startDeg = 144
-                                                var sweepDeg = 252
-                                                var t = 0
-                                                if (deg >= 144 && deg <= 360) {
-                                                    t = (deg - startDeg) / sweepDeg
-                                                } else if (deg >= 0 && deg <= 36) {
-                                                    t = (deg + 360 - startDeg) / sweepDeg
-                                                } else {
-                                                    // dead zone — snap to nearest end based on current value
-                                                    t = (launcherItem.hvacTemp > 23) ? 1 : 0
-                                                }
-
-                                                var newVal = 16 + t * 14
-                                                newVal = Math.round(newVal)
-                                                newVal = Math.max(16, Math.min(30, newVal))
-                                                if (newVal !== launcherItem.hvacTemp)
-                                                    launcherItem.hvacTemp = newVal
-                                            }
-
-                                            onPressed: (mouse) => setTempFromMouse(mouse.x, mouse.y)
-                                            onPositionChanged: (mouse) => {
-                                                if (pressed) setTempFromMouse(mouse.x, mouse.y)
-                                            }
-                                        }
-                                    }
-
-                                    // Mini Fan
-                                    Item {
-                                        width: 135; height: 142
-
-                                        Canvas {
-                                            id: miniFanCanvas
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: parent.top
-                                            width: 120; height: 120
-                                            property real val: launcherItem.hvacFan
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                var cx = width/2, cy = height/2, r = 50
-                                                var t = val / 7
-                                                var s = 0.8 * Math.PI, e = 2.2 * Math.PI, c = s + t*(e-s)
-                                                ctx.clearRect(0,0,width,height)
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,e); ctx.lineWidth=9; ctx.strokeStyle="#082839"; ctx.lineCap="round"; ctx.stroke()
-                                                ctx.beginPath(); ctx.arc(cx,cy,r,s,c); ctx.lineWidth=9; ctx.strokeStyle="#18b78f"; ctx.lineCap="round"; ctx.stroke()
-                                            }
-                                            onValChanged: requestPaint()
-                                            Component.onCompleted: requestPaint()
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: miniFanCanvas
-                                            text: Math.round(launcherItem.hvacFan)
-                                            color: "#FFFFFF"
-                                            font { pixelSize: 32; bold: true; family: "Arial" }
-                                        }
-
-                                        Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: miniFanCanvas.bottom
-                                            anchors.topMargin: -18
-                                            text: "Fan Speed"
-                                            color: "#f5eee6"
-                                            font { pixelSize: 14; bold: true; family: "Arial" }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            preventStealing: true
-
-                                            function setFanFromMouse(mx, my) {
-                                                var cx = parent.width / 2
-                                                var cy = miniFanCanvas.height / 2
-                                                var dx = mx - cx
-                                                var dy = my - cy
-                                                var rad = Math.atan2(dy, dx)
-                                                var deg = rad * 180 / Math.PI
-                                                if (deg < 0) deg += 360
-
-                                                var startDeg = 144
-                                                var sweepDeg = 252
-                                                var t = 0
-                                                if (deg >= 144 && deg <= 360) {
-                                                    t = (deg - startDeg) / sweepDeg
-                                                } else if (deg >= 0 && deg <= 36) {
-                                                    t = (deg + 360 - startDeg) / sweepDeg
-                                                } else {
-                                                    t = (launcherItem.hvacFan > 3) ? 1 : 0
-                                                }
-
-                                                var newVal = t * 7
-                                                newVal = Math.round(newVal)
-                                                newVal = Math.max(0, Math.min(7, newVal))
-                                                if (newVal !== launcherItem.hvacFan)
-                                                    launcherItem.hvacFan = newVal
-                                            }
-
-                                            onPressed: (mouse) => setFanFromMouse(mouse.x, mouse.y)
-                                            onPositionChanged: (mouse) => {
-                                                if (pressed) setFanFromMouse(mouse.x, mouse.y)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ---- 5 master toggles (Recirc, AQ, Auto, Sync, Power) ----
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    // Recirc
-                                    spacing: 8
-                                    Rectangle {
-                                        width: 36; height: 36; radius: 8
-                                        color: launcherItem.recircActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.recircActive ? 2 : 0
-                                        Image{
-                                            anchors.centerIn: parent
-                                            width: 18; height: 18
-                                            fillMode: Image.PreserveAspectFit
-                                            source: "qrc:/assets/icons/reload.png"
-                                        }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.recircActive = !launcherItem.recircActive }
-                                    }
-                                    // Air Quality
-                                    Rectangle {
-                                        width: 36; height: 36; radius: 8
-                                        color: launcherItem.airQualityActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.airQualityActive ? 2 : 0
-                                        Text { anchors.centerIn: parent; text: "AQ"; color: "#FFFFFF"; font.pixelSize: 10; font.bold: true }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.airQualityActive = !launcherItem.airQualityActive }
-                                    }
-                                    // Spacer
-                                    Rectangle{
-                                        width: 8; height: 8
-                                        color: "transparent"
-                                    }
-                                    // Power
-                                    Rectangle {
-                                        width: 36; height: 36; radius: 18
-                                        color: launcherItem.climatePower ? '#964405' : Qt.rgba(1,1,1,0.08)
-                                        border.color: launcherItem.climatePower ? '#97ffffff' : "transparent"
-                                        border.width: 1
-                                        Image{
-                                            anchors.centerIn: parent
-                                            width: 18; height: 18
-                                            fillMode: Image.PreserveAspectFit
-                                            source: "qrc:/assets/icons/power.png"
-                                        }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.climatePower = !launcherItem.climatePower }
-                                    }
-                                    // Spacer
-                                    Rectangle{
-                                        width: 8; height: 8
-                                        color: "transparent"
-                                    }
-                                    Rectangle {
-                                        width: 36; height: 36; radius: 8
-                                        color: launcherItem.autoActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.autoActive ? 2 : 0
-                                        Text { anchors.centerIn: parent; text: "AUTO"; color: "#FFFFFF"; font.pixelSize: 9; font.bold: true }
-                                        MouseArea { anchors.fill: parent; onClicked: launcherItem.autoActive = !launcherItem.autoActive }
-                                    }
-                                    // SYNC
-                                    Rectangle {
-                                        width: 36; height: 36; radius: 8
-                                        color: launcherItem.hvacSyncActive ? '#18b78f' : Qt.rgba(1,1,1,0.08)
-                                        border.color: "#FFFFFF"
-                                        border.width: launcherItem.hvacSyncActive ? 2 : 0
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "SYNC"
-                                            color: "#FFFFFF"
-                                            font { pixelSize: 9; bold: true; family: "Arial" }
-                                        }
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            onClicked: launcherItem.hvacSyncActive = !launcherItem.hvacSyncActive
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -1733,101 +1596,6 @@ ApplicationWindow {
                 z: 100
                 onClosePopup: visible = false
             }
-
-            // Climate Control page
-            Component {
-                id: climatePage
-                ClimateControlPage {
-                    id: climatePageInstance
-                    onGoBack: stackView.pop()
-
-                    // init from shared state 
-                    Component.onCompleted: {
-                        syncActive       = launcherItem.hvacSyncActive
-                        frontTempValue   = launcherItem.hvacTemp
-                        frontFanValue    = launcherItem.hvacFan
-                        frontModeIndex   = launcherItem.hvacMode
-                        frontPowerOn     = launcherItem.climatePower
-                        recircActive     = launcherItem.recircActive
-                        airQualityActive = launcherItem.airQualityActive
-                        autoActive       = launcherItem.autoActive
-
-                        if (syncActive) {
-                            backTempValue  = launcherItem.hvacTemp
-                            backFanValue   = launcherItem.hvacFan
-                            backModeIndex  = launcherItem.hvacMode
-                            backPowerOn    = launcherItem.climatePower
-                        } else {
-                            backTempValue  = launcherItem.hvacRearTemp
-                            backFanValue   = launcherItem.hvacRearFan
-                            backModeIndex  = launcherItem.hvacRearMode
-                            backPowerOn    = launcherItem.hvacRearPower
-                        }
-                    }
-
-                    // page → home tile (write-back) 
-                    onSyncActiveChanged: {
-                        launcherItem.hvacSyncActive = syncActive
-                        if (syncActive) {
-                            // when sync turned on, persist rear = front
-                            launcherItem.hvacRearTemp  = frontTempValue
-                            launcherItem.hvacRearFan   = frontFanValue
-                            launcherItem.hvacRearMode  = frontModeIndex
-                            launcherItem.hvacRearPower = frontPowerOn
-                        }
-                    }
-                    onFrontTempValueChanged:   launcherItem.hvacTemp        = frontTempValue
-                    onFrontFanValueChanged:    launcherItem.hvacFan         = frontFanValue
-                    onFrontModeIndexChanged:   launcherItem.hvacMode        = frontModeIndex
-                    onRecircActiveChanged:     launcherItem.recircActive    = recircActive
-                    onAirQualityActiveChanged: launcherItem.airQualityActive= airQualityActive
-                    onAutoActiveChanged:       launcherItem.autoActive      = autoActive
-                    onFrontPowerOnChanged:     launcherItem.climatePower    = frontPowerOn
-
-                    // rear only persists when sync is OFF
-                    onBackTempValueChanged:  { if (!syncActive) launcherItem.hvacRearTemp  = backTempValue }
-                    onBackFanValueChanged:   { if (!syncActive) launcherItem.hvacRearFan   = backFanValue }
-                    onBackModeIndexChanged:  { if (!syncActive) launcherItem.hvacRearMode  = backModeIndex }
-                    onBackPowerOnChanged:    { if (!syncActive) launcherItem.hvacRearPower = backPowerOn }
-
-                    // home tile → page (read) 
-                    Connections {
-                        target: launcherItem
-                        function onHvacSyncActiveChanged() {
-                            climatePageInstance.syncActive = launcherItem.hvacSyncActive
-                        }
-                        function onHvacTempChanged() {
-                            climatePageInstance.frontTempValue = launcherItem.hvacTemp
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backTempValue = launcherItem.hvacTemp
-                        }
-                        function onHvacFanChanged() {
-                            climatePageInstance.frontFanValue = launcherItem.hvacFan
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backFanValue = launcherItem.hvacFan
-                        }
-                        function onHvacModeChanged() {
-                            climatePageInstance.frontModeIndex = launcherItem.hvacMode
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backModeIndex = launcherItem.hvacMode
-                        }
-                        function onRecircActiveChanged() {
-                            climatePageInstance.recircActive = launcherItem.recircActive
-                        }
-                        function onAirQualityActiveChanged() {
-                            climatePageInstance.airQualityActive = launcherItem.airQualityActive
-                        }
-                        function onAutoActiveChanged() {
-                            climatePageInstance.autoActive = launcherItem.autoActive
-                        }
-                        function onClimatePowerChanged() {
-                            climatePageInstance.frontPowerOn = launcherItem.climatePower
-                            if (climatePageInstance.syncActive)
-                                climatePageInstance.backPowerOn = launcherItem.climatePower
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -1857,12 +1625,22 @@ ApplicationWindow {
             preferredCity: mainWindow.preferredCity
             
             onPreferredCityChanged: {
+                // Assigning preferredCity is enough on its own now — the
+                // launcher watches it and the store dedupes — but the explicit
+                // request keeps the fetch starting from here rather than
+                // depending on notification order.
                 mainWindow.preferredCity = settingsInstance.preferredCity
-                var launcher = stackView.get(0)
-                if (launcher && launcher.weatherAPI) {
-                    launcher.weatherAPI.fetch(settingsInstance.preferredCity)
-                }
+                WeatherStore.request(settingsInstance.preferredCity)
             }
+        }
+    }
+
+    // Drive View page (3D surroundings, ROS2). Hosted by driveViewLoader, not
+    // by the StackView — going home hides it instead of destroying it.
+    Component {
+        id: driveViewPage
+        DriveViewPage {
+            onGoBack: driveViewLoader.shown = false
         }
     }
 }
