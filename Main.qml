@@ -197,6 +197,9 @@ ApplicationWindow {
      * a second time.
      */
     function openSettingsSection(section) {
+        // Reachable from Drive View's window bar, which is not on the stack —
+        // step off it first, or the pushed page lands under a hidden StackView.
+        driveViewLoader.shown = false
         const settings = stackView.currentItem as SettingPage
         if (settings)
             settings.showSection(section)
@@ -211,6 +214,101 @@ ApplicationWindow {
         id: stackView
         anchors.fill: parent
         initialItem: launcherPage
+        // Above the loader while it warms up, below it once Drive View opens.
+        z: 1
+
+        // Nothing under Drive View is worth drawing: it covers the screen
+        // opaquely, and leaving the launcher rendering behind it costs a full
+        // extra scene every frame on top of the 3D view.
+        //
+        // Gated on Ready, not just on `shown`. Tapping the card before the
+        // asynchronous loader has finished would otherwise hide this while
+        // Drive View is still not visible either — a black screen for however
+        // long the scene takes to build. The launcher stays up until there is
+        // something to replace it with.
+        visible: !(driveViewLoader.shown && driveViewLoader.status === Loader.Ready)
+    }
+
+    /*
+     * DRIVE VIEW — built once, then kept.
+     *
+     * It used to be a Component pushed onto the StackView, which destroys a
+     * page when it is popped. So every trip back into Drive View re-created
+     * the whole 3D world from nothing: two 1k HDRI probes (1.6 MB + 1.5 MB,
+     * and an IBL probe has to be decoded and pre-filtered before the first
+     * frame), the Audi ego model with its thirteen meshes and ~1.7 MB of maps,
+     * the Tesla detection mesh, and 42 dynamically-created city instances.
+     * That is the delay on the Jetson, and it was paid on every single entry.
+     *
+     * Now: `active` latches true and never goes back, so the cost is paid at
+     * most once per boot; `shown` is what actually opens and closes it. A
+     * hidden Item is not rendered, so keeping it costs memory, not frame time.
+     *
+     * asynchronous: the scene is incubated in slices instead of blocking the
+     * GUI thread, so the launcher stays responsive while it builds rather than
+     * freezing solid for the duration.
+     */
+    Loader {
+        id: driveViewLoader
+        anchors.fill: parent
+        asynchronous: true
+        active: false
+        sourceComponent: driveViewPage
+
+        // Separate from `active` on purpose: closing must not unload it.
+        property bool shown: false
+
+        /*
+         * Warm frame.
+         *
+         * Building the QML objects is only half the first-open cost. The other
+         * half is GPU-side — pre-filtering the two HDRI probes into an IBL
+         * environment, uploading the Audi and Tesla maps, compiling shaders —
+         * and none of that happens until something actually renders. An
+         * invisible Item never renders, so a purely hidden warm-up would have
+         * left the whole GPU bill to be paid on the first open anyway.
+         *
+         * So for a short window after it loads, the scene renders for real,
+         * underneath the launcher. Qt Quick has no occlusion culling: a covered
+         * item is still drawn, still uploads its textures, still compiles its
+         * shaders. The launcher's background is fully opaque (#020408 plus an
+         * opaque gradient over it), so nothing of this is visible.
+         *
+         * Then it goes properly invisible and costs nothing per frame.
+         */
+        property bool warming: false
+
+        // Below the launcher while warming, above everything once opened.
+        z: shown ? 5 : 0
+
+        visible: shown ? status === Loader.Ready : warming
+
+        onStatusChanged: {
+            if (status === Loader.Ready && !shown) {
+                warming = true
+                warmTimer.restart()
+            }
+        }
+    }
+
+    // How long to leave the scene rendering behind the launcher. There is no
+    // signal for "all resources are resident", so this is a fixed window —
+    // ~150 frames, far more than the handful the uploads and the probe
+    // pre-filter actually need, and it only ever runs once per boot.
+    Timer {
+        id: warmTimer
+        interval: 2500
+        onTriggered: driveViewLoader.warming = false
+    }
+
+    // Warm Drive View up shortly after the splash clears, so the first tap on
+    // the card is as quick as the ones after it. Deliberately not during the
+    // splash: the video and the scene build would fight for the same GPU, and
+    // a stuttering splash is more visible than a delay nobody is waiting on.
+    Timer {
+        interval: 1200
+        running: mainWindow.splashDone && !driveViewLoader.active
+        onTriggered: driveViewLoader.active = true
     }
 
     // LAUNCHER PAGE
@@ -229,7 +327,12 @@ ApplicationWindow {
             onOpenMedia:          stackView.push(mediaPage)
             onOpenSettings:       stackView.push(settingPage)
             onOpenCarInfo:        carInfoPopup.visible = true
-            onOpenDriveView:      stackView.push(driveViewPage)
+            // active latches on first use in case the warm-up timer has not
+            // fired yet; after that this is just a visibility flip.
+            onOpenDriveView: {
+                driveViewLoader.active = true
+                driveViewLoader.shown = true
+            }
 
             // Weather Data (updated via WeatherAPI component below)
             //
@@ -1532,11 +1635,12 @@ ApplicationWindow {
         }
     }
 
-    // Drive View page (3D surroundings, ROS2)
+    // Drive View page (3D surroundings, ROS2). Hosted by driveViewLoader, not
+    // by the StackView — going home hides it instead of destroying it.
     Component {
         id: driveViewPage
         DriveViewPage {
-            onGoBack: stackView.pop()
+            onGoBack: driveViewLoader.shown = false
         }
     }
 }

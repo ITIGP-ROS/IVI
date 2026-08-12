@@ -10,14 +10,28 @@ Item {
     Scene3D {
         id: scene
         anchors.fill: parent
-        anchors.topMargin: 42
+
+        // Fills the page edge to edge, including the strip behind the window
+        // bar. The bar floats with a 10px inset (WindowBar anchors), so a scene
+        // that started below it left that 10px — plus the gap either side of
+        // the rounded bar — showing bare background as a grey band across the
+        // top. The road runs under the bar instead.
+        //
+        // Only the HUD panels are held clear, via topInset: the bar's own
+        // height plus its top margin, so nothing lands underneath it.
+        topInset: titleBar.height + titleBar.anchors.topMargin
     }
 
     WindowBar {
         id: titleBar
         z: 2
         window: mainWindow
-        titleName: "Drive View"
+        // No title and a see-through middle: this page is the road, and a
+        // labelled opaque strip across the top of it hides the part of the
+        // scene the driver most wants to see. The home button and the status
+        // icons stay — they keep their tinted backing from the gradient ends.
+        titleName: ""
+        transparentCenter: true
         showBackButton: true
         onBackRequested: root.goBack()
         color0: '#0e0e14'

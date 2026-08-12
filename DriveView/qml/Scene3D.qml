@@ -63,6 +63,20 @@ Item {
         property color panelBorder: "#30ffffff"
     }
 
+    /*
+     * Extra clearance at the top for the HUD panels only.
+     *
+     * The 3D view deliberately fills the whole page, so the road and sky run
+     * underneath the floating window bar instead of leaving bare background
+     * above it. The bar is not part of this component and knows nothing about
+     * it, so anything anchored to the top here would slide under it — hence a
+     * separate inset for the overlays rather than a margin on the scene.
+     *
+     * 0 by default: a Scene3D with no bar over it must not reserve space for
+     * one. DriveViewPage sets it to clear the bar it draws.
+     */
+    property real topInset: 0
+
     // ---- Responsive scale helpers ----
     readonly property real _m:    width * 0.022
     readonly property real _r:    width * 0.012
@@ -290,7 +304,7 @@ Item {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.leftMargin: _m
-        anchors.topMargin: _m
+        anchors.topMargin: _m + root.topInset
         width: root.width * 0.22
         spacing: _m * 0.6
 
@@ -492,7 +506,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.rightMargin: _m
-        anchors.topMargin: _m
+        anchors.topMargin: _m + root.topInset
         width: parent.width * 0.17
         height: _camCol.implicitHeight + _m * 2
         radius: _r * 1.3
@@ -715,7 +729,15 @@ Item {
 
         Column {
             id: _drawerCol
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: _m * 0.7 }
+            anchors {
+                left: parent.left; right: parent.right; top: parent.top
+                margins: _m * 0.7
+                // Clear the floating window bar. The panel itself still runs to
+                // the top of the page, but its header used to sit behind the
+                // bar — which draws above the whole scene — so the Close button
+                // was covered by the home button and could not be tapped.
+                topMargin: _m * 0.7 + root.topInset
+            }
             spacing: _m * 0.4
 
             // ---- Header: title + close button (anchored, no overlap) ----

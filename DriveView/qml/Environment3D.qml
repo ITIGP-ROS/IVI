@@ -19,8 +19,8 @@ Node {
     // created city entries (for teardown on theme/palette change)
     property var cityEntries: []
 
-    // the city palette depends on the theme (asphalt flag) -> rebuild
-    onAsphaltChanged: rebuildCity()
+    // Only the palette depends on the theme, so repaint rather than rebuild.
+    onAsphaltChanged: recolourCity()
 
     // ground level — detection box bottoms sit at ~ -1.36 m median in the
     // velo frame (echoed /object_detections_3d), i.e. y ≈ -136 Qt units.
@@ -31,7 +31,7 @@ Node {
     // asphalt tiling and the gap to the city all key off this, so widening the
     // road means changing this one number and nothing else — the edge lines
     // used to be a separate literal that silently had to match.
-    readonly property real roadHalfWidth: 810   // 16.2 m across
+    readonly property real roadHalfWidth: 874.8   // 17.5 m across
 
     // ---- GROUND ----------------------------------------------------------
     Model {
@@ -196,16 +196,29 @@ Node {
         InstanceListEntry {}
     }
 
-    // build the city rows (both road sides, rows kFrom..kTo).
-    // All row parameters are deterministic functions of k % 12 so the city
-    // tiles seamlessly with the 4800-unit loop period.
-    function buildCityBand(list, kFrom, kTo) {
-        // theme palette: asphalt -> road-gray family + white accents,
-        // neon -> dark indigo family + neon accents
+    // Row range for the band. Named because recolourCity() has to walk the
+    // entries in exactly the order buildCityBand created them.
+    readonly property int cityRowFrom: 0
+    readonly property int cityRowTo:   20
+
+    // The ONLY thing about a building that depends on the theme. Position,
+    // scale and row order do not, which is what makes recolouring in place a
+    // valid substitute for rebuilding.
+    function cityColor(p) {
+        // asphalt -> road-gray family + white accents,
+        // neon    -> dark indigo family + neon accents
         let base = root.asphalt ? ["#9799a7", "#8d8f9d", "#a1a3b1"]
                                 : ["#1f1f31", "#262642", "#181826"]
         let accent = root.asphalt ? ["#ffffff", "#f2f4f7"]
                                   : ["#00e5ff", "#ff2ea6"]
+        // accent rows 5 and 11, base family elsewhere
+        return p === 5 ? accent[0] : p === 11 ? accent[1] : base[p % 3]
+    }
+
+    // build the city rows (both road sides, rows kFrom..kTo).
+    // All row parameters are deterministic functions of k % 12 so the city
+    // tiles seamlessly with the 4800-unit loop period.
+    function buildCityBand(list, kFrom, kTo) {
         // wild height mix: low sheds next to towers
         let mix = [0.5, 1.3,1.4, 0.8, 1.8, 2.0, 0.4, 1.5, 2.1, 1.0, 1.5, 1.6]
         // big width levels (8..20 m)
@@ -234,26 +247,45 @@ Node {
                 // Backing them off lets a whole facade fit in frame, which is
                 // what makes them parse as buildings.
                 // outer edge stays <= 3550 < strip edge 3600
-                // accent rows 5 and 11, base family elsewhere
-                let col = p === 5 ? accent[0] : p === 11 ? accent[1] : base[p % 3]
                 // building cube; #Cube is 100x100x100 units -> /100 scales
                 arr.push(cityEntry.createObject(list, {
                     position: Qt.vector3d(dir * (root.cityInset + jx[p] + w / 2), h / 2, z),
                     scale: Qt.vector3d(w / 100, h / 100, d / 100),
-                    color: col
+                    color: root.cityColor(p)
                 }))
             }
         }
         return arr
     }
 
-    // rebuild all city instances (called on theme change / startup)
+    // Full rebuild. Startup only — see recolourCity() for the theme path.
     function rebuildCity() {
         cityList.instances = []
         while (cityEntries.length > 0)
             cityEntries.pop().destroy()
-        cityEntries = root.buildCityBand(cityList, 0, 20)
+        cityEntries = root.buildCityBand(cityList, root.cityRowFrom, root.cityRowTo)
         cityList.instances = cityEntries
+    }
+
+    /*
+     * Theme change: repaint the buildings that already exist.
+     *
+     * This used to call rebuildCity(), which tore down all 42 instances and
+     * created 42 replacements through createObject — a large part of why
+     * flipping the theme stalled on the Jetson, and it ran every time even
+     * though a building's geometry does not depend on the theme at all.
+     *
+     * The traversal below mirrors buildCityBand's loop order exactly (side
+     * outer, k inner), so entry i is the building for that side and row.
+     */
+    function recolourCity() {
+        let i = 0
+        for (let side = 0; side < 2; side++) {
+            for (let k = root.cityRowFrom; k <= root.cityRowTo; k++, i++) {
+                if (i < cityEntries.length)
+                    cityEntries[i].color = root.cityColor(k % 12)
+            }
+        }
     }
 
     InstanceList {

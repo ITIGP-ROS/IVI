@@ -8,10 +8,52 @@ Rectangle {
     height: 38
     anchors.top: parent.top
     anchors.horizontalCenter: parent.horizontalCenter
+    /*
+     * Clear the middle of the bar so whatever is behind it shows through,
+     * leaving the ends tinted where the controls sit. Drive View turns this on
+     * so the road is not cut in half by an opaque strip.
+     *
+     * Only the centre stop goes to zero alpha: the gradient then fades from a
+     * solid end to nothing by mid-span, which keeps a backing under the home
+     * button and the status icons — white-on-nothing over a bright sky is
+     * unreadable — without putting a band across the view.
+     */
+    property bool transparentCenter: false
+
+    /*
+     * Width of the FULLY clear band in the middle, as a fraction of the bar.
+     * The gradient fades from a solid end into this band, so the road is
+     * completely unobstructed across it rather than only at the exact centre.
+     */
+    property real centerClearFraction: 0.20
+
+    // color1 is declared as a string, and a string has no .r/.g/.b to build a
+    // zero-alpha variant from. Assigning it to a `color` property converts it.
+    readonly property color _midColor: color1
+
+    // Fade the SAME hue to zero alpha rather than to "transparent":
+    // interpolating toward #00000000 drags the midtones through black and
+    // leaves a dirty smudge either side of the clear part.
+    readonly property color _clear: Qt.rgba(_midColor.r, _midColor.g, _midColor.b, 0)
+
+    // Collapsed to a single mid-point when the bar is opaque, so the plain
+    // pages keep exactly the gradient they always had.
+    readonly property real _clearFrom:
+        transparentCenter ? 0.5 - centerClearFraction / 2 : 0.5
+    readonly property real _clearTo:
+        transparentCenter ? 0.5 + centerClearFraction / 2 : 0.5
+
     gradient: Gradient {
         orientation: Gradient.Horizontal
         GradientStop { position: 0.0; color: titleBar.color0 }
-        GradientStop { position: 0.5; color: titleBar.color1 }
+        GradientStop {
+            position: titleBar._clearFrom
+            color: titleBar.transparentCenter ? titleBar._clear : titleBar.color1
+        }
+        GradientStop {
+            position: titleBar._clearTo
+            color: titleBar.transparentCenter ? titleBar._clear : titleBar.color1
+        }
         GradientStop { position: 1.0; color: titleBar.color2 }
     }
     opacity: 0.9

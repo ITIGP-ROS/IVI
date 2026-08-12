@@ -26,13 +26,10 @@ constexpr float kMaxSpeedMs = 40.0f;
 // target to the near side instead of letting slerp spin the mesh 180 deg.
 constexpr float kFlipThresholdDeg = 120.0f;
 
-// spawn/despawn opacity ramp. ~350 ms to settle either way: long enough to
-// register as a fade, short enough that a car leaving the field of view is
-// gone before you look for it.
+// Spawn opacity ramp, ~350 ms to settle. Spawn only: there is deliberately no
+// despawn counterpart, because fading a car out looked worse than removing it
+// (see the erase in update()).
 constexpr float kTauAlphaMs = 90.0f;
-
-// below this a fading track is invisible, so stop paying to transform it
-constexpr float kAlphaGone = 0.02f;
 
 // Base for synthetic keys given to untracked detections. Real track ids from
 // AB3DMOT are non-negative, so nothing can collide with these.
@@ -79,9 +76,6 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
                             : d.trackId;
 
         Track& track = tracks_[key];
-        // A track that went missing and came back keeps its identity and
-        // simply stops fading out.
-        track.fading = false;
         track.trackId = d.trackId;
         track.color = d.color;
         track.label = d.label;
@@ -176,21 +170,23 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
     // Tracks that disappeared (the detector-side tracker already holds objects
     // through missed frames, so this only fires on real deletion).
     //
-    // Tracked objects are marked for a fade rather than erased — deleting them
-    // here made them blink out between two frames, which reads as a glitch
-    // rather than as an object leaving. tick() removes them once invisible.
-    // Untracked ones go immediately: their synthetic key is regenerated every
-    // message, so a "missing" one is an artefact of renumbering, not an object
-    // that actually left, and fading it would flicker.
+    // Everything goes immediately, tracked or not. Tracked objects used to be
+    // marked for a fade instead, on the theory that blinking out between two
+    // frames reads as a glitch. The fade was worse: over its ~350 ms the car
+    // sat still going translucent, and on the Tesla mesh — one concave body
+    // with the wheels as separate surfaces inside the arches — partial alpha
+    // re-sorts those surfaces and visibly shifts its colour. A car that simply
+    // stops being drawn is cleaner than one that discolours and freezes on its
+    // way out.
+    //
+    // Safe because of the note above: the tracker retires an id only after its
+    // own max-age, and an object it re-acquires comes back under a NEW id, so
+    // this cannot be triggered by a one-message dropout.
     for (auto it = tracks_.begin(); it != tracks_.end();) {
-        if (seen.contains(it.key())) {
+        if (seen.contains(it.key()))
             ++it;
-        } else if (it->untracked) {
+        else
             it = tracks_.erase(it);
-        } else {
-            it->fading = true;
-            ++it;
-        }
     }
 }
 
@@ -227,22 +223,13 @@ void DetectionSmoother::tick()
         track.currentScale += (track.targetScale - track.currentScale) * alpha;
         track.currentRot = QQuaternion::slerp(track.currentRot, track.targetRot, alpha);
 
-        // Opacity ramp. A fading track keeps being smoothed above, so it
-        // carries on drifting along its last known velocity while it goes —
-        // an object that coasts out is far less jarring than one that stops
-        // dead and then dissolves.
+        // Opacity ramp — one direction only. Everything in this loop is a live
+        // track, because a track that stopped being reported was erased in
+        // update() rather than left here to dissolve. So alpha only climbs, and
+        // nothing is ever drawn at a partial opacity it is not on its way up
+        // from.
         const float aFade = 1.0f - qExp(-float(dtMs) / kTauAlphaMs);
-        const float targetAlpha = track.fading ? 0.0f : 1.0f;
-        track.alpha += (targetAlpha - track.alpha) * aFade;
-    }
-
-    // Reap tracks that have finished fading out. An exponential never quite
-    // reaches zero, so the threshold is what actually ends them.
-    for (auto it = tracks_.begin(); it != tracks_.end();) {
-        if (it->fading && it->alpha < kAlphaGone)
-            it = tracks_.erase(it);
-        else
-            ++it;
+        track.alpha += (1.0f - track.alpha) * aFade;
     }
 
     const QList<DetectionData> output = buildOutput();
