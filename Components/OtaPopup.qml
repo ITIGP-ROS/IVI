@@ -55,6 +55,54 @@ Item {
     opacity: showing ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: 180 } }
 
+    // The confirmation glyph is DRAWN, not typed.
+    //
+    // It used to be the characters ✓ (U+2713) and ✕ (U+2715) in a Text with
+    // `family: "Arial"`. There is no Arial on either the dev laptop or the Yocto
+    // image, so that resolves to Liberation Sans — which covers neither
+    // codepoint. Both rendered as tofu boxes on both machines. A missing glyph
+    // in the one element that tells the driver what was just put on the CAN bus
+    // is not a cosmetic problem, and "ship a font that has them" is a much
+    // larger promise than two strokes need.
+    //
+    // Two Canvas strokes have no font dependency and no glyph coverage to check.
+    component VerdictMark: Canvas {
+        id: mark
+        property bool  approved: true
+        property color tint: "#ffffff"
+
+        implicitWidth: 62
+        implicitHeight: 62
+
+        // Canvas does not re-paint on a property change by itself.
+        onApprovedChanged: requestPaint()
+        onTintChanged:     requestPaint()
+        onWidthChanged:    requestPaint()
+        onHeightChanged:   requestPaint()
+
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.strokeStyle = mark.tint
+            ctx.lineWidth = Math.max(4, width * 0.11)
+            ctx.lineCap = "round"
+            ctx.lineJoin = "round"
+            ctx.beginPath()
+            if (mark.approved) {
+                // Tick: short arm down to the vertex, long arm up to the right.
+                ctx.moveTo(width * 0.20, height * 0.53)
+                ctx.lineTo(width * 0.41, height * 0.74)
+                ctx.lineTo(width * 0.80, height * 0.28)
+            } else {
+                ctx.moveTo(width * 0.25, height * 0.25)
+                ctx.lineTo(width * 0.75, height * 0.75)
+                ctx.moveTo(width * 0.75, height * 0.25)
+                ctx.lineTo(width * 0.25, height * 0.75)
+            }
+            ctx.stroke()
+        }
+    }
+
     // Inline components have to sit at the top level of the document, so the
     // button lives here rather than next to the row that uses it.
     component ActionButton: Rectangle {
@@ -226,11 +274,12 @@ Item {
             spacing: 10
             visible: root.result !== ""
 
-            Text {
+            VerdictMark {
                 Layout.alignment: Qt.AlignHCenter
-                text: root.result === "approved" ? "✓" : "✕"
-                color: root.result === "approved" ? "#21cfa4" : "#ff6b6b"
-                font { pixelSize: 54; bold: true; family: "Arial" }
+                Layout.preferredWidth: 62
+                Layout.preferredHeight: 62
+                approved: root.result === "approved"
+                tint: root.result === "approved" ? "#21cfa4" : "#ff6b6b"
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
