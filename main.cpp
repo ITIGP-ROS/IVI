@@ -20,6 +20,17 @@ int main(int argc, char *argv[]){
 
     QGuiApplication app(argc, argv);
 
+    // rclcpp's executor installs SIGTERM/SIGINT handlers when it spins;
+    // they call rclcpp::shutdown() on a dedicated thread (signal_handler.cpp:
+    // deferred_signal_handler), which runs Context::on_shutdown callbacks.
+    // Without this, SIGTERM (systemctl stop/restart during OTA, poweroff)
+    // leaves app.exec() running forever and systemd SIGKILLs us only after
+    // its 90s stop timeout. Quit Qt from the shutdown callback instead.
+    rclcpp::contexts::get_global_default_context()->on_shutdown(
+        [&app]() {
+            QMetaObject::invokeMethod(&app, "quit", Qt::QueuedConnection);
+        });
+
     // Required before any QML Settings element will work. Without these,
     // QSettings refuses to initialise ("The following application identifiers
     // have not been set") and every saved value — the weather city, the last
