@@ -33,7 +33,11 @@ Item {
         titleName: ""
         transparentCenter: true
         showBackButton: true
-        onBackRequested: root.goBack()
+        onBackRequested: {
+            scene.resetCurrentView()
+            scene.closeSettings()
+            root.goBack()
+        }
         color0: '#0e0e14'
         color1: '#1a1a2e'
         color2: '#2e2e4a'

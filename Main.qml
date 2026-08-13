@@ -238,12 +238,20 @@ ApplicationWindow {
         // opaquely, and leaving the launcher rendering behind it costs a full
         // extra scene every frame on top of the 3D view.
         //
-        // Gated on Ready, not just on `shown`. Tapping the card before the
+// Gated on Ready, not just on `shown`. Tapping the card before the
         // asynchronous loader has finished would otherwise hide this while
         // Drive View is still not visible either — a black screen for however
         // long the scene takes to build. The launcher stays up until there is
         // something to replace it with.
-        visible: !(driveViewLoader.shown && driveViewLoader.status === Loader.Ready)
+        visible: !(driveViewLoader.shown && driveViewLoader.status === Loader.Ready
+                   && !driveViewLoader.entering && !driveViewLoader.exiting)
+
+        // The StackView's default push/pop move BOTH pages: the one arriving
+        // slides in from the right while the one below slides out to the left
+        // (push), and the reverse on pop. The launcher takes the "below" role
+        // here, so it gets the opposite slide to the loader, via its own
+        // Translate — the anchor system would snap a direct x write back.
+        transform: Translate { id: launcherSlide }
     }
 
     /*
@@ -275,6 +283,12 @@ ApplicationWindow {
         // Separate from `active` on purpose: closing must not unload it.
         property bool shown: false
 
+        // In-flight transitions, mimicking the StackView's default push/pop
+        // (slide from/to the right, 400 ms, OutCubic) without destroying the
+        // scene — it just slides in and out.
+        property bool entering: false
+        property bool exiting: false
+
         /*
          * Warm frame.
          *
@@ -295,17 +309,79 @@ ApplicationWindow {
          */
         property bool warming: false
 
-        // Below the launcher while warming, above everything once opened.
-        z: shown ? 5 : 0
+        // Below the launcher while warming, above everything once opened (and
+        // while sliding out, so it stays on top of the launcher).
+        z: shown || exiting ? 5 : 0
 
-        visible: shown ? status === Loader.Ready : warming
+        visible: (shown ? status === Loader.Ready : warming) || entering || exiting
+
+        // The slide animates this transform, not `x`: the loader is pinned by
+        // anchors.fill, which would snap any direct x write straight back.
+        transform: Translate { id: driveSlide }
 
         onStatusChanged: {
             if (status === Loader.Ready && !shown) {
                 warming = true
                 warmTimer.restart()
             }
+            // A tap that reached the card before the async build finished
+            // starts the slide only once there is something to slide.
+            if (status === Loader.Ready && entering && !slideIn.running) {
+                driveSlide.x = width
+                launcherOut.from = launcherSlide.x
+                launcherSlide.x = 0
+                slideIn.start()
+                launcherOut.start()
+            }
         }
+    }
+
+    // Mimic the StackView's default push: the new page slides in from the
+    // right while the page below (the launcher) slides out to the left.
+    // Same 400 ms / OutCubic as Basic/StackView.qml.
+    NumberAnimation {
+        id: slideIn
+        target: driveSlide
+        property: "x"
+        from: driveViewLoader.width
+        to: 0
+        duration: 400
+        easing.type: Easing.OutCubic
+        onFinished: driveViewLoader.entering = false
+    }
+    NumberAnimation {
+        id: launcherOut
+        target: launcherSlide
+        property: "x"
+        from: 0
+        to: -driveViewLoader.width
+        duration: 400
+        easing.type: Easing.OutCubic
+    }
+
+    // Mimic the StackView's default pop: the top page slides out to the
+    // right while the launcher re-enters from the left.
+    NumberAnimation {
+        id: slideOut
+        target: driveSlide
+        property: "x"
+        to: driveViewLoader.width
+        duration: 400
+        easing.type: Easing.OutCubic
+        onFinished: {
+            driveViewLoader.shown = false
+            driveViewLoader.exiting = false
+            driveSlide.x = 0
+        }
+    }
+    NumberAnimation {
+        id: launcherIn
+        target: launcherSlide
+        property: "x"
+        to: 0
+        duration: 400
+        easing.type: Easing.OutCubic
+        onFinished: launcherSlide.x = 0
     }
 
     // How long to leave the scene rendering behind the launcher. There is no
@@ -349,6 +425,16 @@ ApplicationWindow {
             onOpenDriveView: {
                 driveViewLoader.active = true
                 driveViewLoader.shown = true
+                driveViewLoader.entering = true
+                if (driveViewLoader.status === Loader.Ready) {
+                    driveSlide.x = driveViewLoader.width
+                    launcherOut.from = launcherSlide.x
+                    launcherSlide.x = 0
+                    slideIn.start()
+                    launcherOut.start()
+                }
+                // otherwise the slides are started from onStatusChanged once
+                // the async build finishes
             }
 
             // Weather Data (updated via WeatherAPI component below)
@@ -1657,7 +1743,16 @@ ApplicationWindow {
     Component {
         id: driveViewPage
         DriveViewPage {
-            onGoBack: driveViewLoader.shown = false
+            onGoBack: {
+                slideIn.stop()
+                launcherOut.stop()
+                driveViewLoader.entering = false
+                driveViewLoader.exiting = true
+                slideOut.from = driveSlide.x
+                launcherIn.from = launcherSlide.x
+                slideOut.start()
+                launcherIn.start()
+            }
         }
     }
 }

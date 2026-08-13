@@ -1081,6 +1081,10 @@ Item {
             applyChaseView()
     }
 
+    function closeSettings() {
+        settingsDrawer.open = false
+    }
+
     // theme preset: writes the individual environment toggles. The theme
     // switch in the drawer is the only control left for these.
     function applyTheme() {
