@@ -71,6 +71,7 @@ One JSON object per pending request, at `offers/<id>.json`.
   "size_bytes":    55574528,
   "requested_at":  1754994000,
   "expires_at":    1754994060,
+  "auto_accept_ms": 5000,
   "stops_vehicle": true
 }
 ```
@@ -84,6 +85,7 @@ One JSON object per pending request, at `offers/<id>.json`.
 | `size_bytes` | no | Download size. |
 | `requested_at` | yes | Unix seconds. Determines queue order — oldest first. |
 | `expires_at` | no | Unix seconds. |
+| `auto_accept_ms` | no | Ask for a **shorter** decision window. Clamped — see Auto-accept. |
 | `stops_vehicle` | no | `true` when approving will trigger the emergency stop. |
 
 **The prompt shows none of this.** It is a title and two buttons, by design — a
@@ -101,11 +103,12 @@ it goes unnoticed until someone is debugging something else.
 **Withdraw by unlinking.** When a producer stops waiting it must `rm` its own
 offer file; that is what takes the prompt down.
 
-**Expect an answer within ~4 seconds.** The prompt approves itself if nobody
-touches it (see Auto-accept below), so in practice a verdict appears quickly and
-`expires_at` rarely decides anything. A producer must still handle the offer
-going unanswered — the prompt only counts down while it is actually on screen,
-so an offer arriving during the boot splash waits for it to finish.
+**Expect an answer within ~5 seconds**, or whatever shorter window you asked for
+with `auto_accept_ms`. The prompt approves itself if nobody touches it (see
+Auto-accept below), so in practice a verdict appears quickly and `expires_at`
+rarely decides anything. A producer must still handle the offer going
+unanswered — the prompt only counts down while it is actually on screen, so an
+offer arriving during the boot splash waits for it to finish.
 
 ---
 
@@ -131,32 +134,36 @@ Producers should delete the verdict once consumed, along with their offer.
 
 ## Auto-accept
 
-**The prompt approves itself after 4 seconds if nobody touches it.** Deny is the
-deliberate act; letting it ride is consent. The card's top stripe drains away
+**The prompt approves itself after 5 seconds if nobody touches it — the same
+5 s for every target.** Deny is the deliberate act; letting it ride is consent. The card's top stripe drains away
 over the window so the decision is visibly counting down rather than silent, and
 the usual confirmation beat ("Update approved") still plays afterwards.
 
 Set `IVI_OTA_AUTOACCEPT_MS=0` to require an explicit answer, or any other value
 in milliseconds to change the window.
 
-Worth naming plainly: at four seconds this is a notification with a veto, not a
+Worth naming plainly: at five seconds this is a notification with a veto, not a
 gate. A driver who is not already looking at the screen will not stop it. That
 is consistent with the rest of the handshake — a stale `ui-alive` also means
 approve — so the vehicle's answer to "nobody is paying attention" is uniformly
 "go ahead" rather than "block forever".
 
-### What this buys the ESP32 path
+### Shortening the window per offer
 
-A 4 s decision window fits inside the ESP32's 5 s wait, which the two-attempt
-dance described under Timing exists to work around. If the coordinator writes
-the offer the instant a `0x310` REQUEST verifies and **polls `verdicts/` at
-~100 ms**, an answer lands by ~4.1 s, leaving most of a second to build the
-SecOC frame and put it on the bus. That is tight but real, and it would collapse
-the ESP32 flow back to a single attempt with no firmware change.
+A producer that is itself on a deadline can set `auto_accept_ms` to ask for a
+shorter prompt. The rule is deliberately one-way:
 
-Do not use the 1-second poll from the shell sketch below for that path — it is
-fine for the head unit's own update, where nothing is waiting on a timeout, and
-too coarse here.
+```
+effective = ours == 0 ? 0 : min(ours, offer)
+```
+
+An offer can shorten the window. It cannot lengthen it, and it cannot re-enable
+auto-accept on a head unit configured with `IVI_OTA_AUTOACCEPT_MS=0`. A producer
+is trusted to know its own deadline; it is not trusted to decide how long a
+human on this screen gets.
+
+No producer shortens it today: every target is deliberately held to the same
+5 s. It stays in the protocol because the next ECU may be tighter still.
 
 ## Liveness, and what it means
 
@@ -178,21 +185,91 @@ inverted for a demonstration where the gate needs to visibly hold.
 
 The three targets give a human wildly different amounts of time to answer:
 
-| Target | Window | Source |
+| Target | Requester waits | Source |
 |---|---|---|
 | ivi | unbounded | the agent is a shell script; it waits as long as we tell it |
 | cluster | **60 s** | `OTA_APPROVE_TIMEOUT_S`, `Cluster/qnx-host/can/mcp2515_can_udp.c` |
-| esp32 / stm32 | **5 s** | `k_msgq_get(..., K_MSEC(5000))`, `ECU/ESP32/src/logs/can.c` |
+| esp32 / stm32 | **5 s, once** | `k_msgq_get(..., K_MSEC(5000))`, `ECU/ESP32/src/logs/can.c` |
 
-Sixty seconds is enough for a person. Five is not — and it is not close, because
-approving also has to bring the vehicle to a halt before anything installs.
+Five seconds is the whole design constraint. The ESP32 asks at the moment it is
+about to act — right before it reboots into new firmware, or right before it
+drops the STM32 into its bootloader — it asks exactly once, and if no verdict
+lands it abandons the update. There is no retry to fall back on.
 
-So for the ESP32 path the in-line CAN request/response **cannot** carry the
-human decision. The coordinator must answer that frame within 5 s on its own
-(deny, failing closed, which the ESP32 already handles), raise the offer here,
-and arm an approval for the *next* attempt once a human has said yes and the
-vehicle has stopped. That second attempt is either a re-trigger from the
-dashboard, or a retry loop added to `ota_approval_gate()` in the ESP32 firmware.
+That fits, but only if every stage is sized against it.
+
+**The prompt itself is 5 s for every target.** A driver should not get a
+decision window whose length depends on which ECU happens to be asking. What
+varies per target is only how long the coordinator waits before giving up:
+
+| Target | Prompt (`auto_accept_ms`) | Coordinator gives up | Requester's wall | Slack |
+|---|---|---|---|---|
+| cluster | 5000 ms | 30 s | 60 s | 30 s |
+| esp32 / stm32 | 5000 ms | **4400 ms** | 5000 ms | 600 ms |
+
+Note what the ESP32 row says: the coordinator gives up **before** the prompt
+finishes. That is not an oversight, it is arithmetic. The prompt is 5000 ms and
+the ESP32's wall is 5000 ms, so there is no value that is both above the prompt
+and below the wall — the give-up point has to land inside the prompt. 4400 ms
+keeps ~600 ms for the SecOC build and the frame itself.
+
+The practical consequence, stated plainly:
+
+- **Cluster** — the prompt decides. Accept, Deny and self-accept at 5 s all
+  reach the ECU with 25+ seconds to spare.
+- **ESP32 / STM32** — Accept and Deny decide, but only within the first 4.4 s.
+  An untouched offer is resolved at 4400 ms by `on_no_verdict` (approve, by
+  default) rather than by the popup reaching the end of its own countdown, so
+  the last ~600 ms of the draining stripe does not decide anything on this path.
+  The outcome for an ignored offer is the same either way — approve — which is
+  why this is acceptable rather than a bug.
+
+Measured end to end against the real head unit binary: a self-accepting prompt
+resolves in **~5.03 s**, which the cluster honours in full; the ESP32 path
+resolves at its 4.4 s deadline instead, as does the worst case on any target —
+head unit alive but never answering.
+
+Three things make that hold, and all three are load-bearing:
+
+- **The offer is written the instant the REQUEST verifies**, before anything
+  else, and atomically. A half-written offer is skipped and retried on the UI's
+  one-second poll, which alone would eat a quarter of the ESP32's budget.
+- **`verdicts/` is polled at 100 ms**, not the 1 s used in the shell sketch
+  below. That sketch is fine for the head unit's own update, where nothing is
+  waiting on a timeout, and far too coarse here.
+- **A dead head unit is detected before asking, not by timing out.** If
+  `ui-alive` is stale the coordinator approves immediately — measured at ~1 ms,
+  identical to the pre-gate behaviour. Burning 4.4 s discovering that nobody is
+  home would cost the update on a board that was never going to prompt anyone.
+
+Deny needs no firmware change on either side: both requesters already treat a
+`0` verdict as a refusal, and the coordinator's deny is a fully SecOC-signed
+frame, not silence. That distinction matters — an *unsigned* or replayed frame
+is ignored by both, so a deny that failed authentication would not read as a
+deny, it would read as a 5 s stall.
+
+---
+
+## Producer configuration
+
+`update_coordinator` (ROS 2 parameters, `config/update_coordinator.yaml`):
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `require_approval` | `true` | `false` restores unconditional auto-approve, for a bench with no head unit |
+| `approval_dir` | `/run/ota-approval` | Spool root |
+| `ui_alive_max_age_s` | `10.0` | Older than this and the head unit counts as down |
+| `on_no_verdict` | `approve` | What a prompt that is never answered resolves to |
+
+`ivi_ota_agent.sh` (environment, `/etc/ivi-ota/agent.conf`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `REQUIRE_APPROVAL` | `1` | |
+| `APPROVAL_DIR` | `/run/ota-approval` | |
+| `APPROVAL_TIMEOUT_S` | `120` | |
+| `ON_NO_UI` | `approve` | Same trade as `on_no_verdict` |
+| `UI_ALIVE_MAX_AGE_S` | `10` | |
 
 ---
 
@@ -281,3 +358,12 @@ def ask(offer, timeout=300):
   card says so and stays, because the tap genuinely did nothing.
 - **Splash gating.** The prompt is withheld until the splash finishes, so an
   offer waiting from before boot cannot be answered blind.
+
+  Note what this means on the ESP32 path specifically. `ui-alive` is touched
+  from the moment the app starts, *before* the splash clears — so a request
+  arriving during boot looks answerable, gets an offer written, and then goes
+  unanswered because the card is still behind the splash. It resolves at the
+  coordinator's 4.4 s deadline via `on_no_verdict`, which by default approves. So
+  an ESP32 update triggered while the head unit is booting installs without ever
+  prompting anyone. That is the fail-open policy working as specified rather
+  than a bug, but it is the one window where the gate is silently absent.

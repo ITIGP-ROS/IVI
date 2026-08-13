@@ -78,6 +78,16 @@ QString OtaManager::targetLabel() const
     return m_target.isEmpty() ? tr("Unknown module") : m_target;
 }
 
+// The offer may only shorten the window, never lengthen it and never re-enable
+// one we have switched off. A producer is trusted to know its own deadline; it
+// is not trusted to decide how long a human on this screen gets.
+int OtaManager::autoAcceptMs() const
+{
+    if (m_autoAcceptMs <= 0 || m_offerAutoAcceptMs <= 0)
+        return m_autoAcceptMs;
+    return qMin(m_autoAcceptMs, m_offerAutoAcceptMs);
+}
+
 QString OtaManager::sizeText() const
 {
     if (m_sizeBytes <= 0)
@@ -146,6 +156,7 @@ void OtaManager::rescan()
     struct Offer {
         QString id, target, version, slot;
         qint64  sizeBytes = 0, requestedAt = 0, expiresAt = 0;
+        int     autoAcceptMs = 0;
         bool    stopsVehicle = false;
     };
     QList<Offer> offers;
@@ -197,6 +208,7 @@ void OtaManager::rescan()
         offer.sizeBytes    = qint64(o.value(QStringLiteral("size_bytes")).toDouble());
         offer.requestedAt  = qint64(o.value(QStringLiteral("requested_at")).toDouble());
         offer.expiresAt    = qint64(o.value(QStringLiteral("expires_at")).toDouble());
+        offer.autoAcceptMs = o.value(QStringLiteral("auto_accept_ms")).toInt();
         offer.stopsVehicle = o.value(QStringLiteral("stops_vehicle")).toBool();
         offers.append(offer);
     }
@@ -245,6 +257,7 @@ void OtaManager::rescan()
     m_sizeBytes    = head.sizeBytes;
     m_stopsVehicle = head.stopsVehicle;
     m_expiresAt    = head.expiresAt;
+    m_offerAutoAcceptMs = head.autoAcceptMs;
     m_queued       = queued;
     m_secondsRemaining = m_expiresAt > 0
         ? qMax(0, int(m_expiresAt - QDateTime::currentSecsSinceEpoch()))
@@ -252,11 +265,18 @@ void OtaManager::rescan()
 
     qInfo().noquote() << "[ota] offer" << m_id << "target" << m_target
                       << "version" << (m_version.isEmpty() ? QStringLiteral("?") : m_version)
+                      << "auto-accept" << autoAcceptMs() << "ms"
                       << (m_stopsVehicle ? "(stops the vehicle)" : "");
 
     emit secondsRemainingChanged();
-    emit newOffer();
+
+    // offerChanged before newOffer, and the order matters. autoAcceptMs is now
+    // per-offer, so the QML countdown must have rebound to THIS offer's window
+    // before newOffer() tells it to restart — otherwise a 2.5 s ESP32 prompt
+    // starts one full 4 s cycle on the previous offer's interval and overruns
+    // the very deadline the field exists to respect.
     emit offerChanged();
+    emit newOffer();
 }
 
 void OtaManager::approve() { answer(true); }
@@ -330,6 +350,7 @@ void OtaManager::clearCurrent()
     m_sizeBytes    = 0;
     m_stopsVehicle = false;
     m_expiresAt    = 0;
+    m_offerAutoAcceptMs = 0;
     m_queued       = 0;
 
     if (m_secondsRemaining != -1) {
