@@ -41,6 +41,7 @@
  *     "size_bytes":    55574528,             // optional, 0 if unknown
  *     "requested_at":  1754994000,           // unix seconds
  *     "expires_at":    1754994060,           // unix seconds; 0 = never
+ *     "auto_accept_ms": 2500,                // optional; see AUTO-ACCEPT below
  *     "stops_vehicle": true                  // approving triggers e-stop
  *   }
  *
@@ -61,17 +62,44 @@
  * ---------------------------------------------------------------------------
  * AUTO-ACCEPT
  *
- * The prompt approves itself if nobody touches it for `autoAcceptMs` (4 s by
- * default). Deny is the deliberate act; letting it ride is consent.
+ * The prompt approves itself if nobody touches it for `autoAcceptMs` (5 s).
+ * Deny is the deliberate act; letting it ride is consent.
  *
- * That is a real policy choice and worth naming: at four seconds this prompt is
+ * 5 s is deliberately the SAME for every target. The prompt a driver sees must
+ * not silently change length depending on which ECU is asking — a window you
+ * cannot predict is one you cannot learn to react to.
+ *
+ * That is a real policy choice and worth naming: at five seconds this prompt is
  * closer to a notification with a veto than to a gate. A driver who is not
  * already looking at the screen will not stop it. It matches the fail-open
  * stance elsewhere in this handshake — a stale `ui-alive` also means approve —
- * so the vehicle's answer to "nobody is paying attention" is consistently
- * "go ahead" rather than "block forever".
+ * so the vehicle's answer to "nobody is paying attention" is consistently "go
+ * ahead" rather than "block forever".
+ *
+ * Note that 5 s is the ESP32's ENTIRE wait (see below), so for that target the
+ * coordinator's own 4.4 s deadline expires first and answers fail-open before
+ * this countdown can run out. Accept and Deny are honoured normally up to that
+ * point; only the last ~600 ms of the stripe is cosmetic on ESP32 offers. The
+ * cluster, which waits 60 s, honours the full window.
  *
  * Set IVI_OTA_AUTOACCEPT_MS=0 to require an explicit answer instead.
+ *
+ * An offer may carry `auto_accept_ms` to ask for a SHORTER window. It can never
+ * ask for a longer one, and it cannot re-enable auto-accept that this side has
+ * turned off — the effective window is min(offer, ours), and zero stays zero.
+ * That asymmetry is the whole point: the field exists because the requester
+ * knows a deadline we do not. No producer currently uses it to go shorter, since
+ * every target is held to the same 5 s; it stays because the next ECU may be
+ * tighter still.
+ *
+ * The ESP32 is the tight one. Its firmware blocks for exactly 5000 ms waiting
+ * for a verdict on 0x311, asks once, and then abandons the update
+ * (ECU/ESP32/src/logs/can.c). The window is not the only cost in that budget —
+ * the offer has to be noticed, the card has to drop in, the coordinator polls
+ * for the verdict, and the SecOC frame has to be built and sent. Because the
+ * prompt now occupies that whole 5000 ms, the coordinator does not wait for it
+ * on ESP32 offers: it gives up at 4400 ms and answers per `on_no_verdict`. An
+ * explicit tap inside those 4.4 s is still what decides.
  *
  * ---------------------------------------------------------------------------
  * LIVENESS, AND WHY IT MATTERS
@@ -119,7 +147,11 @@ class OtaManager : public QObject
     // 0 disables auto-accept entirely. The countdown is owned by the QML side
     // so that it only runs while the prompt is genuinely on screen — an offer
     // arriving behind the splash must not be approved before it is visible.
-    Q_PROPERTY(int autoAcceptMs READ autoAcceptMs CONSTANT)
+    //
+    // Per-offer, not constant: a requester with a short deadline can shorten it
+    // (see AUTO-ACCEPT above). QML must rebind on offerChanged, which it gets
+    // for free through the Timer's interval binding.
+    Q_PROPERTY(int autoAcceptMs READ autoAcceptMs NOTIFY offerChanged)
 
 public:
     explicit OtaManager(QObject *parent = nullptr);
@@ -133,7 +165,7 @@ public:
     bool    stopsVehicle()     const { return m_stopsVehicle; }
     int     queuedCount()      const { return m_queued; }
     int     secondsRemaining() const { return m_secondsRemaining; }
-    int     autoAcceptMs()     const { return m_autoAcceptMs; }
+    int     autoAcceptMs()     const;
 
     // Answer the offer currently on screen. Both consume it and move on to the
     // next queued one, if any.
@@ -176,7 +208,7 @@ private:
     // root and no /run entry, which is how the UI gets developed:
     //   IVI_OTA_APPROVAL_DIR=/tmp/ota-approval ./appIVI
     QString m_root;
-    int     m_autoAcceptMs = 4000;
+    int     m_autoAcceptMs = 5000;   // our ceiling; an offer may only lower it
 
     // The offer on screen. Empty id means nothing is pending.
     QString m_id;
@@ -188,6 +220,7 @@ private:
     qint64  m_expiresAt     = 0;    // unix seconds; 0 = never
     int     m_secondsRemaining = -1;
     int     m_queued        = 0;
+    int     m_offerAutoAcceptMs = 0;   // 0 = the offer did not ask for anything
 
     // Answered ids, so a verdict file that a producer has not collected yet
     // cannot make its offer pop up again on the next rescan.

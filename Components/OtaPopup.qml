@@ -7,9 +7,14 @@
 // slot, a size and a queue depth (see OTA_APPROVAL_PROTOCOL.md) and none of it
 // is shown — a driver glancing at this needs to decide, not to audit.
 //
-// It ACCEPTS ITSELF after ota.autoAcceptMs (4 s) if nobody touches it. Deny is
+// It ACCEPTS ITSELF after ota.autoAcceptMs (5 s) if nobody touches it. Deny is
 // the deliberate act; ignoring it is consent. The top stripe drains away as the
 // window closes so the decision is not taken silently.
+//
+// The card DROPS IN FROM ABOVE the screen and rests near the top edge for the
+// whole window, rather than sitting in the middle. It arrives the way a banner
+// arrives, and it leaves the centre of the display — where the drive view and
+// the media art live — uncovered while the driver decides.
 //
 // No close button and no tap-outside-to-dismiss. Every other popup in this app
 // is informational and dismissing it costs nothing. This one puts a verdict on
@@ -38,9 +43,65 @@ Item {
     // progress widget, so the card gains a countdown without gaining clutter.
     property real countdown: 1.0
 
+    // How far the resting card sits below the top edge.
+    property real topInset: 24
+
+    // Single source of truth for "the card belongs on screen". Drives the scrim
+    // fade and the card's drop, so the two cannot disagree about which way the
+    // prompt is currently going.
+    readonly property bool showing: (ota && ota.requestPending) || result !== ""
+
     visible: opacity > 0
-    opacity: (ota && ota.requestPending) || result !== "" ? 1 : 0
+    opacity: showing ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: 180 } }
+
+    // The confirmation glyph is DRAWN, not typed.
+    //
+    // It used to be the characters ✓ (U+2713) and ✕ (U+2715) in a Text with
+    // `family: "Arial"`. There is no Arial on either the dev laptop or the Yocto
+    // image, so that resolves to Liberation Sans — which covers neither
+    // codepoint. Both rendered as tofu boxes on both machines. A missing glyph
+    // in the one element that tells the driver what was just put on the CAN bus
+    // is not a cosmetic problem, and "ship a font that has them" is a much
+    // larger promise than two strokes need.
+    //
+    // Two Canvas strokes have no font dependency and no glyph coverage to check.
+    component VerdictMark: Canvas {
+        id: mark
+        property bool  approved: true
+        property color tint: "#ffffff"
+
+        implicitWidth: 62
+        implicitHeight: 62
+
+        // Canvas does not re-paint on a property change by itself.
+        onApprovedChanged: requestPaint()
+        onTintChanged:     requestPaint()
+        onWidthChanged:    requestPaint()
+        onHeightChanged:   requestPaint()
+
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.strokeStyle = mark.tint
+            ctx.lineWidth = Math.max(4, width * 0.11)
+            ctx.lineCap = "round"
+            ctx.lineJoin = "round"
+            ctx.beginPath()
+            if (mark.approved) {
+                // Tick: short arm down to the vertex, long arm up to the right.
+                ctx.moveTo(width * 0.20, height * 0.53)
+                ctx.lineTo(width * 0.41, height * 0.74)
+                ctx.lineTo(width * 0.80, height * 0.28)
+            } else {
+                ctx.moveTo(width * 0.25, height * 0.25)
+                ctx.lineTo(width * 0.75, height * 0.75)
+                ctx.moveTo(width * 0.75, height * 0.25)
+                ctx.lineTo(width * 0.25, height * 0.75)
+            }
+            ctx.stroke()
+        }
+    }
 
     // Inline components have to sit at the top level of the document, so the
     // button lives here rather than next to the row that uses it.
@@ -120,7 +181,7 @@ Item {
     // anyone could possibly have seen it.
     Timer {
         id: autoTimer
-        interval: (root.ota && root.ota.autoAcceptMs > 0) ? root.ota.autoAcceptMs : 4000
+        interval: (root.ota && root.ota.autoAcceptMs > 0) ? root.ota.autoAcceptMs : 5000
         running: root.visible
                  && root.ota && root.ota.autoAcceptMs > 0
                  && root.ota.requestPending
@@ -144,16 +205,49 @@ Item {
         id: card
         width: 460
         height: 216
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
         radius: 24
         color: "#0d1117"
         border.color: Qt.rgba(1, 1, 1, 0.08)
         border.width: 1
 
-        // Scale-in, so the prompt reads as arriving rather than as having
-        // always been there behind whatever the user was doing.
-        scale: root.opacity > 0 ? 1.0 : 0.94
-        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+        // Parked above the top edge; the "shown" state is what brings it down.
+        // Far enough up that the shadow and the rounded corners clear the
+        // screen too, so nothing peeks while the prompt is away.
+        y: -(height + 48)
+
+        // `root.visible` is in the condition as well as `showing`, because
+        // Main.qml holds this popup back until the splash finishes. Without it,
+        // an offer that arrived during boot would finish its drop behind the
+        // splash and be sitting there, motionless, the instant the splash lifts.
+        states: State {
+            name: "shown"
+            when: root.showing && root.visible
+            PropertyChanges { card.y: root.topInset }
+        }
+
+        // Asymmetric on purpose. Coming in it overshoots and settles, which is
+        // what makes it read as dropping rather than sliding. Going out it just
+        // leaves — a bounce on the way up would draw the eye back to a card
+        // whose decision has already been made.
+        transitions: [
+            Transition {
+                to: "shown"
+                NumberAnimation {
+                    property: "y"
+                    duration: 420
+                    easing { type: Easing.OutBack; overshoot: 1.1 }
+                }
+            },
+            Transition {
+                from: "shown"
+                NumberAnimation {
+                    property: "y"
+                    duration: 180          // same as the scrim fade, so they end together
+                    easing.type: Easing.InCubic
+                }
+            }
+        ]
 
         // Accent stripe — amber while the decision is open, then it takes the
         // colour of the answer during the confirmation beat. Its width drains
@@ -180,11 +274,12 @@ Item {
             spacing: 10
             visible: root.result !== ""
 
-            Text {
+            VerdictMark {
                 Layout.alignment: Qt.AlignHCenter
-                text: root.result === "approved" ? "✓" : "✕"
-                color: root.result === "approved" ? "#21cfa4" : "#ff6b6b"
-                font { pixelSize: 54; bold: true; family: "Arial" }
+                Layout.preferredWidth: 62
+                Layout.preferredHeight: 62
+                approved: root.result === "approved"
+                tint: root.result === "approved" ? "#21cfa4" : "#ff6b6b"
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
