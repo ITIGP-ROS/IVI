@@ -67,7 +67,7 @@ Rectangle {
 
     function ledColor(i) {
         if (!AmbientLight.on || (AmbientLight.zoneMask & (1 << i)) === 0)
-            return "#0e2a36"
+            return Theme.glassFill
 
         const c = AmbientLight.color
         const p = ambientPage.phase
@@ -84,14 +84,14 @@ Rectangle {
             return (p % 6) === i ? Qt.rgba(c.r * ambientPage.level,
                                            c.g * ambientPage.level,
                                            c.b * ambientPage.level, 1)
-                                 : "#0e2a36"
+                                 : Theme.glassFill
         case 4: {   // scanner — bounce across and back
             const pos = p % 10
             const at  = pos < 6 ? pos : 10 - pos
             return at === i ? Qt.rgba(c.r * ambientPage.level,
                                       c.g * ambientPage.level,
                                       c.b * ambientPage.level, 1)
-                            : "#0e2a36"
+                            : Theme.glassFill
         }
         case 5:     // rainbow — hue spread across the strip, drifting
             return Qt.hsva(((i / 6) + (p % 40) / 40) % 1, 1, ambientPage.level, 1)
@@ -102,15 +102,19 @@ Rectangle {
         }
     }
 
-    // Background
-    Rectangle {
+    // Background — the home screen's, drawn by the shared component so the
+    // sub-page and the settings menu it was pushed from cannot drift apart.
+    //
+    // The orbs pick up the cabin colour: this is the one page where the light
+    // being configured is the subject, so the room it is shown in follows it.
+    GlassBackground {
         z: -1
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#071f2c" }
-            GradientStop { position: 0.5; color: "#0d3446" }
-            GradientStop { position: 1.0; color: "#071f2c" }
-        }
+        orbA: AmbientLight.on ? AmbientLight.color : Theme.accentViolet
+        // Dimmer than the default: the cabin colours are fully saturated, and
+        // at the standard strength one of them washes the whole page.
+        orbAStrength: 0.26
+        Behavior on orbA { ColorAnimation { duration: 400 } }
     }
 
     // ==================================================== HEADER
@@ -140,7 +144,7 @@ Rectangle {
                       ? (AmbientLight.on ? qsTr("Cabin lighting on")
                                          : qsTr("Cabin lighting off"))
                       : qsTr("⚠  No CAN link to the lighting ECU — check can0")
-                color: AmbientLight.available ? "#7fa3b8" : "#dd9c4d"
+                color: AmbientLight.available ? Theme.textSecondary : Theme.accentAmber
                 font { family: "Arial"; pixelSize: ambientPage.height * 0.022 }
             }
         }
@@ -151,9 +155,9 @@ Rectangle {
             height: ambientPage.height * 0.055
             radius: height / 2
             anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-            color: AmbientLight.on ? AmbientLight.color : "#12374a"
+            color: AmbientLight.on ? AmbientLight.color : Qt.rgba(1, 1, 1, 0.06)
             border.color: AmbientLight.on ? Qt.lighter(AmbientLight.color, 1.3)
-                                          : "#2c5a70"
+                                          : Theme.glassBorder
             border.width: 2
             opacity: AmbientLight.available ? 1.0 : 0.35
             Behavior on color { ColorAnimation { duration: 200 } }
@@ -193,15 +197,15 @@ Rectangle {
         }
         height: ambientPage.height * 0.15
         radius: 20
-        color: "#061922"
-        border.color: "#173d4e"
+        color: Theme.glassFill
+        border.color: Theme.glassBorder
         border.width: 1
 
         Text {
             anchors { left: parent.left; leftMargin: parent.width * 0.02
                       top: parent.top;   topMargin:  parent.height * 0.1 }
             text: qsTr("TAP A LAMP TO INCLUDE OR EXCLUDE IT")
-            color: "#3f6d85"
+            color: Theme.textMuted
             font { bold: true; family: "Arial"
                    pixelSize: ambientPage.height * 0.017; letterSpacing: 1 }
         }
@@ -249,7 +253,7 @@ Rectangle {
                         radius: width / 2
                         color: lamp.shade
                         border.color: lamp.enabled ? Qt.lighter(lamp.shade, 1.5)
-                                                   : "#16303d"
+                                                   : Qt.rgba(1, 1, 1, 0.04)
                         border.width: 2
                         // Excluded lamps read as absent, not merely dark, so the
                         // mask is legible at a glance even while the strip is off.
@@ -272,7 +276,7 @@ Rectangle {
     Text {
         id: modeLabel
         text: qsTr("MODE")
-        color: "#7fa3b8"
+        color: Theme.textSecondary
         font { bold: true; family: "Arial"
                pixelSize: ambientPage.height * 0.021; letterSpacing: 2 }
         anchors { left: preview.left; top: preview.bottom
@@ -297,7 +301,7 @@ Rectangle {
                 height: ambientPage.height * 0.062
                 radius: height / 2
                 color: selected ? AmbientLight.color : "transparent"
-                border.color: selected ? Qt.lighter(AmbientLight.color, 1.3) : "#2c5a70"
+                border.color: selected ? Qt.lighter(AmbientLight.color, 1.3) : Theme.glassBorder
                 border.width: 2
                 opacity: AmbientLight.available ? 1.0 : 0.35
                 Behavior on color { ColorAnimation { duration: 160 } }
@@ -307,8 +311,8 @@ Rectangle {
                     text: modeChip.modelData.name
                     // Dark text once the chip is filled with a pale colour.
                     color: modeChip.selected
-                           ? (AmbientLight.color.hslLightness > 0.6 ? "#071f2c" : "#ffffff")
-                           : "#9fc0d0"
+                           ? (AmbientLight.color.hslLightness > 0.6 ? Theme.base : "#ffffff")
+                           : Theme.textSecondary
                     font { bold: true; family: "Arial"
                            pixelSize: ambientPage.height * 0.026 }
                 }
@@ -340,7 +344,7 @@ Rectangle {
             id: colourLabel
             text: ambientPage.colorApplies ? qsTr("COLOUR")
                                            : qsTr("COLOUR — SET BY RAINBOW")
-            color: "#7fa3b8"
+            color: Theme.textSecondary
             font { bold: true; family: "Arial"
                    pixelSize: ambientPage.height * 0.021; letterSpacing: 2 }
         }
@@ -408,7 +412,7 @@ Rectangle {
             anchors { left: parent.left; top: presetRow.bottom
                       topMargin: ambientPage.height * 0.035 }
             text: qsTr("HUE")
-            color: "#5c88a0"
+            color: Theme.textMuted
             font { bold: true; family: "Arial"; pixelSize: ambientPage.height * 0.019 }
         }
 
@@ -469,7 +473,7 @@ Rectangle {
             anchors { left: parent.left; top: hueBar.bottom
                       topMargin: ambientPage.height * 0.022 }
             text: qsTr("SATURATION")
-            color: "#5c88a0"
+            color: Theme.textMuted
             font { bold: true; family: "Arial"; pixelSize: ambientPage.height * 0.019 }
         }
 
@@ -493,7 +497,7 @@ Rectangle {
                 x: Math.max(0, Math.min(parent.width - width,
                                         hueBar.sat * parent.width - width / 2))
                 color: "transparent"
-                border.color: "#0b2836"
+                border.color: Theme.glassBorder
                 border.width: 3
             }
 
@@ -525,7 +529,7 @@ Rectangle {
         Text {
             id: levelLabel
             text: qsTr("LEVELS")
-            color: "#7fa3b8"
+            color: Theme.textSecondary
             font { bold: true; family: "Arial"
                    pixelSize: ambientPage.height * 0.021; letterSpacing: 2 }
         }
@@ -536,7 +540,7 @@ Rectangle {
             anchors { left: parent.left; top: levelLabel.bottom
                       topMargin: ambientPage.height * 0.022 }
             text: qsTr("Brightness")
-            color: "#9fc0d0"
+            color: Theme.textSecondary
             font { family: "Arial"; pixelSize: ambientPage.height * 0.024 }
         }
         Text {
@@ -572,7 +576,7 @@ Rectangle {
                 width: brightnessSlider.availableWidth
                 height: ambientPage.height * 0.013
                 radius: height / 2
-                color: "#0e2a36"
+                color: Theme.glassFill
 
                 Rectangle {
                     width: brightnessSlider.visualPosition * parent.width
@@ -611,7 +615,7 @@ Rectangle {
             text: qsTr("Speed")
             // Static has nothing to animate, so the control says so instead of
             // sitting there accepting input that changes nothing.
-            color: AmbientLight.mode === 1 ? "#4d7a90" : "#9fc0d0"
+            color: AmbientLight.mode === 1 ? Theme.textMuted : Theme.textSecondary
             font { family: "Arial"; pixelSize: ambientPage.height * 0.024 }
         }
         Text {
@@ -640,13 +644,13 @@ Rectangle {
                 width: speedSlider.availableWidth
                 height: ambientPage.height * 0.013
                 radius: height / 2
-                color: "#0e2a36"
+                color: Theme.glassFill
 
                 Rectangle {
                     width: speedSlider.visualPosition * parent.width
                     height: parent.height
                     radius: height / 2
-                    color: "#4fc3d9"
+                    color: Theme.accentCyan
                 }
             }
 
@@ -658,7 +662,7 @@ Rectangle {
                 height: width
                 radius: width / 2
                 color: "#ffffff"
-                border.color: "#4fc3d9"
+                border.color: Theme.accentCyan
                 border.width: 3
                 scale: speedSlider.pressed ? 1.15 : 1.0
                 Behavior on scale { NumberAnimation { duration: 120 } }
@@ -673,15 +677,15 @@ Rectangle {
         radius: height / 2
         anchors { left: parent.left; leftMargin: ambientPage.gutter
                   bottom: parent.bottom; bottomMargin: ambientPage.height * 0.035 }
-        color: backArea.containsMouse ? "#17465b" : "transparent"
-        border.color: "#2c5a70"
+        color: backArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+        border.color: Theme.glassBorder
         border.width: 2
         Behavior on color { ColorAnimation { duration: 150 } }
 
         Text {
             text: qsTr("Back")
             font.pixelSize: parent.height * 0.42
-            color: "#e7f1ef"
+            color: Theme.textPrimary
             font.bold: true
             font.family: "Arial"
             anchors.centerIn: parent

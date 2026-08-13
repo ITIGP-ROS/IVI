@@ -8,6 +8,24 @@ Rectangle {
     color: "transparent"
     required property StackView stackView
 
+    // Identity colour for this sub-page, matching the card it opens from.
+    readonly property color accent: Theme.accentCyan
+
+    /*
+     * List geometry, in one place.
+     *
+     * The container is sized to a whole number of rows rather than to a
+     * fraction of the page: at 0.50 it came out at five rows plus four pixels,
+     * and the sliver of a sixth row against the bottom edge read as a clipping
+     * bug rather than as "there is more below".
+     */
+    readonly property real rowHeight:   height / 12
+    readonly property int  rowSpacing:  6
+    readonly property int  listPadding: 10
+    readonly property int  visibleRows: 6
+    readonly property real listHeight:
+        visibleRows * rowHeight + (visibleRows - 1) * rowSpacing + listPadding * 2
+
     Timer {
         id: retryTimer
         interval: 1500
@@ -22,31 +40,11 @@ Rectangle {
         }
     }
 
-    // Background
-    Rectangle {
+    // Background — the home screen's, drawn by the shared component so the
+    // sub-page and the settings menu it was pushed from cannot drift apart.
+    GlassBackground {
         z: -1
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#082839" }
-            GradientStop { position: 0.5; color: "#10475E" }
-            GradientStop { position: 1.0; color: "#082839" }
-        }
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.04
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = "#D08831"
-                var step = 40
-                for (var x = 0; x < width; x += step) {
-                    for (var y = 0; y < height; y += step) {
-                        ctx.beginPath()
-                        ctx.arc(x, y, 1.5, 0, Math.PI * 2)
-                        ctx.fill()
-                    }
-                }
-            }
-        }
     }
 
     // Backend Connections 
@@ -68,20 +66,33 @@ Rectangle {
             // Reconcile in place instead of clear()+append(). A rebuild destroys
             // every delegate, which snaps the ListView back to the top — and with
             // a scan every 3s that made the list impossible to scroll through.
+            var live = []
+            for (var n = 0; n < networks.length; n++)
+                live.push(networks[n].name)
+
             for (var i = networkListModel.count - 1; i >= 0; i--) {
-                if (networks.indexOf(networkListModel.get(i).name) === -1)
+                if (live.indexOf(networkListModel.get(i).name) === -1)
                     networkListModel.remove(i)
             }
             for (var j = 0; j < networks.length; j++) {
+                var net = networks[j]
                 var at = -1
                 for (var k = 0; k < networkListModel.count; k++) {
-                    if (networkListModel.get(k).name === networks[j]) { at = k; break }
+                    if (networkListModel.get(k).name === net.name) { at = k; break }
                 }
-                if (at === -1)
-                    networkListModel.append({ "name": networks[j],
-                                              "connected": networks[j] === conn })
-                else
-                    networkListModel.setProperty(at, "connected", networks[j] === conn)
+                if (at === -1) {
+                    networkListModel.append({ "name": net.name,
+                                              "connected": net.name === conn,
+                                              "strength": net.strength,
+                                              "secured": net.secured })
+                } else {
+                    // Set each field rather than replacing the row: replacing it
+                    // recreates the delegate, and the signal icon would flash
+                    // back to nothing every three seconds.
+                    networkListModel.setProperty(at, "connected", net.name === conn)
+                    networkListModel.setProperty(at, "strength", net.strength)
+                    networkListModel.setProperty(at, "secured", net.secured)
+                }
             }
             promoteConnected()
         }
@@ -168,29 +179,64 @@ Rectangle {
         anchors.bottomMargin: wifiPage.height * 0.05
         spacing: wifiPage.height * 0.02
 
-        // Header Row: Title + WiFi Toggle
-        Row {
+        /*
+         * Header: title, connection status, power toggle.
+         *
+         * The status used to be a full-width chip on a line of its own. It is
+         * one short phrase, and giving it a row cost the list an entire network
+         * — the thing this page exists to show. Between the title and the
+         * switch there is dead space it fits in for free.
+         */
+        Item {
             width: parent.width
             height: wifiPage.height / 14
 
             Text {
                 id: wifiTitle
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 text: "Wi-Fi"
                 font.pixelSize: wifiPage.width / 28
-                color: "#e7f1ef"
+                color: Theme.textPrimary
                 font.bold: true
                 font.family: "Arial"
-                anchors.verticalCenter: parent.verticalCenter
             }
 
-            Item { width: parent.width - wifiTitle.width - wifiSwitchBg.width; height: 1 }
+            Text {
+                // Centred on the header, not in the gap between the title and
+                // the switch: the title is far the wider of the two, so centring
+                // in what is left of the row pushed the status visibly right of
+                // the page's middle.
+                //
+                // Width is capped by whichever side is wider, applied to both,
+                // which keeps the text centred and clear of both ends at once.
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                       - 2 * Math.max(wifiTitle.width, wifiSwitchBg.width)
+                       - wifiPage.width * 0.06
+                horizontalAlignment: Text.AlignHCenter
+                // A long SSID gives way rather than running into the title or
+                // under the switch.
+                elide: Text.ElideRight
+                visible: wifiSwitch.checked
+                text: WifiManager.connectedSsid !== ""
+                      ? "Connected: " + WifiManager.connectedSsid
+                      : "Not connected"
+                color: WifiManager.connectedSsid !== "" ? wifiPage.accent
+                                                        : Theme.textSecondary
+                font.pixelSize: wifiPage.height * 0.03
+                font.family: "Arial"
+                Behavior on color { ColorAnimation { duration: 300 } }
+            }
 
             Rectangle {
                 id: wifiSwitchBg
+                anchors.right: parent.right
                 width: wifiPage.width / 14
                 height: wifiPage.height / 22
                 radius: height / 2
-                color: wifiSwitch.checked ? "#D08831" : "#3D717E"
+                color: wifiSwitch.checked ? wifiPage.accent : Theme.glassBorder
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 200 } }
 
@@ -199,7 +245,7 @@ Rectangle {
                     width: parent.height - 4
                     height: width
                     radius: width / 2
-                    color: "#e7f1ef"
+                    color: Theme.textPrimary
                     anchors.verticalCenter: parent.verticalCenter
                     x: wifiSwitch.checked ? parent.width - width - 2 : 2
                     Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
@@ -218,46 +264,8 @@ Rectangle {
         Rectangle {
             width: parent.width
             height: 1
-            color: "#3D717E"
+            color: Theme.glassBorder
             opacity: 0.5
-        }
-
-        // Connected Status Chip
-        Rectangle {
-            width: parent.width
-            height: wifiPage.height / 16
-            radius: height / 2
-            color: WifiManager.connectedSsid !== "" ? "#5A3211" : "transparent"
-            border.color: WifiManager.connectedSsid !== "" ? "#D08831" : "transparent"
-            border.width: 1
-            visible: wifiSwitch.checked
-            Behavior on color { ColorAnimation { duration: 300; easing.type: Easing.InOutQuad } }
-            Behavior on border.color { ColorAnimation { duration: 300; easing.type: Easing.InOutQuad } }
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Rectangle {
-                    width: 8; height: 8; radius: 4
-                    color: "#00ffaa"
-                    anchors.verticalCenter: parent.verticalCenter
-                    SequentialAnimation on opacity {
-                        running: WifiManager.connectedSsid !== ""
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutSine }
-                    }
-                }
-
-                Text {
-                    text: WifiManager.connectedSsid !== "" ? "Connected: " + WifiManager.connectedSsid : "Not connected"
-                    color: WifiManager.connectedSsid !== "" ? "#D08831" : "#3D717E"
-                    font.pixelSize: wifiPage.height * 0.03
-                    font.family: "Arial"
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
         }
 
         // Section toolbar: label + live count + hidden-network entry
@@ -271,7 +279,7 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Available Networks"
-                color: "#e7f1ef"
+                color: Theme.textPrimary
                 font.pixelSize: wifiPage.height * 0.028
                 font.bold: true
                 font.family: "Arial"
@@ -284,8 +292,8 @@ Rectangle {
                 width: Math.max(height, countText.implicitWidth + 14)
                 height: wifiPage.height * 0.034
                 radius: height / 2
-                color: "#10475E"
-                border.color: "#3D717E"
+                color: Theme.glassFill
+                border.color: Theme.glassBorder
                 border.width: 1
                 visible: networkListModel.count > 0
 
@@ -293,7 +301,7 @@ Rectangle {
                     id: countText
                     anchors.centerIn: parent
                     text: networkListModel.count
-                    color: "#D08831"
+                    color: wifiPage.accent
                     font.pixelSize: parent.height * 0.55
                     font.bold: true
                     font.family: "Arial"
@@ -307,8 +315,8 @@ Rectangle {
                 width: hiddenBtnRow.implicitWidth + wifiPage.width * 0.04
                 height: parent.height
                 radius: height / 2
-                color: hiddenBtnArea.containsMouse ? "#964405" : "#5A3211"
-                border.color: "#D08831"
+                color: hiddenBtnArea.containsMouse ? Theme.tint(wifiPage.accent, 0.32) : Theme.tint(wifiPage.accent, 0.18)
+                border.color: wifiPage.accent
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -319,7 +327,7 @@ Rectangle {
 
                     Text {
                         text: "+"
-                        color: "#D08831"
+                        color: wifiPage.accent
                         font.pixelSize: hiddenBtn.height * 0.52
                         font.bold: true
                         font.family: "Arial"
@@ -327,7 +335,7 @@ Rectangle {
                     }
                     Text {
                         text: "Hidden Network"
-                        color: "#e7f1ef"
+                        color: Theme.textPrimary
                         font.pixelSize: hiddenBtn.height * 0.38
                         font.bold: true
                         font.family: "Arial"
@@ -347,17 +355,17 @@ Rectangle {
         // Network List
         Rectangle {
             width: parent.width
-            height: wifiPage.height * 0.50
+            height: wifiPage.listHeight
             radius: wifiPage.height * 0.02
-            color: "#082839"
-            border.color: "#3D717E"
+            color: Theme.glassFill
+            border.color: Theme.glassBorder
             border.width: 1
             visible: wifiSwitch.checked
 
             // Scanning overlay
             Rectangle {
                 anchors.fill: parent
-                color: "#082839"
+                color: Theme.surface
                 opacity: 0.9
                 visible: isScanning && networkListModel.count === 0
                 radius: parent.radius
@@ -370,14 +378,14 @@ Rectangle {
                     Rectangle {
                         width: 40; height: 40
                         color: "transparent"
-                        border.color: "#D08831"
+                        border.color: wifiPage.accent
                         border.width: 3
                         radius: width / 2
                         anchors.horizontalCenter: parent.horizontalCenter
 
                         Rectangle {
                             width: 6; height: 6
-                            color: "#082839"
+                            color: Theme.surface
                             anchors.top: parent.top
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
@@ -392,7 +400,7 @@ Rectangle {
 
                     Text {
                         text: "Scanning..."
-                        color: "#D08831"
+                        color: wifiPage.accent
                         font.pixelSize: wifiPage.height * 0.025
                         font.family: "Arial"
                         font.bold: true
@@ -414,7 +422,7 @@ Rectangle {
                 }
                 Text {
                     text: "No networks found"
-                    color: "#3D717E"
+                    color: Theme.textSecondary
                     font.pixelSize: wifiPage.height * 0.025
                     font.family: "Arial"
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -424,11 +432,11 @@ Rectangle {
             ListView {
                 id: networkListView
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.margins: wifiPage.listPadding
                 anchors.rightMargin: 18
                 clip: true
                 model: networkListModel
-                spacing: 6
+                spacing: wifiPage.rowSpacing
 
                 ScrollBar.vertical: ScrollBar {
                     width: 6
@@ -436,12 +444,12 @@ Rectangle {
                     contentItem: Rectangle {
                         implicitWidth: 6
                         radius: 3
-                        color: parent.pressed ? "#964405" : "#D08831"
+                        color: parent.pressed ? Theme.tint(wifiPage.accent, 0.32) : wifiPage.accent
                         opacity: 0.8
                     }
                     background: Rectangle {
                         implicitWidth: 6
-                        color: "#082839"
+                        color: Theme.surface
                         radius: 3
                         opacity: 0.3
                     }
@@ -451,11 +459,13 @@ Rectangle {
                     id: netRow
                     required property string name
                     required property bool connected
+                    required property int  strength
+                    required property bool secured
                     width: networkListView.width - 8
-                    height: wifiPage.height / 12
+                    height: wifiPage.rowHeight
                     radius: height / 4
-                    color: rowHover.containsMouse ? "#964405" : (connected ? "#5A3211" : "#10475E")
-                    border.color: connected ? "#D08831" : "#3D717E"
+                    color: rowHover.containsMouse ? Theme.tint(wifiPage.accent, 0.32) : (connected ? Theme.tint(wifiPage.accent, 0.18) : Theme.glassFill)
+                    border.color: connected ? wifiPage.accent : Theme.glassBorder
                     border.width: connected ? 2 : 1
                     Behavior on color { ColorAnimation { duration: 120 } }
                     Behavior on border.color { ColorAnimation { duration: 300 } }
@@ -466,23 +476,25 @@ Rectangle {
                         anchors.rightMargin: parent.width * 0.04
                         spacing: parent.width * 0.03
 
-                        Text {
-                            text: connected ? "📶" : "📡"
-                            font.pixelSize: parent.parent.height * 0.4
-                            color: connected ? "#D08831" : "#e7f1ef"
+                        WifiGlyph {
+                            id: netIcon
+                            height: netRow.height * 0.44
                             anchors.verticalCenter: parent.verticalCenter
+                            color: netRow.connected ? wifiPage.accent : Theme.textPrimary
+                            strength: netRow.strength
+                            secured: netRow.secured
                         }
 
                         Text {
                             text: netRow.name
                             font.pixelSize: parent.parent.height * 0.38
-                            color: connected ? "#D08831" : "#e7f1ef"
+                            color: connected ? wifiPage.accent : Theme.textPrimary
                             font.bold: true
                             font.family: "Arial"
                             anchors.verticalCenter: parent.verticalCenter
                             width: parent.width
                                    - (connected ? disconnectBtn.width * 2 + 5 : connectBtn.width)
-                                   - parent.parent.height * 0.4
+                                   - netIcon.width
                                    - parent.spacing * 2
                             elide: Text.ElideRight
                         }
@@ -493,8 +505,8 @@ Rectangle {
                             width: wifiPage.width * 0.16
                             height: parent.parent.height * 0.5
                             radius: height / 3
-                            color: btnArea.containsMouse ? "#964405" : "#5A3211"
-                            border.color: "#D08831"
+                            color: btnArea.containsMouse ? Theme.tint(wifiPage.accent, 0.32) : Theme.tint(wifiPage.accent, 0.18)
+                            border.color: wifiPage.accent
                             border.width: 1
                             anchors.verticalCenter: parent.verticalCenter
                             Behavior on color { ColorAnimation { duration: 150 } }
@@ -503,7 +515,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 text: "Connect"
                                 font.pixelSize: parent.height * 0.5
-                                color: "#e7f1ef"
+                                color: Theme.textPrimary
                                 font.bold: true
                                 font.family: "Arial"
                             }
@@ -522,9 +534,9 @@ Rectangle {
                             width: wifiPage.width * 0.14
                             height: parent.parent.height * 0.5
                             radius: height / 3
-                            color: forgetArea.containsMouse ? "#774400" : "#3d2200"
+                            color: forgetArea.containsMouse ? Theme.tint(wifiPage.accent, 0.28) : Theme.tint(wifiPage.accent, 0.12)
                             anchors.verticalCenter: parent.verticalCenter
-                            border.color: "#D08831"
+                            border.color: wifiPage.accent
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -532,7 +544,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 text: "Forget"
                                 font.pixelSize: parent.height * 0.45
-                                color: "#D08831"
+                                color: wifiPage.accent
                                 font.bold: true
                                 font.family: "Arial"
                             }
@@ -554,7 +566,7 @@ Rectangle {
                             width: wifiPage.width * 0.16
                             height: parent.parent.height * 0.5
                             radius: height / 3
-                            color: discArea.containsMouse ? "#ff4444" : "#aa2222"
+                            color: discArea.containsMouse ? Theme.danger : Theme.tint(Theme.danger, 0.35)
                             anchors.verticalCenter: parent.verticalCenter
                             Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -662,15 +674,14 @@ Rectangle {
         // (A MultiEffect blur is the nicer option and works on real GPU hardware;
         // see the note in git history before swapping it in.)
         Overlay.modal: Rectangle {
-            color: "#000000"
-            opacity: 0.6
+            color: Theme.scrim
             Behavior on opacity { NumberAnimation { duration: 180 } }
         }
 
         background: Rectangle {
-            color: "#082839"
+            color: Theme.surface
             radius: 18
-            border.color: "#D08831"
+            border.color: wifiPage.accent
             border.width: 2
         }
 
@@ -688,7 +699,7 @@ Rectangle {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Add Hidden Network"
-                    color: "#D08831"
+                    color: wifiPage.accent
                     font.pixelSize: wifiPage.height * 0.038
                     font.bold: true
                     font.family: "Arial"
@@ -698,7 +709,7 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Not broadcast — enter the name exactly"
-                    color: "#3D717E"
+                    color: Theme.textSecondary
                     font.pixelSize: wifiPage.height * 0.022
                     font.family: "Arial"
                 }
@@ -714,9 +725,9 @@ Rectangle {
                     width: (parent.width - parent.spacing) / 2
                     height: wifiPage.height * 0.075
                     radius: 10
-                    color: "#10475E"
-                    border.color: wifiPage.hiddenInvalid === "ssid" ? "#ff4444"
-                                  : (wifiPage.hiddenField === "ssid" ? "#D08831" : "#3D717E")
+                    color: Theme.glassFill
+                    border.color: wifiPage.hiddenInvalid === "ssid" ? Theme.danger
+                                  : (wifiPage.hiddenField === "ssid" ? wifiPage.accent : Theme.glassBorder)
                     border.width: wifiPage.hiddenField === "ssid" ? 2 : 1
                     Behavior on border.color { ColorAnimation { duration: 150 } }
 
@@ -729,14 +740,14 @@ Rectangle {
 
                         Text {
                             text: "Network Name (SSID)"
-                            color: "#3D717E"
+                            color: Theme.textSecondary
                             font.pixelSize: wifiPage.height * 0.02
                             font.family: "Arial"
                         }
                         Text {
                             text: hiddenSsidField.text.length ? hiddenSsidField.text
                                                               : "Tap to enter"
-                            color: hiddenSsidField.text.length ? "#e7f1ef" : "#2b5a68"
+                            color: hiddenSsidField.text.length ? Theme.textPrimary : Theme.textMuted
                             font.pixelSize: wifiPage.height * 0.028
                             font.bold: true
                             font.family: "Arial"
@@ -756,10 +767,10 @@ Rectangle {
                     width: (parent.width - parent.spacing) / 2
                     height: wifiPage.height * 0.075
                     radius: 10
-                    color: "#10475E"
+                    color: Theme.glassFill
                     opacity: wifiPage.hiddenSecurity === "open" ? 0.4 : 1.0
-                    border.color: wifiPage.hiddenInvalid === "pass" ? "#ff4444"
-                                  : (wifiPage.hiddenField === "pass" ? "#D08831" : "#3D717E")
+                    border.color: wifiPage.hiddenInvalid === "pass" ? Theme.danger
+                                  : (wifiPage.hiddenField === "pass" ? wifiPage.accent : Theme.glassBorder)
                     border.width: wifiPage.hiddenField === "pass" ? 2 : 1
                     Behavior on border.color { ColorAnimation { duration: 150 } }
                     Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -774,7 +785,7 @@ Rectangle {
                         Text {
                             text: wifiPage.hiddenSecurity === "open" ? "Password (not needed)"
                                                                      : "Password"
-                            color: "#3D717E"
+                            color: Theme.textSecondary
                             font.pixelSize: wifiPage.height * 0.02
                             font.family: "Arial"
                         }
@@ -784,7 +795,7 @@ Rectangle {
                                      ? hiddenPassField.text
                                      : hiddenPassField.text.replace(/./g, "•"))
                                   : "Tap to enter"
-                            color: hiddenPassField.text.length ? "#e7f1ef" : "#2b5a68"
+                            color: hiddenPassField.text.length ? Theme.textPrimary : Theme.textMuted
                             font.pixelSize: wifiPage.height * 0.028
                             font.bold: true
                             font.family: "Arial"
@@ -809,7 +820,7 @@ Rectangle {
 
                 Text {
                     text: "Security"
-                    color: "#3D717E"
+                    color: Theme.textSecondary
                     font.pixelSize: wifiPage.height * 0.024
                     font.family: "Arial"
                     anchors.verticalCenter: parent.verticalCenter
@@ -820,15 +831,15 @@ Rectangle {
                     height: parent.height * 0.8
                     radius: height / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: wifiPage.hiddenSecurity === "wpa-psk" ? "#5A3211" : "#10475E"
-                    border.color: wifiPage.hiddenSecurity === "wpa-psk" ? "#D08831" : "#3D717E"
+                    color: wifiPage.hiddenSecurity === "wpa-psk" ? Theme.tint(wifiPage.accent, 0.18) : Theme.glassFill
+                    border.color: wifiPage.hiddenSecurity === "wpa-psk" ? wifiPage.accent : Theme.glassBorder
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
                     Text {
                         anchors.centerIn: parent
                         text: "WPA / WPA2"
-                        color: wifiPage.hiddenSecurity === "wpa-psk" ? "#D08831" : "#e7f1ef"
+                        color: wifiPage.hiddenSecurity === "wpa-psk" ? wifiPage.accent : Theme.textPrimary
                         font.pixelSize: parent.height * 0.42
                         font.bold: true
                         font.family: "Arial"
@@ -848,15 +859,15 @@ Rectangle {
                     height: parent.height * 0.8
                     radius: height / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: wifiPage.hiddenSecurity === "open" ? "#5A3211" : "#10475E"
-                    border.color: wifiPage.hiddenSecurity === "open" ? "#D08831" : "#3D717E"
+                    color: wifiPage.hiddenSecurity === "open" ? Theme.tint(wifiPage.accent, 0.18) : Theme.glassFill
+                    border.color: wifiPage.hiddenSecurity === "open" ? wifiPage.accent : Theme.glassBorder
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
                     Text {
                         anchors.centerIn: parent
                         text: "Open"
-                        color: wifiPage.hiddenSecurity === "open" ? "#D08831" : "#e7f1ef"
+                        color: wifiPage.hiddenSecurity === "open" ? wifiPage.accent : Theme.textPrimary
                         font.pixelSize: parent.height * 0.42
                         font.bold: true
                         font.family: "Arial"
@@ -881,6 +892,15 @@ Rectangle {
                 id: hiddenKeyboard
                 width: parent.width
                 targetItem: hiddenSsidField
+
+                accent:       wifiPage.accent
+                panelColor:   Theme.glassFill
+                fieldColor:   Qt.rgba(0, 0, 0, 0.30)
+                keyColor:     Theme.glassFill
+                keyHoverColor: Theme.tint(wifiPage.accent, 0.30)
+                keyBorder:    Theme.glassBorder
+                keyTextColor: Theme.textPrimary
+                enterColor:   Theme.tint(wifiPage.accent, 0.22)
 
                 // Enter advances name -> password, then submits
                 onAccepted: {
@@ -907,15 +927,14 @@ Rectangle {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         Overlay.modal: Rectangle {
-            color: "#000000"
-            opacity: 0.6
+            color: Theme.scrim
             Behavior on opacity { NumberAnimation { duration: 180 } }
         }
 
         background: Rectangle {
-            color: "#082839"
+            color: Theme.surface
             radius: 16
-            border.color: "#D08831"
+            border.color: wifiPage.accent
             border.width: 2
         }
 
@@ -928,7 +947,7 @@ Rectangle {
             Text {
                 id: passwordPopupSsid
                 font.pixelSize: wifiPage.height * 0.04
-                color: "#D08831"
+                color: wifiPage.accent
                 font.bold: true
                 font.family: "Arial"
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -937,7 +956,7 @@ Rectangle {
             Text {
                 text: "Enter Wi-Fi Password"
                 font.pixelSize: wifiPage.height * 0.025
-                color: "#3D717E"
+                color: Theme.textSecondary
                 font.family: "Arial"
                 anchors.horizontalCenter: parent.horizontalCenter
             }
@@ -957,6 +976,15 @@ Rectangle {
                 targetItem: popupPassField
                 passwordMode: true
                 maxLength: 64
+
+                accent:       wifiPage.accent
+                panelColor:   Theme.glassFill
+                fieldColor:   Qt.rgba(0, 0, 0, 0.30)
+                keyColor:     Theme.glassFill
+                keyHoverColor: Theme.tint(wifiPage.accent, 0.30)
+                keyBorder:    Theme.glassBorder
+                keyTextColor: Theme.textPrimary
+                enterColor:   Theme.tint(wifiPage.accent, 0.22)
 
                 onAccepted: {
                     if (popupPassField.text.length >= 8) {
@@ -978,7 +1006,7 @@ Rectangle {
             // Password strength hint
             Text {
                 text: popupPassField.text.length + " / 64 characters"
-                color: popupPassField.text.length < 8 ? "#ff8a7a" : "#3D717E"
+                color: popupPassField.text.length < 8 ? Theme.danger : Theme.textSecondary
                 font.pixelSize: 14
                 font.family: "Arial"
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -996,20 +1024,20 @@ Rectangle {
     Rectangle {
         width: wifiPage.width / 8
         height: wifiPage.height / 16
-        color: backBtnArea.containsMouse ? "#964405" : "#5A3211"
+        color: backBtnArea.containsMouse ? Theme.tint(wifiPage.accent, 0.32) : Theme.tint(wifiPage.accent, 0.18)
         radius: height / 4
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.bottomMargin: parent.height * 0.04
         anchors.leftMargin: parent.width * 0.08
-        border.color: "#D08831"
+        border.color: wifiPage.accent
         border.width: 1
         Behavior on color { ColorAnimation { duration: 150 } }
 
         Text {
             text: "Back"
             font.pixelSize: parent.height * 0.45
-            color: "#e7f1ef"
+            color: Theme.textPrimary
             font.bold: true
             font.family: "Arial"
             anchors.centerIn: parent

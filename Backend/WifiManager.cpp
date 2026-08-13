@@ -2,6 +2,7 @@
 #include <QDBusReply>
 #include <QDBusMetaType>
 #include <QSet>
+#include <QHash>
 #include <QDebug>
 
 WifiManager::WifiManager(QObject *parent) : QObject(parent)
@@ -220,9 +221,17 @@ void WifiManager::scanNetworks()
         return;
     }
 
-    // Collect access points — deduplicate by SSID
-    QStringList networks;
-    QSet<QString> seen;
+    /*
+     * Collect access points, one entry per SSID.
+     *
+     * Deduplication keeps the STRONGEST access point rather than the first one
+     * NetworkManager happens to return. A mesh or a repeater publishes the same
+     * SSID from several radios, and taking whichever came back first made the
+     * signal icon show a distant node while the phone was sitting next to the
+     * near one.
+     */
+    QVariantList networks;
+    QHash<QString, int> indexOfSsid;
 
     QDBusReply<QList<QDBusObjectPath>> apReply =
         deviceIface.call("GetAllAccessPoints");
@@ -240,10 +249,33 @@ void WifiManager::scanNetworks()
             QString ssid = QString::fromUtf8(ssidBytes).trimmed();
 
             if (ssid.isEmpty()) continue;       // skip hidden networks
-            if (seen.contains(ssid)) continue;  // skip duplicate BSSIDs
 
-            seen.insert(ssid);
-            networks << ssid;
+            const int strength = apIface.property("Strength").toInt();
+
+            /*
+             * Three separate flag words have to agree that the AP is open
+             * before it can be called open. Flags carries the old PRIVACY bit
+             * (WEP), WpaFlags and RsnFlags the WPA/WPA2/WPA3 key management —
+             * a WPA2 network leaves PRIVACY set but a WPA3-only one need not,
+             * so checking any single word mislabels somebody.
+             */
+            const uint apFlags  = apIface.property("Flags").toUInt();
+            const uint wpaFlags = apIface.property("WpaFlags").toUInt();
+            const uint rsnFlags = apIface.property("RsnFlags").toUInt();
+            const bool secured  = (apFlags & 0x1u) || wpaFlags || rsnFlags;
+
+            QVariantMap entry;
+            entry["name"]     = ssid;
+            entry["strength"] = strength;
+            entry["secured"]  = secured;
+
+            const auto known = indexOfSsid.constFind(ssid);
+            if (known == indexOfSsid.constEnd()) {
+                indexOfSsid.insert(ssid, networks.size());
+                networks << entry;
+            } else if (networks[*known].toMap().value("strength").toInt() < strength) {
+                networks[*known] = entry;
+            }
         }
     }
 

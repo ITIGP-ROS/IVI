@@ -83,7 +83,7 @@ source /opt/ros/humble/setup.bash && source ~/Documents/ITI_9Months/GP/ros2_ws_g
 ## Terminal 3 — IVI, on the NVIDIA GPU
 
 ```bash
-source /opt/ros/humble/setup.bash && source ~/Documents/ITI_9Months/GP/ros2_ws_gp/install/setup.bash && cd ~/Documents/ITI_9Months/GP/IVI-Detections3D && __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia ./build/appIVI
+source /opt/ros/humble/setup.bash && source ~/Documents/ITI_9Months/GP/ros2_ws_gp/install/setup.bash && cd ~/Documents/ITI_9Months/GP/IVI && __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia ./build/appIVI
 ```
 
 ---

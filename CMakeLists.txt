@@ -75,6 +75,8 @@ set_source_files_properties(API/WeatherStore.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(DriveView/qml/CarColors.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(Components/Theme.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(appIVI
     URI IVI
@@ -87,6 +89,13 @@ qt_add_qml_module(appIVI
         API/WeatherAPI.qml
         API/WeatherStore.qml
         API/RadioAPI.qml
+        Components/Theme.qml
+        Components/GlassBackground.qml
+        Components/GlassCard.qml
+        Components/GlassButton.qml
+        Components/IconWell.qml
+        Components/WifiGlyph.qml
+        Components/WeatherGlyph.qml
         Components/WindowBar.qml
         Components/MediaCard.qml
         Components/CarInfoPopup.qml

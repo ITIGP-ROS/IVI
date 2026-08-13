@@ -445,24 +445,24 @@ ApplicationWindow {
             // thing the driver saw every single time.
             //
             // Order of preference: last successful reading, then a typical Giza
-            // default for a unit that has never had a network. Neither is live,
-            // so weatherIsLive gates the note on the location line — the card
-            // must never present a stale or invented number as the real one.
+            // default for a unit that has never had a network.
+            //
+            // The card used to mark a non-live reading with " · not live" beside
+            // the city. It is gone: at this tile's width the note ate the city
+            // name down to "milan · not l…", and it reported a condition the
+            // driver can do nothing about — WeatherAPI is already retrying
+            // underneath, and the reading it replaces is a real one either way.
             readonly property string fallbackTemp:  "30°C"
             readonly property string fallbackEmoji: "☀️"
             readonly property string fallbackDesc:  "Clear Sky"
 
-            property bool   weatherIsLive: false
             property string currentTemp:  fallbackTemp
             property string currentEmoji: fallbackEmoji
             property string currentDesc:  fallbackDesc
-            // Kept as a binding rather than assigned from the reply handler, so
-            // the "not live" note comes back by itself when the city changes.
             property string resolvedLocation: ""
             property string locationText:
                 "📍 " + (resolvedLocation !== "" ? resolvedLocation
                                                  : mainWindow.preferredCity)
-                      + (weatherIsLive ? "" : " · not live")
 
             Component.onCompleted: {
                 /*
@@ -484,11 +484,10 @@ ApplicationWindow {
             Connections {
                 target: mainWindow
                 function onPreferredCityChanged() {
-                    // What is on screen belongs to the old city, so it is not
-                    // live any more until the new one comes back — unless the
-                    // new city is already sitting in the cache, in which case
-                    // there is nothing to wait for.
-                    launcherItem.weatherIsLive    = false
+                    // What is on screen belongs to the old city, so the resolved
+                    // name has to go until the new one comes back — otherwise
+                    // the card shows the new city's reading under the old
+                    // city's name.
                     launcherItem.resolvedLocation = ""
                     launcherItem.applyCached(mainWindow.preferredCity)
                     WeatherStore.request(mainWindow.preferredCity)
@@ -513,24 +512,26 @@ ApplicationWindow {
                 if (e === null)
                     return false
                 applyWeather(e.current, e.location)
-                // A cached reading is real data, but it is not necessarily now.
-                // Only a reply that just landed earns the "live" badge.
-                weatherIsLive = WeatherStore.isFresh(city)
                 return true
             }
 
             Connections {
                 target: WeatherStore
 
-                // No handler for failed(): the card is already showing the
-                // seeded reading with "not live" beside the city, which says
-                // more than "Offline" did, and WeatherAPI keeps retrying
-                // underneath. A wrong city name is different — that one never
-                // resolves itself, so it has to be said out loud.
-                function onNotFound(city) {
-                    launcherItem.currentDesc = "City not found"
-                }
-
+                /*
+                 * No handler for failed() or notFound().
+                 *
+                 * The card is a glance, not a console. Both used to write their
+                 * complaint into it — notFound() replaced the conditions line
+                 * with "City not found" — and neither is answerable from the
+                 * home screen: the city is set in Settings, and WeatherAPI
+                 * retries a failed request on its own. So the card keeps showing
+                 * the last real reading and says nothing about the fetch.
+                 *
+                 * The Weather page still reports a city that does not resolve.
+                 * That is where the search box is, so there the message is the
+                 * answer to something the driver just typed.
+                 */
                 function onUpdated(city) {
                     if (WeatherStore.normalise(city)
                             !== WeatherStore.normalise(mainWindow.preferredCity))
@@ -538,7 +539,6 @@ ApplicationWindow {
                     var e = WeatherStore.entryFor(city)
                     if (e === null)
                         return
-                    launcherItem.weatherIsLive = true
                     launcherItem.applyWeather(e.current, e.location)
 
                     // Tiny always-writable fallback, separate from the store's

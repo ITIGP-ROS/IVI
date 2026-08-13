@@ -7,37 +7,35 @@ Rectangle {
     height: parent ? parent.height : 0
     color: "transparent"
     required property StackView stackView
+
+    // Identity colour for this sub-page, matching the card it opens from.
+    readonly property color accent: Theme.accentBlue
+
+    /*
+     * List geometry, in one place.
+     *
+     * The container is sized to a whole number of rows rather than to a
+     * fraction of the page: at 0.50 it came out at five rows plus four pixels,
+     * and the sliver of a sixth row against the bottom edge read as a clipping
+     * bug rather than as "there is more below".
+     */
+    readonly property real rowHeight:   height / 12
+    readonly property int  rowSpacing:  6
+    readonly property int  listPadding: 10
+    readonly property int  visibleRows: 6
+    readonly property real listHeight:
+        visibleRows * rowHeight + (visibleRows - 1) * rowSpacing + listPadding * 2
     property bool updatingFromBackend: false
 
     property string connectingAddress:    ""
     property string disconnectingAddress: ""
     property var    connectedAddresses:   []
 
-    // Background
-    Rectangle {
+    // Background — the home screen's, drawn by the shared component so the
+    // sub-page and the settings menu it was pushed from cannot drift apart.
+    GlassBackground {
         z: -1
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#082839" }
-            GradientStop { position: 0.5; color: "#10475E" }
-            GradientStop { position: 1.0; color: "#082839" }
-        }
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.04
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = "#D08831"
-                var step = 40
-                for (var x = 0; x < width; x += step) {
-                    for (var y = 0; y < height; y += step) {
-                        ctx.beginPath()
-                        ctx.arc(x, y, 1.5, 0, Math.PI * 2)
-                        ctx.fill()
-                    }
-                }
-            }
-        }
     }
 
     // Backend Connections 
@@ -214,29 +212,61 @@ Rectangle {
         anchors.bottomMargin: btPage.height * 0.05
         spacing: btPage.height * 0.02
 
-        // Header Row: Title + BT Toggle 
-        Row {
+        /*
+         * Header: title, connection status, power toggle.
+         *
+         * The status used to be a full-width chip on a line of its own. It is
+         * one short phrase, and giving it a row cost the list an entire device
+         * — the thing this page exists to show. Between the title and the
+         * switch there is dead space it fits in for free.
+         */
+        Item {
             width: parent.width
             height: btPage.height / 14
 
             Text {
                 id: btTitle
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 text: "Bluetooth"
                 font.pixelSize: btPage.width / 28
-                color: "#e7f1ef"
+                color: Theme.textPrimary
                 font.bold: true
                 font.family: "Arial"
-                anchors.verticalCenter: parent.verticalCenter
             }
 
-            Item { width: parent.width - btTitle.width - btSwitchBg.width; height: 1 }
+            Text {
+                // Centred on the header, not in the gap between the title and
+                // the switch: the title is far the wider of the two, so centring
+                // in what is left of the row pushed the status visibly right of
+                // the page's middle.
+                //
+                // Width is capped by whichever side is wider, applied to both,
+                // which keeps the text centred and clear of both ends at once.
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                       - 2 * Math.max(btTitle.width, btSwitchBg.width)
+                       - btPage.width * 0.06
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                visible: btSwitch.checked
+                text: btPage.connectedAddresses.length > 0 ? "Device connected"
+                                                           : "Not connected"
+                color: btPage.connectedAddresses.length > 0 ? btPage.accent
+                                                            : Theme.textSecondary
+                font.pixelSize: btPage.height * 0.03
+                font.family: "Arial"
+                Behavior on color { ColorAnimation { duration: 300 } }
+            }
 
             Rectangle {
                 id: btSwitchBg
+                anchors.right: parent.right
                 width: btPage.width / 14
                 height: btPage.height / 22
                 radius: height / 2
-                color: btSwitch.checked ? "#D08831" : "#3D717E"
+                color: btSwitch.checked ? btPage.accent : Theme.glassBorder
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 200 } }
 
@@ -245,7 +275,7 @@ Rectangle {
                     width: parent.height - 4
                     height: width
                     radius: width / 2
-                    color: "#e7f1ef"
+                    color: Theme.textPrimary
                     anchors.verticalCenter: parent.verticalCenter
                     x: btSwitch.checked ? parent.width - width - 2 : 2
                     Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
@@ -267,47 +297,11 @@ Rectangle {
         Rectangle {
             width: parent.width
             height: 1
-            color: "#3D717E"
+            color: Theme.glassBorder
             opacity: 0.5
         }
 
-        // Connected Status Chip 
-        Rectangle {
-            width: parent.width
-            height: btPage.height / 16
-            radius: height / 2
-            color: btPage.connectedAddresses.length > 0 ? "#5A3211" : "transparent"
-            border.color: btPage.connectedAddresses.length > 0 ? "#D08831" : "transparent"
-            border.width: 1
-            visible: btSwitch.checked
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Rectangle {
-                    width: 8; height: 8; radius: 4
-                    color: "#00ffaa"
-                    anchors.verticalCenter: parent.verticalCenter
-                    SequentialAnimation on opacity {
-                        running: btPage.connectedAddresses.length > 0
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutSine }
-                    }
-                }
-
-                Text {
-                    text: btPage.connectedAddresses.length > 0 ?  "Device connected" : "Not connected"
-                    color: btPage.connectedAddresses.length > 0 ? "#D08831" : "#3D717E"
-                    font.pixelSize: btPage.height * 0.03
-                    font.family: "Arial"
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-        }
-
-        // Device List 
+        // Device List
         // Section toolbar: label + count + manual scan
         Item {
             width: parent.width
@@ -319,7 +313,7 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Devices"
-                color: "#e7f1ef"
+                color: Theme.textPrimary
                 font.pixelSize: btPage.height * 0.028
                 font.bold: true
                 font.family: "Arial"
@@ -332,8 +326,8 @@ Rectangle {
                 width: Math.max(height, countText.implicitWidth + 14)
                 height: btPage.height * 0.034
                 radius: height / 2
-                color: "#10475E"
-                border.color: "#3D717E"
+                color: Theme.glassFill
+                border.color: Theme.glassBorder
                 border.width: 1
                 visible: deviceListModel.count > 0
 
@@ -341,7 +335,7 @@ Rectangle {
                     id: countText
                     anchors.centerIn: parent
                     text: deviceListModel.count
-                    color: "#D08831"
+                    color: btPage.accent
                     font.pixelSize: parent.height * 0.55
                     font.bold: true
                     font.family: "Arial"
@@ -355,9 +349,9 @@ Rectangle {
                 width: scanBtnText.implicitWidth + btPage.width * 0.05
                 height: parent.height
                 radius: height / 2
-                color: !enabled ? "#1a3a4c"
-                                : (scanBtnArea.containsMouse ? "#964405" : "#5A3211")
-                border.color: enabled ? "#D08831" : "#3D717E"
+                color: !enabled ? Theme.glassFill
+                                : (scanBtnArea.containsMouse ? Theme.tint(btPage.accent, 0.32) : Theme.tint(btPage.accent, 0.18))
+                border.color: enabled ? btPage.accent : Theme.glassBorder
                 border.width: 1
                 enabled: !btPage.isScanning
                 Behavior on color { ColorAnimation { duration: 150 } }
@@ -366,7 +360,7 @@ Rectangle {
                     id: scanBtnText
                     anchors.centerIn: parent
                     text: btPage.isScanning ? "Scanning..." : "Scan"
-                    color: scanBtn.enabled ? "#e7f1ef" : "#3D717E"
+                    color: scanBtn.enabled ? Theme.textPrimary : Theme.textSecondary
                     font.pixelSize: scanBtn.height * 0.38
                     font.bold: true
                     font.family: "Arial"
@@ -383,17 +377,17 @@ Rectangle {
 
         Rectangle {
             width: parent.width
-            height: btPage.height * 0.50
+            height: btPage.listHeight
             radius: btPage.height * 0.02
-            color: "#082839"
-            border.color: "#3D717E"
+            color: Theme.glassFill
+            border.color: Theme.glassBorder
             border.width: 1
             visible: btSwitch.checked
 
             //Scanning overlay
             Rectangle {
                 anchors.fill: parent
-                color: "#082839"
+                color: Theme.surface
                 opacity: 0.9
                 visible: isScanning && deviceListModel.count === 0
                 radius: parent.radius
@@ -406,14 +400,14 @@ Rectangle {
                     Rectangle {
                         width: 40; height: 40
                         color: "transparent"
-                        border.color: "#D08831"
+                        border.color: btPage.accent
                         border.width: 3
                         radius: width / 2
                         anchors.horizontalCenter: parent.horizontalCenter
 
                         Rectangle {
                             width: 6; height: 6
-                            color: "#082839"
+                            color: Theme.surface
                             anchors.top: parent.top
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
@@ -428,7 +422,7 @@ Rectangle {
 
                     Text {
                         text: "Scanning..."
-                        color: "#D08831"
+                        color: btPage.accent
                         font.pixelSize: btPage.height * 0.025
                         font.family: "Arial"
                         font.bold: true
@@ -450,7 +444,7 @@ Rectangle {
                 }
                 Text {
                     text: "No devices found"
-                    color: "#3D717E"
+                    color: Theme.textSecondary
                     font.pixelSize: btPage.height * 0.025
                     font.family: "Arial"
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -460,11 +454,11 @@ Rectangle {
             ListView {
                 id: deviceListView
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.margins: btPage.listPadding
                 anchors.rightMargin: 18
                 clip: true
                 model: deviceListModel
-                spacing: 6
+                spacing: btPage.rowSpacing
 
                 ScrollBar.vertical: ScrollBar {
                     width: 6
@@ -472,12 +466,12 @@ Rectangle {
                     contentItem: Rectangle {
                         implicitWidth: 6
                         radius: 3
-                        color: parent.pressed ? "#964405" : "#D08831"
+                        color: parent.pressed ? Theme.tint(btPage.accent, 0.32) : btPage.accent
                         opacity: 0.8
                     }
                     background: Rectangle {
                         implicitWidth: 6
-                        color: "#082839"
+                        color: Theme.surface
                         radius: 3
                         opacity: 0.3
                     }
@@ -489,10 +483,10 @@ Rectangle {
                     required property string address
                     required property bool   paired
                     width: deviceListView.width - 8
-                    height: btPage.height / 12
+                    height: btPage.rowHeight
                     radius: height / 4
-                    color: rowHover.containsMouse ? "#964405" : (isConnected ? "#5A3211" : "#10475E")
-                    border.color: isConnected ? "#D08831" : "#3D717E"
+                    color: rowHover.containsMouse ? Theme.tint(btPage.accent, 0.32) : (isConnected ? Theme.tint(btPage.accent, 0.18) : Theme.glassFill)
+                    border.color: isConnected ? btPage.accent : Theme.glassBorder
                     border.width: isConnected ? 2 : 1
                     Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -509,7 +503,7 @@ Rectangle {
                         Text {
                             text: devRow.isConnected ? "🔵" : "⬡"
                             font.pixelSize: parent.parent.height * 0.4
-                            color: devRow.isConnected ? "#D08831" : "#e7f1ef"
+                            color: devRow.isConnected ? btPage.accent : Theme.textPrimary
                             anchors.verticalCenter: parent.verticalCenter
                         }
 
@@ -524,7 +518,7 @@ Rectangle {
                             Text {
                                 text: devRow.name
                                 font.pixelSize: parent.parent.parent.height * 0.32
-                                color: devRow.isConnected ? "#D08831" : "#e7f1ef"
+                                color: devRow.isConnected ? btPage.accent : Theme.textPrimary
                                 font.bold: true
                                 font.family: "Arial"
                                 elide: Text.ElideRight
@@ -533,7 +527,7 @@ Rectangle {
                             Text {
                                 text: devRow.address
                                 font.pixelSize: parent.parent.parent.height * 0.22
-                                color: "#3D717E"
+                                color: Theme.textSecondary
                                 font.family: "Arial"
                                 elide: Text.ElideRight
                                 width: parent.width
@@ -548,13 +542,13 @@ Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
 
                             color: {
-                                if (devRow.isDisconnecting) return "#1a3a5c"
+                                if (devRow.isDisconnecting) return Theme.glassFill
                                 if (devRow.isConnected)
-                                    return connArea.containsMouse ? "#ff4444" : "#aa2222" 
-                                if (devRow.isConnecting) return "#1a4a7a"
-                                return connArea.containsMouse ? "#964405" : "#5A3211"
+                                    return connArea.containsMouse ? Theme.danger : Theme.tint(Theme.danger, 0.35) 
+                                if (devRow.isConnecting) return Theme.glassFill
+                                return connArea.containsMouse ? Theme.tint(btPage.accent, 0.32) : Theme.tint(btPage.accent, 0.18)
                             }
-                            border.color: devRow.isConnected ? "#ff4444" : "#D08831"
+                            border.color: devRow.isConnected ? Theme.danger : btPage.accent
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -630,15 +624,14 @@ Rectangle {
         property int    passkey: 0
 
         Overlay.modal: Rectangle {
-            color: "#000000"
-            opacity: 0.6
+            color: Theme.scrim
             Behavior on opacity { NumberAnimation { duration: 180 } }
         }
 
         background: Rectangle {
-            color: "#082839"
+            color: Theme.surface
             radius: 18
-            border.color: "#D08831"
+            border.color: btPage.accent
             border.width: 2
         }
 
@@ -649,7 +642,7 @@ Rectangle {
 
             Text {
                 text: "Pairing Request"
-                color: "#D08831"
+                color: btPage.accent
                 font.pixelSize: btPage.height * 0.042
                 font.bold: true
                 font.family: "Arial"
@@ -658,7 +651,7 @@ Rectangle {
 
             Text {
                 text: pairingPopup.deviceName
-                color: "#e7f1ef"
+                color: Theme.textPrimary
                 font.pixelSize: btPage.height * 0.032
                 font.bold: true
                 font.family: "Arial"
@@ -671,7 +664,7 @@ Rectangle {
             Text {
                 visible: pairingPopup.passkey > 0
                 text: String(pairingPopup.passkey).padStart(6, "0")
-                color: "#D08831"
+                color: btPage.accent
                 font.pixelSize: btPage.height * 0.075
                 font.bold: true
                 font.family: "Arial"
@@ -683,7 +676,7 @@ Rectangle {
                 text: pairingPopup.passkey > 0
                       ? "Confirm this code matches the one on your phone"
                       : "Allow this device to pair with the vehicle?"
-                color: "#3D717E"
+                color: Theme.textSecondary
                 font.pixelSize: btPage.height * 0.024
                 font.family: "Arial"
                 width: parent.width
@@ -699,7 +692,7 @@ Rectangle {
                     width: btPage.width * 0.18
                     height: btPage.height * 0.075
                     radius: height / 3
-                    color: rejectArea.containsMouse ? "#ff4444" : "#aa2222"
+                    color: rejectArea.containsMouse ? Theme.danger : Theme.tint(Theme.danger, 0.35)
                     Behavior on color { ColorAnimation { duration: 150 } }
 
                     Text {
@@ -725,15 +718,15 @@ Rectangle {
                     width: btPage.width * 0.18
                     height: btPage.height * 0.075
                     radius: height / 3
-                    color: acceptArea.containsMouse ? "#964405" : "#5A3211"
-                    border.color: "#D08831"
+                    color: acceptArea.containsMouse ? Theme.tint(btPage.accent, 0.32) : Theme.tint(btPage.accent, 0.18)
+                    border.color: btPage.accent
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
                     Text {
                         anchors.centerIn: parent
                         text: "Pair"
-                        color: "#e7f1ef"
+                        color: Theme.textPrimary
                         font.pixelSize: parent.height * 0.36
                         font.bold: true
                         font.family: "Arial"
@@ -762,20 +755,20 @@ Rectangle {
     Rectangle {
         width: btPage.width / 8
         height: btPage.height / 16
-        color: backBtnArea.containsMouse ? "#964405" : "#5A3211"
+        color: backBtnArea.containsMouse ? Theme.tint(btPage.accent, 0.32) : Theme.tint(btPage.accent, 0.18)
         radius: height / 4
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.bottomMargin: parent.height * 0.04
         anchors.leftMargin: parent.width * 0.08
-        border.color: "#D08831"
+        border.color: btPage.accent
         border.width: 1
         Behavior on color { ColorAnimation { duration: 150 } }
 
         Text {
             text: "Back"
             font.pixelSize: parent.height * 0.45
-            color: "#e7f1ef"
+            color: Theme.textPrimary
             font.bold: true
             font.family: "Arial"
             anchors.centerIn: parent

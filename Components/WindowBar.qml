@@ -72,6 +72,25 @@ Rectangle {
     required property string color1
     required property string color2
 
+    /*
+     * Colour of everything the bar draws on top of that gradient: icon
+     * outlines, pressed fills, slider tracks and handles. Defaults to the
+     * amber the pages were built around, so a page that says nothing keeps
+     * exactly the bar it had — only the ones opting into the glass theme pass
+     * something else.
+     */
+    property color accent: "#D08831"
+
+    // The page name. Separate from `accent` because the icons want the page's
+    // colour and the title wants to be read — defaults to the accent so the
+    // pages still on the old theme keep their amber heading.
+    property color titleColor: accent
+
+    // Backing for the brightness/volume flyouts. Same reasoning as `accent`:
+    // it has to move with the page's palette or the popups drop a slab of the
+    // old teal onto a page that no longer has any.
+    property color surface: "#082839"
+
     property real brightnessValue: 1.0
     property real volumeValue: 0.7
     property real volumeMax: 100      // >100 enables software boost past 0 dB
@@ -107,8 +126,8 @@ Rectangle {
     Rectangle {
         id: backBtn
         width: 28; height: 28; radius: 10
-        color: backMouse.pressed ? "#D08831" : "transparent"
-        border.color: "#D08831"
+        color: backMouse.pressed ? titleBar.accent : "transparent"
+        border.color: titleBar.accent
         border.width: 1
         anchors.left: parent.left
         anchors.leftMargin: 12
@@ -136,7 +155,7 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         text: titleName
-        color: "#D08831"
+        color: titleBar.titleColor
         font.bold: true
         font.family: "Arial"
         font.pointSize: 14
@@ -165,8 +184,8 @@ Rectangle {
             id: wifiBtn
             width: 28; height: 28; radius: 10
             visible: WifiManager.connectedSsid !== ""
-            color: wifiMouse.pressed ? "#D08831" : "transparent"
-            border.color: "#D08831"
+            color: wifiMouse.pressed ? titleBar.accent : "transparent"
+            border.color: titleBar.accent
             border.width: 1
 
             Image {
@@ -193,8 +212,8 @@ Rectangle {
             // Not btManager.connected: that one follows the media player, so a
             // connected phone that is not playing anything reads as false.
             visible: BluetoothManager.anyDeviceConnected
-            color: btMouse.pressed ? "#D08831" : "transparent"
-            border.color: "#D08831"
+            color: btMouse.pressed ? titleBar.accent : "transparent"
+            border.color: titleBar.accent
             border.width: 1
 
             Image {
@@ -218,8 +237,8 @@ Rectangle {
         Rectangle {
             id: brightnessBtn
             width: 28; height: 28; radius: 10
-            color: brightnessMouse.pressed ? "#D08831" : "transparent"
-            border.color: "#D08831"
+            color: brightnessMouse.pressed ? titleBar.accent : "transparent"
+            border.color: titleBar.accent
             border.width: 1
 
             Image {
@@ -253,7 +272,7 @@ Rectangle {
                 // popup centred on one hangs off the side of the display.
                 anchors.right: parent.right
                 color: Qt.rgba(0.02, 0.04, 0.08, 0.96)
-                border.color: Qt.rgba(0.82, 0.53, 0.19, 0.5)
+                border.color: Qt.rgba(titleBar.accent.r, titleBar.accent.g, titleBar.accent.b, 0.5)
                 border.width: 1
                 radius: 14
                 z: 999
@@ -294,14 +313,14 @@ Rectangle {
                             width: brightnessSlider.availableWidth
                             height: 4
                             radius: 2
-                            color: "#082839"
+                            color: titleBar.surface
 
                             Rectangle {
                                 x: 0
                                 y: 0
                                 width: brightnessSlider.visualPosition * parent.width
                                 height: parent.height
-                                color: "#D08831"
+                                color: titleBar.accent
                                 radius: 2
                             }
                         }
@@ -312,7 +331,7 @@ Rectangle {
                             width: 14
                             height: 14
                             radius: 7
-                            color: brightnessSlider.pressed ? "#ffffff" : "#D08831"
+                            color: brightnessSlider.pressed ? "#ffffff" : titleBar.accent
                             border.color: "#ffffff"
                             border.width: 1.5
                         }
@@ -321,7 +340,7 @@ Rectangle {
                     Text {
                         text: Math.round(titleBar.brightnessValue * 100) + "%"
                         width: 25
-                        color: "#D08831"
+                        color: titleBar.accent
                         font { pixelSize: 11; bold: true; family: "Arial" }
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -333,8 +352,8 @@ Rectangle {
         Rectangle {
             id: volumeBtn
             width: 28; height: 28; radius: 10
-            color: volumeMouse.pressed ? "#D08831" : "transparent"
-            border.color: "#D08831"
+            color: volumeMouse.pressed ? titleBar.accent : "transparent"
+            border.color: titleBar.accent
             border.width: 1
 
             Image {
@@ -364,7 +383,7 @@ Rectangle {
                 anchors.topMargin: 8
                 anchors.right: parent.right      // see brightnessPopup
                 color: Qt.rgba(0.02, 0.04, 0.08, 0.96)
-                border.color: Qt.rgba(0.82, 0.53, 0.19, 0.5)
+                border.color: Qt.rgba(titleBar.accent.r, titleBar.accent.g, titleBar.accent.b, 0.5)
                 border.width: 1
                 radius: 14
                 z: 999
@@ -378,8 +397,8 @@ Rectangle {
                     // Mute toggle
                     Rectangle {
                         width: 24; height: 24; radius: 6
-                        color: muteArea.containsMouse ? Qt.rgba(0.82, 0.53, 0.19, 0.3) : "transparent"
-                        border.color: "#D08831"
+                        color: muteArea.containsMouse ? Qt.rgba(titleBar.accent.r, titleBar.accent.g, titleBar.accent.b, 0.3) : "transparent"
+                        border.color: titleBar.accent
                         border.width: 1
                         anchors.verticalCenter: parent.verticalCenter
 
@@ -420,14 +439,14 @@ Rectangle {
                             width: volumeSlider.availableWidth
                             height: 4
                             radius: 2
-                            color: "#082839"
+                            color: titleBar.surface
 
                             Rectangle {
                                 x: 0
                                 y: 0
                                 width: volumeSlider.visualPosition * parent.width
                                 height: parent.height
-                                color: "#D08831"
+                                color: titleBar.accent
                                 radius: 2
                             }
                         }
@@ -438,7 +457,7 @@ Rectangle {
                             width: 14
                             height: 14
                             radius: 7
-                            color: volumeSlider.pressed ? "#ffffff" : "#D08831"
+                            color: volumeSlider.pressed ? "#ffffff" : titleBar.accent
                             border.color: "#ffffff"
                             border.width: 1.5
                         }

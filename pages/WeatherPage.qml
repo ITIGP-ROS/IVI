@@ -1,10 +1,29 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Window
-import Qt5Compat.GraphicalEffects
 
 pragma ComponentBehavior: Bound
 
+/*
+ * Weather, on the home screen's glass.
+ *
+ * Three things changed from the teal-and-amber version:
+ *
+ *  - The palette is Theme's, and the backdrop is the shared GlassBackground, so
+ *    this page and Settings cannot drift apart.
+ *
+ *  - Every icon is drawn (WeatherGlyph) instead of typed as an emoji. The old
+ *    ones — ☀️ 🌧️ 💨 🧭 — are not in Liberation Sans, which is what "Arial"
+ *    resolves to on both the dev laptop and the Yocto image, so the entire icon
+ *    set was rendering as tofu boxes.
+ *
+ *  - Qt5Compat's InnerShadow/DropShadow are gone. There were seven stacked
+ *    shadow chains here, each an offscreen render target, and the drop shadow
+ *    sat outside the pane and gave every card a hard edge. GlassCard gets the
+ *    same depth from a halo and a sheen gradient with no extra layers.
+ *
+ * The data path is untouched: WeatherStore still owns fetching and caching, and
+ * applyWeather() still paints from either a fresh reply or the cache.
+ */
 Item {
     id: root
 
@@ -12,56 +31,164 @@ Item {
     property int currentHour: 2
     property string city: "Giza"
 
-    // BACKGROUND — autumn dark navy
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#082839" }
-            GradientStop { position: 0.5; color: "#10475E" }
-            GradientStop { position: 1.0; color: "#082839" }
-        }
+    // ---- layout -------------------------------------------------------------
+    readonly property real gutter:    width * 0.042
+    readonly property real colGap:    width * 0.014
+    readonly property real rowGap:    height * 0.022
+    readonly property real innerW:    width - gutter * 2
+    // The window bar is drawn over this page rather than above it.
+    readonly property real barClear:  height * 0.088
 
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.04
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = "#dd9c4d"
-                var step = 40
-                for (var x = 0; x < width; x += step) {
-                    for (var y = 0; y < height; y += step) {
-                        ctx.beginPath()
-                        ctx.arc(x, y, 1.5, 0, Math.PI * 2)
-                        ctx.fill()
-                    }
-                }
-            }
+    readonly property real headerH:   height * 0.105
+    readonly property real rowAH:     height * 0.300
+    readonly property real rowBH:     height * 0.372
+
+    // ---- condition ----------------------------------------------------------
+    /*
+     * The current condition as a WeatherGlyph kind. Held as state rather than
+     * recomputed at each use site: the hero glyph, the card's accent and the
+     * backdrop's orbs all key off it, and they must never disagree.
+     */
+    property string conditionKind: "partly-day"
+
+    /*
+     * One hue per condition. This is what makes the page feel like weather
+     * rather than like a table — the glow behind the glass is amber at noon,
+     * violet at night and blue in rain, and it is the same hue on the hero
+     * card's halo and on the backdrop's orbs.
+     */
+    function conditionAccent(kind) {
+        switch (kind) {
+        case "clear-day":    return Theme.accentAmber
+        case "showers":
+        case "partly-day":   return Theme.accentCyan
+        case "clear-night":
+        case "partly-night": return Theme.accentViolet
+        case "rain":
+        case "drizzle":      return Theme.accentBlue
+        case "snow":         return "#bcd8f5"
+        case "thunder":      return "#c9a6ff"
+        case "fog":
+        case "overcast":     return Theme.textSecondary
+        default:             return Theme.accentCyan
         }
     }
+    readonly property color conditionColor: root.conditionAccent(root.conditionKind)
 
-    // Dark overlay for readability
-    Rectangle {
+    function weatherKind(code, isDay) {
+        if (code === 0)  return isDay ? "clear-day"  : "clear-night"
+        if (code <= 2)   return isDay ? "partly-day" : "partly-night"
+        if (code === 3)  return "overcast"
+        if (code <= 48)  return "fog"
+        if (code <= 55)  return "drizzle"
+        if (code <= 65)  return "rain"
+        if (code <= 67)  return "rain"
+        if (code <= 77)  return "snow"
+        if (code <= 82)  return "showers"
+        if (code <= 86)  return "snow"
+        if (code <= 99)  return "thunder"
+        return "partly-day"
+    }
+
+    // Shown under the title when a search comes back empty. Without it a bad
+    // city name silently cleared the box and nothing else happened.
+    property string statusNote: ""
+
+    // ---- models -------------------------------------------------------------
+    // `t`, `tmax` and `tmin` are the numeric twins of the display strings. The
+    // curve and the range bars need to do arithmetic, and parsing "19°C" back
+    // out of the label at paint time is the kind of thing that works until a
+    // locale puts a minus sign in front of it.
+    ListModel {
+        id: weatherInfoModel
+        ListElement { label: "Wind Speed";     glyph: "wind";     value: "12 km/h"  }
+        ListElement { label: "Humidity";       glyph: "humidity"; value: "65%"      }
+        ListElement { label: "Wind Direction"; glyph: "compass";  value: "270°"     }
+        ListElement { label: "Pressure";       glyph: "pressure"; value: "1013 hPa" }
+    }
+    ListModel {
+        id: hourlyWeatherModel
+        ListElement { time: "12 AM"; temp: "19°C"; t: 19 } ListElement { time: "1 AM";  temp: "18°C"; t: 18 }
+        ListElement { time: "2 AM";  temp: "18°C"; t: 18 } ListElement { time: "3 AM";  temp: "17°C"; t: 17 }
+        ListElement { time: "4 AM";  temp: "17°C"; t: 17 } ListElement { time: "5 AM";  temp: "17°C"; t: 17 }
+        ListElement { time: "6 AM";  temp: "18°C"; t: 18 } ListElement { time: "7 AM";  temp: "19°C"; t: 19 }
+        ListElement { time: "8 AM";  temp: "21°C"; t: 21 } ListElement { time: "9 AM";  temp: "23°C"; t: 23 }
+        ListElement { time: "10 AM"; temp: "25°C"; t: 25 } ListElement { time: "11 AM"; temp: "27°C"; t: 27 }
+        ListElement { time: "12 PM"; temp: "29°C"; t: 29 } ListElement { time: "1 PM";  temp: "30°C"; t: 30 }
+        ListElement { time: "2 PM";  temp: "31°C"; t: 31 } ListElement { time: "3 PM";  temp: "31°C"; t: 31 }
+        ListElement { time: "4 PM";  temp: "30°C"; t: 30 } ListElement { time: "5 PM";  temp: "28°C"; t: 28 }
+        ListElement { time: "6 PM";  temp: "26°C"; t: 26 } ListElement { time: "7 PM";  temp: "24°C"; t: 24 }
+        ListElement { time: "8 PM";  temp: "23°C"; t: 23 } ListElement { time: "9 PM";  temp: "22°C"; t: 22 }
+        ListElement { time: "10 PM"; temp: "21°C"; t: 21 } ListElement { time: "11 PM"; temp: "20°C"; t: 20 }
+    }
+    ListModel {
+        id: dailyWeatherModel
+        ListElement { day: "Today";     uvIndex: 2.1; maxTemp: "26°C"; minTemp: "15°C"; tmax: 26; tmin: 15 }
+        ListElement { day: "Tomorrow";  uvIndex: 2.5; maxTemp: "27°C"; minTemp: "17°C"; tmax: 27; tmin: 17 }
+        ListElement { day: "Tuesday";   uvIndex: 4.0; maxTemp: "28°C"; minTemp: "17°C"; tmax: 28; tmin: 17 }
+        ListElement { day: "Wednesday"; uvIndex: 4.6; maxTemp: "27°C"; minTemp: "17°C"; tmax: 27; tmin: 17 }
+        ListElement { day: "Thursday";  uvIndex: 5.9; maxTemp: "29°C"; minTemp: "18°C"; tmax: 29; tmin: 18 }
+        ListElement { day: "Friday";    uvIndex: 7.1; maxTemp: "32°C"; minTemp: "20°C"; tmax: 32; tmin: 20 }
+        ListElement { day: "Saturday";  uvIndex: 8.5; maxTemp: "33°C"; minTemp: "21°C"; tmax: 33; tmin: 21 }
+    }
+
+    function uvColor(uv) {
+        const v = Math.round(uv)
+        return v <= 2 ? Theme.success
+             : v <= 5 ? Theme.accentAmber
+             : v <= 7 ? "#f4a445"
+             : v <= 10 ? Theme.danger
+                       : "#c060c0"
+    }
+
+    // Span of the week, so every day's bar is drawn on the same scale — a bar
+    // per row normalised to itself would make every day look identical.
+    function weekSpan() {
+        let lo = 1e9, hi = -1e9
+        for (let i = 0; i < dailyWeatherModel.count; i++) {
+            const e = dailyWeatherModel.get(i)
+            if (e.tmin < lo) lo = e.tmin
+            if (e.tmax > hi) hi = e.tmax
+        }
+        if (lo > hi) { lo = 0; hi = 1 }
+        if (hi - lo < 1) hi = lo + 1
+        return { lo: lo, hi: hi }
+    }
+    property var span: ({ lo: 15, hi: 33 })
+
+    // ==================================================== BACKDROP
+    GlassBackground {
+        z: -1
         anchors.fill: parent
-        color: "#000000"
-        opacity: 0.1
+        orbA: root.conditionColor
+        // Well under the default: the condition hues are saturated, and at full
+        // strength one of them washes the whole page and takes the glass with it.
+        orbAStrength: 0.24
+        orbB: Theme.accentBlue
+        orbBStrength: 0.30
+        Behavior on orbA { ColorAnimation { duration: 600 } }
     }
 
     WindowBar {
         id: titleBar
-        z: 1
+        z: 2
         window: mainWindow
         titleName: "Weather"
         showBackButton: true
         onBackRequested: root.goBack()
-        color0: '#082839'
-        color1: '#10475E'
-        color2: '#3D717E'
+
+        color0: Theme.gradientTop
+        color1: Theme.gradientMid
+        color2: Theme.gradientBot
+        accent: Theme.accentCyan
+        titleColor: Theme.textPrimary
+        surface: Theme.surface
 
         brightnessValue: mainWindow.appBrightness
         volumeValue: systemVolume.volume
         volumeMax: systemVolume.maxVolume
         volumeMuted: systemVolume.muted
-        
+
         onBrightnessChanged: (value) => mainWindow.appBrightness = value
         onVolumeChanged: (value) => systemVolume.volume = value
         onVolumeMuteToggled: systemVolume.toggleMute()
@@ -70,476 +197,364 @@ Item {
         onBluetoothRequested: mainWindow.openSettingsSection("bluetooth")
     }
 
-    // Weather helper
-    function weatherEmoji(code, isDay) {
-        if (code === 0)  return isDay ? "☀️"  : "🌙"
-        if (code <= 2)   return isDay ? "🌤️" : "🌙"
-        if (code === 3)  return "☁️"
-        if (code <= 48)  return "🌫️"
-        if (code <= 55)  return "🌦️"
-        if (code <= 57)  return "🌧️"
-        if (code <= 65)  return "🌧️"
-        if (code <= 67)  return "🌨️"
-        if (code <= 75)  return "❄️"
-        if (code <= 77)  return "🌨️"
-        if (code <= 82)  return "🌦️"
-        if (code <= 86)  return "❄️"
-        if (code <= 99)  return "⛈️"
-        return "🌡️"
-    }
-
-    // Models
-    ListModel {
-        id: weatherInfoModel
-        ListElement { label: "Wind Speed";     emoji: "💨"; value: "12 km/h"  }
-        ListElement { label: "Humidity";       emoji: "💧"; value: "65%"      }
-        ListElement { label: "Wind Direction"; emoji: "🧭"; value: "270°"     }
-        ListElement { label: "Pressure";       emoji: "🔵"; value: "1013 hPa" }
-    }
-    ListModel {
-        id: hourlyWeatherModel
-        ListElement { time: "12 AM"; temp: "19°C" } ListElement { time: "1 AM";  temp: "18°C" }
-        ListElement { time: "2 AM";  temp: "18°C" } ListElement { time: "3 AM";  temp: "17°C" }
-        ListElement { time: "4 AM";  temp: "17°C" } ListElement { time: "5 AM";  temp: "17°C" }
-        ListElement { time: "6 AM";  temp: "18°C" } ListElement { time: "7 AM";  temp: "19°C" }
-        ListElement { time: "8 AM";  temp: "21°C" } ListElement { time: "9 AM";  temp: "23°C" }
-        ListElement { time: "10 AM"; temp: "25°C" } ListElement { time: "11 AM"; temp: "27°C" }
-        ListElement { time: "12 PM"; temp: "29°C" } ListElement { time: "1 PM";  temp: "30°C" }
-        ListElement { time: "2 PM";  temp: "31°C" } ListElement { time: "3 PM";  temp: "31°C" }
-        ListElement { time: "4 PM";  temp: "30°C" } ListElement { time: "5 PM";  temp: "28°C" }
-        ListElement { time: "6 PM";  temp: "26°C" } ListElement { time: "7 PM";  temp: "24°C" }
-        ListElement { time: "8 PM";  temp: "23°C" } ListElement { time: "9 PM";  temp: "22°C" }
-        ListElement { time: "10 PM"; temp: "21°C" } ListElement { time: "11 PM"; temp: "20°C" }
-    }
-    ListModel {
-        id: dailyWeatherModel
-        ListElement { day: "Today";     uvIndex: 2.1; maxTemp: "26°C"; minTemp: "15°C" }
-        ListElement { day: "Tomorrow";  uvIndex: 2.5; maxTemp: "27°C"; minTemp: "17°C" }
-        ListElement { day: "Tuesday";   uvIndex: 4.0; maxTemp: "28°C"; minTemp: "17°C" }
-        ListElement { day: "Wednesday"; uvIndex: 4.6; maxTemp: "27°C"; minTemp: "17°C" }
-        ListElement { day: "Thursday";  uvIndex: 5.9; maxTemp: "29°C"; minTemp: "18°C" }
-        ListElement { day: "Friday";    uvIndex: 7.1; maxTemp: "32°C"; minTemp: "20°C" }
-        ListElement { day: "Saturday";  uvIndex: 8.5; maxTemp: "33°C"; minTemp: "21°C" }
-    }
-
-    // Refresh button — autumn styled
-    Rectangle {
-        id: refreshBtn
-        width: root.height * 0.065
-        height: root.height * 0.065
-        color: "#3D717E"
-        anchors { left: parent.left; leftMargin: root.width * 0.045; top: titleBar.bottom; topMargin: root.height * 0.028 }
-        radius: width / 2
-        border.color: "#dd9c4d"; border.width: 1
-        opacity: 0.9
-        z: 5
-        Behavior on scale   { NumberAnimation { duration: 120 } }
-        Behavior on opacity { NumberAnimation { duration: 120 } }
-        
-        Image{
-            anchors.centerIn: parent
-            width: 18; height: 18
-            fillMode: Image.PreserveAspectFit
-            source: "qrc:/assets/icons/reload.png"
+    // ==================================================== HEADER
+    Item {
+        id: header
+        anchors {
+            left: parent.left;   leftMargin:  root.gutter
+            right: parent.right; rightMargin: root.gutter
+            top: parent.top;     topMargin:   root.barClear
         }
+        height: root.headerH
 
-        MouseArea {
-            anchors.fill: parent; hoverEnabled: true
-            onEntered:  refreshBtn.opacity = 1.0
-            onExited:   refreshBtn.opacity = 0.9
-            onPressed:  refreshBtn.scale   = 0.88
-            // Forced: the refresh button exists precisely to overrule the TTL.
-            onReleased: { refreshBtn.scale = 1.0; root.showCity(cityInputHidden.text, true) }
-        }
-    }
-
-    // Main Content
-    Column {
-        id: mainContent
-        width: parent.width
-        anchors { top: titleBar.bottom; topMargin: root.height * 0.028; horizontalCenter: parent.horizontalCenter }
-        spacing: root.height * 0.028
-
-        // Search field — glass style (read-only, opens keyboard popup)
-        Rectangle {
-            id: cityInputContainer
-            width: root.width * 0.3
-            height: root.height * 0.055
-            anchors.horizontalCenter: parent.horizontalCenter
-            color: "#082839"
-            radius: root.height * 0.027
-            border.color: cityInputMouse.containsMouse ? "#dd9c4d" : "#3D717E"
-            border.width: cityInputMouse.containsMouse ? 2 : 1
-            opacity: 0.85
+        Column {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: root.height * 0.006
+            width: parent.width * 0.5
 
             Text {
-                id: cityInputDisplay
-                anchors.fill: parent
-                anchors.leftMargin: root.width * 0.012
-                anchors.rightMargin: root.width * 0.012
-                verticalAlignment: Text.AlignVCenter
-                font { pointSize: root.height * 0.016; family: "Arial" }
-                color: "white"
-                text: cityInputHidden.text
+                id: cityName
+                text: "Cairo, Egypt"
+                color: Theme.textPrimary
+                font { bold: true; family: "Arial"; pixelSize: root.height * 0.048 }
                 elide: Text.ElideRight
+                width: parent.width
             }
-
             Text {
-                id: cityPlaceholder
-                anchors.fill: parent
-                anchors.leftMargin: root.width * 0.012
-                verticalAlignment: Text.AlignVCenter
-                text: "🔍 Enter city name..."
-                color: '#dd9c4d'
-                font { pointSize: root.height * 0.016; family: "Arial" }
-                visible: cityInputHidden.text === ""
+                text: root.statusNote !== "" ? root.statusNote
+                                             : qsTr("Population ") + populationValue.text
+                color: root.statusNote !== "" ? Theme.accentAmber : Theme.textSecondary
+                font { family: "Arial"; pixelSize: root.height * 0.024 }
+                elide: Text.ElideRight
+                width: parent.width
             }
-
-            MouseArea {
-                id: cityInputMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: keyboardPopup.open()
-                onEntered: cityInputContainer.scale = 1.05
-                onExited: cityInputContainer.scale = 1.0
-            }
-
-            Behavior on scale { NumberAnimation { duration: 120 } }
         }
 
-        // Main info banner — GLASS MORPHISM
-        Item {
-            id: mainInfoContainer
-            width: root.width * 0.8; height: root.height * 0.13
-            anchors.horizontalCenter: parent.horizontalCenter
+        // Holds the value so the line above can read it without applyWeather
+        // needing to know how the header is laid out.
+        Text { id: populationValue; visible: false; text: "137,844" }
 
+        Row {
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            spacing: root.width * 0.010
+
+            // SEARCH — a glass well rather than a filled box, so it belongs to
+            // the same surface family as the cards.
             Rectangle {
-                id: mainInfoGlass
-                anchors.fill: parent
-                radius: root.height * 0.025
-                color: "#3D717E"
+                id: cityInputContainer
+                width: root.width * 0.235
+                height: root.height * 0.062
+                radius: height / 2
+                color: cityInputMouse.containsMouse ? Theme.glassFillHover : Theme.glassFill
                 border.width: 1
-                border.color: "#50FFFFFF"
-                visible: false
+                border.color: cityInputMouse.containsMouse
+                              ? Theme.tint(Theme.accentCyan, 0.55) : Theme.glassBorder
+                Behavior on color        { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                WeatherGlyph {
+                    id: searchGlyph
+                    kind: "search"
+                    tint: cityInputMouse.containsMouse ? Theme.accentCyan : Theme.textSecondary
+                    width: parent.height * 0.46; height: width
+                    anchors {
+                        left: parent.left; leftMargin: parent.height * 0.34
+                        verticalCenter: parent.verticalCenter
+                    }
+                    Behavior on tint { ColorAnimation { duration: 150 } }
+                }
+
+                Text {
+                    anchors {
+                        left: searchGlyph.right; leftMargin: parent.height * 0.28
+                        right: parent.right;     rightMargin: parent.height * 0.34
+                        verticalCenter: parent.verticalCenter
+                    }
+                    text: cityInputHidden.text !== "" ? cityInputHidden.text
+                                                      : qsTr("Search a city")
+                    color: cityInputHidden.text !== "" ? Theme.textPrimary : Theme.textMuted
+                    font { family: "Arial"; pixelSize: root.height * 0.026 }
+                    elide: Text.ElideRight
+                }
+
+                MouseArea {
+                    id: cityInputMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: keyboardPopup.open()
+                }
             }
 
-            InnerShadow {
-                id: mainInfoInner
-                anchors.fill: mainInfoGlass
-                source: mainInfoGlass
-                horizontalOffset: -3
-                verticalOffset: -3
-                radius: 10
-                samples: 20
-                color: "#80FFFFFF"
-                visible: false
-            }
+            // REFRESH
+            Rectangle {
+                id: refreshBtn
+                width: root.height * 0.062
+                height: width
+                radius: width / 2
+                color: refreshMouse.containsMouse ? Theme.glassFillHover : Theme.glassFill
+                border.width: 1
+                border.color: refreshMouse.containsMouse
+                              ? Theme.tint(Theme.accentCyan, 0.55) : Theme.glassBorder
+                scale: refreshMouse.pressed ? 0.9 : 1.0
+                Behavior on scale        { NumberAnimation { duration: 120 } }
+                Behavior on color        { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
 
-            DropShadow {
-                anchors.fill: mainInfoGlass
-                source: mainInfoInner
-                horizontalOffset: 6
-                verticalOffset: 6
-                radius: 14
-                samples: 28
-                color: "#50000000"
-            }
+                WeatherGlyph {
+                    id: refreshGlyph
+                    kind: "refresh"
+                    tint: refreshMouse.containsMouse ? Theme.accentCyan : Theme.textSecondary
+                    width: parent.width * 0.5; height: width
+                    anchors.centerIn: parent
+                    Behavior on tint { ColorAnimation { duration: 150 } }
 
-            // Content on top
+                    // A full turn on tap. The reply usually lands from cache
+                    // before this finishes, so the spin is what tells you the
+                    // press registered at all.
+                    RotationAnimation {
+                        id: spin
+                        target: refreshGlyph
+                        from: 0; to: 360
+                        duration: 600
+                        easing.type: Easing.InOutQuad
+                    }
+                }
+
+                MouseArea {
+                    id: refreshMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    // Forced: the refresh button exists precisely to overrule the TTL.
+                    onClicked: { spin.restart(); root.showCity(cityInputHidden.text, true) }
+                }
+            }
+        }
+    }
+
+    // ==================================================== ROW A
+    Item {
+        id: rowA
+        anchors {
+            left: parent.left;   leftMargin:  root.gutter
+            right: parent.right; rightMargin: root.gutter
+            top: header.bottom;  topMargin:   root.rowGap
+        }
+        height: root.rowAH
+
+        // ---- NOW
+        GlassCard {
+            id: heroCard
+            width: root.innerW * 0.345
+            height: parent.height
+            accent: root.conditionColor
+            interactive: false
+            Behavior on accent { ColorAnimation { duration: 600 } }
+
             Row {
                 anchors.centerIn: parent
-                spacing: root.width * 0.015
-                Text { id: weatherEmojiText; text: "🌤️"; font.pointSize: root.height * 0.065; anchors.verticalCenter: parent.verticalCenter }
-                Rectangle { width: 1; height: root.height * 0.09; color: "#dd9c4d"; opacity: 0.5; anchors.verticalCenter: parent.verticalCenter }
-                Column {
-                    spacing: root.height * 0.005; anchors.verticalCenter: parent.verticalCenter
-                    Text { id: weatherDescription; text: "Partly Cloudy"; color: "white"; font { pointSize: root.height * 0.020; family: "Arial" } }
-                    // Temperatures read white, not amber. On the #3D717E card the
-                    // amber sits at about 2.3:1 against the background — legible
-                    // on a desk, not in a car with sun on the screen. White is
-                    // 5.4:1 on the same card. Amber stays for labels and rules,
-                    // where it is decoration rather than the number being read.
-                    Text { id: temperature;        text: "21°C";          color: "#FFFFFF"; font { pointSize: root.height * 0.040; family: "Arial"; bold: true } }
-                }
-                Item { width: root.width * 0.2; height: 1 }
-                Column {
-                    spacing: root.height * 0.014; anchors.verticalCenter: parent.verticalCenter
-                    Text { id: cityName;   text: "Cairo, Egypt"; color: "white"; font { pointSize: root.height * 0.026; family: "Arial"; bold: true } }
-                    Text { id: feelsLike;  text: "Feels like: 19°C"; color: "#DCEAF0"; font { pointSize: root.height * 0.02; family: "Arial" } }
-                }
-                Rectangle { width: 1; height: root.height * 0.09; color: "#dd9c4d"; opacity: 0.5; anchors.verticalCenter: parent.verticalCenter }
-                Column {
-                    spacing: root.height * 0.014; anchors.verticalCenter: parent.verticalCenter
-                    Text { text: "Population"; color: "white"; font { pointSize: root.height * 0.02; family: "Arial"; bold: true } }
-                    Text { id: populationValue; text: "137,844"; color: "#dd9c4d"; font { pointSize: root.height * 0.018; family: "Arial" } }
-                }
-            }
+                spacing: heroCard.width * 0.055
 
-            Behavior on scale   { NumberAnimation { duration: 120 } }
-            Behavior on opacity { NumberAnimation { duration: 120 } }
-            MouseArea {
-                anchors.fill: parent; hoverEnabled: true
-                onEntered: { mainInfoContainer.scale = 1.01; mainInfoContainer.opacity = 1.0 }
-                onExited:  { mainInfoContainer.scale = 1.0;  mainInfoContainer.opacity = 0.9 }
+                WeatherGlyph {
+                    kind: root.conditionKind
+                    tint: Theme.textPrimary
+                    accent: root.conditionColor
+                    width: heroCard.height * 0.44
+                    height: width
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: heroCard.height * 0.012
+
+                    Text {
+                        id: temperature
+                        text: "21°C"
+                        color: Theme.textPrimary
+                        font { bold: true; family: "Arial"
+                               pixelSize: heroCard.height * 0.33 }
+                    }
+                    Text {
+                        id: weatherDescription
+                        text: "Partly Cloudy"
+                        color: Theme.textPrimary
+                        font { family: "Arial"; pixelSize: heroCard.height * 0.115 }
+                    }
+                    Text {
+                        id: feelsLike
+                        text: "Feels like 19°C"
+                        color: Theme.textSecondary
+                        font { family: "Arial"; pixelSize: heroCard.height * 0.095 }
+                    }
+                }
             }
         }
 
-        // Hourly forecast — GLASS MORPHISM
-        Item {
-            id: hourlyContainer
-            width: root.width * 0.8; height: root.height * 0.18
-            anchors.horizontalCenter: parent.horizontalCenter
-            clip: true
+        // ---- 24 HOURS
+        GlassCard {
+            id: hourlyCard
+            anchors.right: parent.right
+            width: root.innerW - heroCard.width - root.colGap
+            height: parent.height
+            accent: Theme.accentCyan
+            interactive: false
 
-            Rectangle {
-                id: hourlyGlass
-                anchors.fill: parent
-                radius: root.height * 0.025
-                color: "#3D717E"
-                border.width: 1
-                border.color: "#50FFFFFF"
-                visible: false
-            }
-
-            InnerShadow {
-                id: hourlyInner
-                anchors.fill: hourlyGlass
-                source: hourlyGlass
-                horizontalOffset: -3
-                verticalOffset: -3
-                radius: 10
-                samples: 20
-                color: "#80FFFFFF"
-                visible: false
-            }
-
-            DropShadow {
-                anchors.fill: hourlyGlass
-                source: hourlyInner
-                horizontalOffset: 6
-                verticalOffset: 6
-                radius: 14
-                samples: 28
-                color: "#50000000"
+            Text {
+                id: hourlyTitle
+                anchors {
+                    left: parent.left; leftMargin: hourlyCard.width * 0.030
+                    top: parent.top;   topMargin:  hourlyCard.height * 0.10
+                }
+                text: qsTr("NEXT 24 HOURS")
+                color: Theme.textMuted
+                font { bold: true; family: "Arial"
+                       pixelSize: root.height * 0.021; letterSpacing: 1.2 }
             }
 
             Flickable {
-                anchors { fill: parent; margins: root.height * 0.02 }
-                contentWidth: hourlyRow.width
+                id: hourlyFlick
+                anchors {
+                    left: parent.left;     leftMargin:   hourlyCard.width * 0.024
+                    right: parent.right;   rightMargin:  hourlyCard.width * 0.024
+                    top: hourlyTitle.bottom; topMargin:  hourlyCard.height * 0.04
+                    bottom: parent.bottom; bottomMargin: hourlyCard.height * 0.07
+                }
+                contentWidth: hourStrip.width
                 flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
                 clip: true
-                Row {
-                    id: hourlyRow
-                    spacing: root.width * 0.02
-                    height: parent.height
-                    Repeater {
-                        model: hourlyWeatherModel
-                        delegate: Rectangle {
-                            id: hourlyDelegate
-                            required property string time
-                            required property string temp
-                            required property int    index
-                            property bool isCurrent: index === root.currentHour
-                            width: root.width * 0.08; height: hourlyRow.height
-                            // Idle tiles were brown (#5A3211) sitting on a teal
-                            // container, which fought the rest of the page and
-                            // left amber-on-brown text at ~4.7:1. Dark teal keeps
-                            // them in the page's palette and lets the temperature
-                            // be white at ~10:1. The current hour stays amber-on-
-                            // dark so it still reads as the selected one.
-                            color: hourlyDelegate.isCurrent ? "#dd9c4d" : "#0E3B4E"
-                            radius: root.height * 0.01
-                            opacity: hourlyDelegate.isCurrent ? 1.0 : 0.8
-                            border.color: hourlyDelegate.isCurrent ? "#FFFFFF" : "#dd9c4d"
-                            border.width: hourlyDelegate.isCurrent ? 2 : 1
-                            Behavior on scale   { NumberAnimation { duration: 120 } }
-                            Behavior on opacity { NumberAnimation { duration: 120 } }
-                            Column {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                topPadding: parent.height * 0.1
-                                spacing: root.height * 0.005
-                                Text { 
-                                    text: hourlyDelegate.time; color: hourlyDelegate.isCurrent ? "#082839" : "#A8C6D4"
-                                    font { pointSize: root.height * 0.02; family: "Arial" }
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                                Rectangle { width: parent.width * 0.8; height: 1; color: hourlyDelegate.isCurrent ? "#082839" : "#dd9c4d"; radius: width / 2; anchors.horizontalCenter: parent.horizontalCenter }
-                                Text { 
-                                    text: hourlyDelegate.temp;
-                                    color: hourlyDelegate.isCurrent ? "#082839" : "#FFFFFF";
-                                    font { 
-                                        pointSize: root.height * 0.035; 
-                                        bold: true; 
-                                        family: "Arial" 
-                                    } 
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
+
+                Item {
+                    id: hourStrip
+                    readonly property real slotW: root.width * 0.062
+                    width: slotW * hourlyWeatherModel.count
+                    height: hourlyFlick.height
+
+                    // Where the curve lives inside a slot, as fractions of the
+                    // strip height. The labels sit above and below it.
+                    readonly property real curveTop: height * 0.34
+                    readonly property real curveH:   height * 0.34
+
+                    /*
+                     * The temperature curve.
+                     *
+                     * One Canvas across the whole strip rather than a segment
+                     * per delegate: a shared canvas is the only way the line
+                     * between two hours can be drawn at all, and it means the
+                     * fill under it is one path instead of 24 abutting
+                     * trapezoids with seams between them.
+                     */
+                    Canvas {
+                        id: curve
+                        anchors.fill: parent
+                        onPaint: {
+                            const ctx = getContext("2d")
+                            ctx.reset()
+                            const n = hourlyWeatherModel.count
+                            if (n < 2) return
+
+                            let lo = 1e9, hi = -1e9
+                            for (let i = 0; i < n; i++) {
+                                const v = hourlyWeatherModel.get(i).t
+                                if (v < lo) lo = v
+                                if (v > hi) hi = v
                             }
-                            MouseArea {
-                                anchors.fill: parent; hoverEnabled: true
-                                onEntered: { hourlyDelegate.scale = 1.01; hourlyDelegate.opacity = 1.0; hourlyDelegate.border.width = 2 }
-                                onExited:  { hourlyDelegate.scale = 1.0;  hourlyDelegate.opacity = 0.8; hourlyDelegate.border.width = hourlyDelegate.isCurrent ? 2 : 1 }
+                            if (hi - lo < 1) hi = lo + 1
+
+                            const sw = hourStrip.slotW
+                            const top = hourStrip.curveTop
+                            const ch  = hourStrip.curveH
+                            const xy = i => ({
+                                x: sw * (i + 0.5),
+                                y: top + ch - ((hourlyWeatherModel.get(i).t - lo) / (hi - lo)) * ch
+                            })
+
+                            // Area under the line, fading out downwards, so the
+                            // curve has body without a hard block of colour.
+                            const g = ctx.createLinearGradient(0, top, 0, top + ch * 1.6)
+                            g.addColorStop(0, Qt.rgba(0.29, 0.62, 1.0, 0.30))
+                            g.addColorStop(1, Qt.rgba(0.29, 0.62, 1.0, 0.0))
+                            ctx.fillStyle = g
+                            ctx.beginPath()
+                            ctx.moveTo(xy(0).x, top + ch * 1.6)
+                            for (let i = 0; i < n; i++) { const p = xy(i); ctx.lineTo(p.x, p.y) }
+                            ctx.lineTo(xy(n - 1).x, top + ch * 1.6)
+                            ctx.closePath()
+                            ctx.fill()
+
+                            ctx.strokeStyle = Theme.accentCyan
+                            ctx.lineWidth = Math.max(2, root.height * 0.004)
+                            ctx.lineCap = "round"
+                            ctx.lineJoin = "round"
+                            ctx.beginPath()
+                            for (let i = 0; i < n; i++) {
+                                const p = xy(i)
+                                if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y)
+                            }
+                            ctx.stroke()
+
+                            // Marker on the hour the reading is for.
+                            if (root.currentHour >= 0 && root.currentHour < n) {
+                                const p = xy(root.currentHour)
+                                ctx.fillStyle = Theme.textPrimary
+                                ctx.beginPath()
+                                ctx.arc(p.x, p.y, Math.max(3, root.height * 0.0075), 0, Math.PI * 2)
+                                ctx.fill()
                             }
                         }
                     }
-                }
-            }
-        }
 
-        // Weekly + Details row
-        Row {
-            spacing: root.width * 0.024
-            anchors.horizontalCenter: parent.horizontalCenter
-
-            // Weekly — GLASS MORPHISM
-            Item {
-                id: weeklyContainer
-                width: root.width * 0.4; height: root.height * 0.43
-
-                Rectangle {
-                    id: weeklyGlass
-                    anchors.fill: parent
-                    radius: root.height * 0.025
-                    color: "#3D717E"
-                    border.width: 1
-                    border.color: "#50FFFFFF"
-                    visible: false
-                }
-
-                InnerShadow {
-                    id: weeklyInner
-                    anchors.fill: weeklyGlass
-                    source: weeklyGlass
-                    horizontalOffset: -3
-                    verticalOffset: -3
-                    radius: 10
-                    samples: 20
-                    color: "#80FFFFFF"
-                    visible: false
-                }
-
-                DropShadow {
-                    anchors.fill: weeklyGlass
-                    source: weeklyInner
-                    horizontalOffset: 6
-                    verticalOffset: 6
-                    radius: 14
-                    samples: 28
-                    color: "#50000000"
-                }
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: root.height * 0.015
-                    width: weeklyContainer.width - root.height * 0.04
                     Row {
-                        width: parent.width
-                        Text { text: "Day";      color: "#dd9c4d"; font { pointSize: root.height * 0.018; family: "Arial"; bold: true }
-                            width: parent.width * 0.42 }
-                        Text { text: "UV";       color: "#dd9c4d"; font { pointSize: root.height * 0.018; family: "Arial"; bold: true }
-                            width: parent.width * 0.08; horizontalAlignment: Text.AlignHCenter }
-                        Text { text: "Max / Min"; color: "#dd9c4d"; font { pointSize: root.height * 0.018; family: "Arial"; bold: true }
-                            width: parent.width * 0.45; horizontalAlignment: Text.AlignRight }
-                    }
-                    Rectangle { width: parent.width; height: 1; color: "#dd9c4d"; opacity: 0.4 }
-                    Repeater {
-                        model: dailyWeatherModel
-                        delegate: Row {
-                            id: dailyRow
-                            required property string day
-                            required property string maxTemp
-                            required property string minTemp
-                            required property var    uvIndex
-                            width: weeklyContainer.width - root.height * 0.04
-                            Text { 
-                                text: dailyRow.day; color: "white";
-                                font { pointSize: root.height * 0.022; family: "Arial"; bold: true }
-                                width: parent.width * 0.44 
+                        Repeater {
+                            model: hourlyWeatherModel
+
+                            delegate: Item {
+                                id: hourSlot
+                                required property string time
+                                required property string temp
+                                required property int    index
+                                readonly property bool isCurrent: index === root.currentHour
+
+                                width: hourStrip.slotW
+                                height: hourStrip.height
+
+                                // The current hour gets a lit column behind it
+                                // instead of a differently coloured tile — the
+                                // curve has to stay readable across it.
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: parent.width * 0.72
+                                    height: parent.height
+                                    radius: Theme.chipRadius
+                                    visible: hourSlot.isCurrent
+                                    color: Theme.tint(Theme.accentCyan, 0.14)
+                                    border.width: 1
+                                    border.color: Theme.tint(Theme.accentCyan, 0.45)
+                                }
+
+                                Text {
+                                    anchors {
+                                        top: parent.top
+                                        horizontalCenter: parent.horizontalCenter
+                                    }
+                                    text: hourSlot.time
+                                    color: hourSlot.isCurrent ? Theme.textPrimary : Theme.textMuted
+                                    font { family: "Arial"
+                                           bold: hourSlot.isCurrent
+                                           pixelSize: root.height * 0.022 }
+                                }
+
+                                Text {
+                                    anchors {
+                                        bottom: parent.bottom
+                                        horizontalCenter: parent.horizontalCenter
+                                    }
+                                    text: hourSlot.temp
+                                    color: hourSlot.isCurrent ? Theme.textPrimary : Theme.textSecondary
+                                    font { family: "Arial"; bold: true
+                                           pixelSize: root.height * 0.028 }
+                                }
                             }
-                            Text {
-                                text: { var uv = Math.round(dailyRow.uvIndex); return uv<=2?"🌤 "+dailyRow.uvIndex:uv<=5?"☀️ "+dailyRow.uvIndex:uv<=7?"🌞 "+dailyRow.uvIndex:uv<=10?"🔆 "+dailyRow.uvIndex:"🔥 "+dailyRow.uvIndex }
-                                color: { var uv = Math.round(dailyRow.uvIndex); return uv<=2?"#a8d8a8":uv<=5?"#f9e07a":uv<=7?"#f4a445":uv<=10?"#e05a5a":"#c060c0" }
-                                font { pointSize: root.height * 0.020; family: "Arial"; bold: true }
-                                width: parent.width * 0.1
-                            }
-                            Text { text: dailyRow.maxTemp + " / " + dailyRow.minTemp; color: "#FFFFFF"; font { pointSize: root.height * 0.020; family: "Arial" }
-                                horizontalAlignment: Text.AlignRight; width: parent.width * 0.45 
-                            }
-                        }
-                    }
-                }
-
-                Behavior on scale   { NumberAnimation { duration: 120 } }
-                Behavior on opacity { NumberAnimation { duration: 120 } }
-                MouseArea {
-                    anchors.fill: parent; hoverEnabled: true
-                    onEntered: { weeklyContainer.scale = 1.05; weeklyContainer.opacity = 1.0 }
-                    onExited:  { weeklyContainer.scale = 1.0;  weeklyContainer.opacity = 0.9 }
-                }
-            }
-
-            Rectangle { width: 1; height: weeklyContainer.height; color: "#dd9c4d"; opacity: 0.4 }
-
-            // Info grid — GLASS MORPHISM
-            Grid {
-                columns: 2
-                width: root.width * 0.35; height: root.height * 0.43
-                rowSpacing: root.height * 0.02; columnSpacing: root.width * 0.02
-                Repeater {
-                    model: weatherInfoModel
-                    delegate: Item {
-                        id: infoDelegate
-                        required property var modelData
-                        width: (root.width * 0.35 - root.width * 0.02) / 2
-                        height: (root.height * 0.43 - root.height * 0.02) / 2
-
-                        Rectangle {
-                            id: infoGlass
-                            anchors.fill: parent
-                            radius: root.height * 0.015
-                            color: "#3D717E"
-                            border.width: 1
-                            border.color: "#50FFFFFF"
-                            visible: false
-                        }
-
-                        InnerShadow {
-                            id: infoInner
-                            anchors.fill: infoGlass
-                            source: infoGlass
-                            horizontalOffset: -2
-                            verticalOffset: -2
-                            radius: 8
-                            samples: 16
-                            color: "#80FFFFFF"
-                            visible: false
-                        }
-
-                        DropShadow {
-                            anchors.fill: infoGlass
-                            source: infoInner
-                            horizontalOffset: 4
-                            verticalOffset: 4
-                            radius: 10
-                            samples: 20
-                            color: "#50000000"
-                        }
-
-                        Column {
-                            anchors.centerIn: parent; spacing: root.height * 0.009
-                            Text { text: infoDelegate.modelData.emoji; font.pointSize: root.height * 0.035; anchors.horizontalCenter: parent.horizontalCenter }
-                            Text { text: infoDelegate.modelData.label; color: "#FFFFFF"; font { pointSize: root.height * 0.02; family: "Arial" }
-                                anchors.horizontalCenter: parent.horizontalCenter }
-                            Text { text: infoDelegate.modelData.value; color: "#dd9c4d"; font { pointSize: root.height * 0.028; family: "Arial"; bold: true }
-                                anchors.horizontalCenter: parent.horizontalCenter }
-                        }
-
-                        Behavior on scale   { NumberAnimation { duration: 120 } }
-                        Behavior on opacity { NumberAnimation { duration: 120 } }
-                        MouseArea {
-                            anchors.fill: parent; hoverEnabled: true
-                            onEntered: { infoDelegate.scale = 1.05; infoDelegate.opacity = 1.0 }
-                            onExited:  { infoDelegate.scale = 1.0;  infoDelegate.opacity = 0.9 }
                         }
                     }
                 }
@@ -547,60 +562,260 @@ Item {
         }
     }
 
-    // Hidden TextInput to sync with keyboard
+    // ==================================================== ROW B
+    Item {
+        id: rowB
+        anchors {
+            left: parent.left;   leftMargin:  root.gutter
+            right: parent.right; rightMargin: root.gutter
+            top: rowA.bottom;    topMargin:   root.rowGap
+        }
+        height: root.rowBH
+
+        // ---- 7 DAYS
+        GlassCard {
+            id: dailyCard
+            width: root.innerW * 0.455
+            height: parent.height
+            accent: Theme.accentBlue
+            interactive: false
+
+            Text {
+                id: dailyTitle
+                anchors {
+                    left: parent.left; leftMargin: dailyCard.width * 0.055
+                    top: parent.top;   topMargin:  dailyCard.height * 0.055
+                }
+                text: qsTr("7-DAY OUTLOOK")
+                color: Theme.textMuted
+                font { bold: true; family: "Arial"
+                       pixelSize: root.height * 0.021; letterSpacing: 1.2 }
+            }
+
+            Column {
+                anchors {
+                    left: parent.left;     leftMargin:   dailyCard.width * 0.055
+                    right: parent.right;   rightMargin:  dailyCard.width * 0.055
+                    top: dailyTitle.bottom; topMargin:   dailyCard.height * 0.035
+                    bottom: parent.bottom; bottomMargin: dailyCard.height * 0.05
+                }
+
+                Repeater {
+                    model: dailyWeatherModel
+
+                    delegate: Item {
+                        id: dayRow
+                        required property string day
+                        required property string maxTemp
+                        required property string minTemp
+                        required property real   tmax
+                        required property real   tmin
+                        required property var    uvIndex
+
+                        width: parent.width
+                        height: (dailyCard.height * 0.86 - dailyTitle.height)
+                                / dailyWeatherModel.count
+
+                        Text {
+                            anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                            width: parent.width * 0.30
+                            text: dayRow.day
+                            color: Theme.textPrimary
+                            font { family: "Arial"; bold: true
+                                   pixelSize: root.height * 0.025 }
+                            elide: Text.ElideRight
+                        }
+
+                        // UV as a dot plus its number: the colour carries the
+                        // severity at a glance, the figure is there when it
+                        // matters. The old version put an emoji here.
+                        Row {
+                            anchors {
+                                left: parent.left; leftMargin: parent.width * 0.31
+                                verticalCenter: parent.verticalCenter
+                            }
+                            spacing: parent.width * 0.022
+
+                            Rectangle {
+                                width: root.height * 0.016; height: width
+                                radius: width / 2
+                                color: root.uvColor(dayRow.uvIndex)
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Text {
+                                text: dayRow.uvIndex.toFixed(1)
+                                color: Theme.textSecondary
+                                font { family: "Arial"; pixelSize: root.height * 0.022 }
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+
+                        /*
+                         * Range bar, on the week's scale rather than the row's.
+                         * A warm day is a bar sitting to the right; a cold one
+                         * sits left. That comparison is the entire reason to
+                         * show seven days at once, and a column of "32° / 20°"
+                         * does not give it to you.
+                         */
+                        Rectangle {
+                            id: track
+                            anchors {
+                                left: parent.left; leftMargin: parent.width * 0.46
+                                verticalCenter: parent.verticalCenter
+                            }
+                            width: parent.width * 0.28
+                            height: root.height * 0.008
+                            radius: height / 2
+                            color: Theme.surfaceSunk
+
+                            Rectangle {
+                                readonly property real lo: root.span.lo
+                                readonly property real hi: root.span.hi
+                                x: track.width * (dayRow.tmin - lo) / (hi - lo)
+                                width: Math.max(track.height,
+                                                track.width * (dayRow.tmax - dayRow.tmin) / (hi - lo))
+                                height: parent.height
+                                radius: height / 2
+                                gradient: Gradient {
+                                    orientation: Gradient.Horizontal
+                                    GradientStop { position: 0.0; color: Theme.accentCyan }
+                                    GradientStop { position: 1.0; color: Theme.accentAmber }
+                                }
+                            }
+                        }
+
+                        Text {
+                            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                            text: dayRow.maxTemp + "  " + dayRow.minTemp
+                            color: Theme.textSecondary
+                            font { family: "Arial"; pixelSize: root.height * 0.023 }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- DETAILS 2×2
+        Grid {
+            id: metrics
+            anchors.right: parent.right
+            width: root.innerW - dailyCard.width - root.colGap
+            height: parent.height
+            columns: 2
+            rowSpacing: root.rowGap
+            columnSpacing: root.colGap
+
+            Repeater {
+                model: weatherInfoModel
+
+                delegate: GlassCard {
+                    id: metricCard
+                    required property string label
+                    required property string glyph
+                    required property string value
+                    required property int    index
+
+                    width: (metrics.width - metrics.columnSpacing) / 2
+                    height: (metrics.height - metrics.rowSpacing) / 2
+                    interactive: false
+                    accent: [Theme.accentCyan, Theme.accentBlue,
+                             Theme.accentViolet, Theme.accentAmber][index]
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: metricCard.width * 0.075
+
+                        // Same seat the settings cards give their icons, with a
+                        // drawn glyph in it instead of a PNG.
+                        Rectangle {
+                            width: metricCard.height * 0.45
+                            height: width
+                            radius: width / 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Theme.tint(metricCard.accent, 0.15)
+                            border.color: Theme.tint(metricCard.accent, 0.5)
+                            border.width: 1
+
+                            WeatherGlyph {
+                                anchors.centerIn: parent
+                                width: parent.width * 0.55; height: width
+                                kind: metricCard.glyph
+                                tint: Theme.textPrimary
+                                accent: metricCard.accent
+                            }
+                        }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: metricCard.height * 0.03
+
+                            Text {
+                                text: metricCard.label
+                                color: Theme.textSecondary
+                                font { family: "Arial"; pixelSize: root.height * 0.022 }
+                            }
+                            Text {
+                                text: metricCard.value
+                                color: Theme.textPrimary
+                                font { family: "Arial"; bold: true
+                                       pixelSize: root.height * 0.038 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Hidden TextInput to sync with the keyboard
     TextInput {
         id: cityInputHidden
         visible: false
         text: ""
     }
 
-    // Keyboard Popup — uses your existing VirtualKeyboard.qml
+    // ==================================================== KEYBOARD
     Popup {
         id: keyboardPopup
         width: parent.width * 0.85
         height: parent.height * 0.75
         anchors.centerIn: parent
         modal: true
-        // Dim the page behind the dialog
         Overlay.modal: Rectangle {
-            color: "#000000"
-            opacity: 0.6
+            color: Theme.scrim
             Behavior on opacity { NumberAnimation { duration: 180 } }
         }
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+        // Nearly opaque, like the other dialogs: a see-through modal over a
+        // moving backdrop is unreadable whatever it costs in prettiness.
         background: Rectangle {
-            color: "#082839"
-            radius: 16
-            border.color: "#dd9c4d"
-            border.width: 2
+            color: Theme.surface
+            radius: Theme.dialogRadius
+            border.color: Theme.glassBorder
+            border.width: 1
         }
 
         Column {
             anchors.fill: parent
             anchors.margins: 20
-            spacing: 16
+            spacing: 14
 
-            // Header
             Text {
-                text: "Search City"
-                font.pixelSize: root.height * 0.04
-                color: "#dd9c4d"
-                font.bold: true
-                font.family: "Arial"
+                text: qsTr("Search City")
+                color: Theme.textPrimary
+                font { bold: true; family: "Arial"; pixelSize: root.height * 0.038 }
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
             Text {
-                text: "Enter city name"
-                font.pixelSize: root.height * 0.025
-                color: "#3D717E"
-                font.family: "Arial"
+                text: qsTr("Enter a city name")
+                color: Theme.textSecondary
+                font { family: "Arial"; pixelSize: root.height * 0.024 }
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
-            // Virtual Keyboard
             VirtualKeyboard {
                 id: keyboard
                 width: parent.width
@@ -621,12 +836,10 @@ Item {
             }
         }
 
-        onOpened: {
-            keyboard.targetText = cityInputHidden.text
-        }
+        onOpened: keyboard.targetText = cityInputHidden.text
     }
 
-    // API
+    // ==================================================== DATA
     /*
      * Painting is a plain function rather than only a signal handler, because
      * the page has to be able to fill itself in from cache the instant it is
@@ -634,23 +847,24 @@ Item {
      * and for one that landed ten minutes ago.
      */
     function applyWeather(current, daily, hourly, location) {
-        cityName.text         = location.name + ", " + location.country
-        temperature.text      = Math.round(current.temperature_2m) + "°C"
-        feelsLike.text        = "Feels like: " + Math.round(current.apparent_temperature) + "°C"
-        weatherEmojiText.text = root.weatherEmoji(current.weather_code, current.is_day)
-        populationValue.text  = location.population.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-        root.currentHour      = parseInt(current.time.split("T")[1].split(":")[0])
+        root.statusNote      = ""
+        cityName.text        = location.name + ", " + location.country
+        temperature.text     = Math.round(current.temperature_2m) + "°C"
+        feelsLike.text       = qsTr("Feels like ") + Math.round(current.apparent_temperature) + "°C"
+        root.conditionKind   = root.weatherKind(current.weather_code, current.is_day)
+        populationValue.text = location.population.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+        root.currentHour     = parseInt(current.time.split("T")[1].split(":")[0])
 
-        var code = current.weather_code
-        if      (code === 0)  weatherDescription.text = current.is_day ? "Clear Sky" : "Clear Night"
-        else if (code <= 2)   weatherDescription.text = "Partly Cloudy"
-        else if (code === 3)  weatherDescription.text = "Overcast"
-        else if (code <= 48)  weatherDescription.text = "Foggy"
-        else if (code <= 55)  weatherDescription.text = "Drizzle"
-        else if (code <= 65)  weatherDescription.text = "Rainy"
-        else if (code <= 75)  weatherDescription.text = "Snowy"
-        else if (code <= 82)  weatherDescription.text = "Rain Showers"
-        else if (code <= 99)  weatherDescription.text = "Thunderstorm"
+        const code = current.weather_code
+        if      (code === 0)  weatherDescription.text = current.is_day ? qsTr("Clear Sky") : qsTr("Clear Night")
+        else if (code <= 2)   weatherDescription.text = qsTr("Partly Cloudy")
+        else if (code === 3)  weatherDescription.text = qsTr("Overcast")
+        else if (code <= 48)  weatherDescription.text = qsTr("Foggy")
+        else if (code <= 55)  weatherDescription.text = qsTr("Drizzle")
+        else if (code <= 65)  weatherDescription.text = qsTr("Rainy")
+        else if (code <= 75)  weatherDescription.text = qsTr("Snowy")
+        else if (code <= 82)  weatherDescription.text = qsTr("Rain Showers")
+        else if (code <= 99)  weatherDescription.text = qsTr("Thunderstorm")
 
         weatherInfoModel.setProperty(0, "value", Math.round(current.wind_speed_10m)   + " km/h")
         weatherInfoModel.setProperty(1, "value", current.relative_humidity_2m         + "%")
@@ -658,22 +872,34 @@ Item {
         weatherInfoModel.setProperty(3, "value", Math.round(current.surface_pressure) + " hPa")
 
         hourlyWeatherModel.clear()
-        for (var i = 0; i < 24; i++) {
-            var amPm = i < 12 ? "AM" : "PM"
-            var hour = i % 12 === 0 ? "12" : (i % 12).toString()
-            hourlyWeatherModel.append({ "time": hour + " " + amPm, "temp": Math.round(hourly.temperature_2m[i]) + "°C" })
+        for (let i = 0; i < 24; i++) {
+            const amPm = i < 12 ? "AM" : "PM"
+            const hour = i % 12 === 0 ? "12" : (i % 12).toString()
+            const v = Math.round(hourly.temperature_2m[i])
+            hourlyWeatherModel.append({ "time": hour + " " + amPm, "temp": v + "°C", "t": v })
         }
-        var dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+
+        const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
         dailyWeatherModel.clear()
-        for (var j = 0; j < daily.time.length; j++) {
-            var date = new Date(daily.time[j])
+        for (let j = 0; j < daily.time.length; j++) {
+            const date = new Date(daily.time[j])
+            const hiT = Math.round(daily.temperature_2m_max[j])
+            const loT = Math.round(daily.temperature_2m_min[j])
             dailyWeatherModel.append({
-                "day":     j === 0 ? "Today" : j === 1 ? "Tomorrow" : dayNames[date.getDay()],
-                "maxTemp": Math.round(daily.temperature_2m_max[j]) + "°C",
-                "minTemp": Math.round(daily.temperature_2m_min[j]) + "°C",
+                "day":     j === 0 ? qsTr("Today") : j === 1 ? qsTr("Tomorrow") : dayNames[date.getDay()],
+                "maxTemp": hiT + "°",
+                "minTemp": loT + "°",
+                "tmax":    hiT,
+                "tmin":    loT,
                 "uvIndex": daily.uv_index_max[j]
             })
         }
+
+        // Both derived from the models, so they are refreshed here rather than
+        // bound — a binding on a ListModel's contents does not re-evaluate when
+        // rows are appended.
+        root.span = root.weekSpan()
+        curve.requestPaint()
     }
 
     /*
@@ -688,7 +914,7 @@ Item {
 
     /* Paint from cache. Returns false when there is nothing cached yet. */
     function showCached(name) {
-        var e = WeatherStore.entryFor(name)
+        const e = WeatherStore.entryFor(name)
         if (e === null)
             return false
         applyWeather(e.current, e.daily, e.hourly, e.location)
@@ -715,8 +941,22 @@ Item {
             if (WeatherStore.normalise(city) === WeatherStore.normalise(root.shownCity))
                 root.showCached(city)
         }
-        function onNotFound(city)       { cityInputHidden.text = ""; cityPlaceholder.visible = true }
-        function onFailed(city, reason) { cityInputHidden.text = ""; cityPlaceholder.visible = true }
+        function onNotFound(city) {
+            root.statusNote = qsTr("No city called “") + city + qsTr("”")
+        }
+
+        /*
+         * No handler for failed().
+         *
+         * "Could not reach the weather service" told the driver about a
+         * condition they cannot act on, in place of the page's own content, and
+         * WeatherAPI is already retrying with backoff underneath — so the note
+         * outlived the problem it described. The page keeps showing the last
+         * reading and fills in when a reply lands.
+         *
+         * notFound() stays: an unresolvable city name never fixes itself, and
+         * the search box that produced it is on this page.
+         */
     }
 
     onCityChanged: root.showCity(root.city)
@@ -727,5 +967,8 @@ Item {
      * unless the reading has aged past the store's TTL. Entering, leaving and
      * entering again no longer costs a geocode + forecast pair every time.
      */
-    Component.onCompleted: root.showCity(root.city)
+    Component.onCompleted: {
+        root.span = root.weekSpan()
+        root.showCity(root.city)
+    }
 }

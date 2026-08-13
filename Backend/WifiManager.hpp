@@ -31,7 +31,16 @@ public:
 signals:
     void wifiEnabledChanged(bool enabled);
     void scanStarted();
-    void scanFinished(QStringList networks);
+    /*
+     * One entry per SSID: { "name": QString, "strength": int 0-100,
+     * "secured": bool }.
+     *
+     * A plain QStringList until the list gained a signal-strength icon, which
+     * had nothing to read. NetworkManager reports both on the access point
+     * objects this already walks, so carrying them costs a property read each.
+     * Same shape BluetoothHWManager::scanFinished already uses.
+     */
+    void scanFinished(QVariantList networks);
     void scanFailed(const QString &reason);
     void connectSuccess(const QString &ssid);
     void connectFailed(const QString &reason);
