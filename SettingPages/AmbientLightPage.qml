@@ -143,7 +143,7 @@ Rectangle {
                 text: AmbientLight.available
                       ? (AmbientLight.on ? qsTr("Cabin lighting on")
                                          : qsTr("Cabin lighting off"))
-                      : qsTr("⚠  No CAN link to the lighting ECU — check can0")
+                      : qsTr("Cabin lighting off")
                 color: AmbientLight.available ? Theme.textSecondary : Theme.accentAmber
                 font { family: "Arial"; pixelSize: ambientPage.height * 0.022 }
             }

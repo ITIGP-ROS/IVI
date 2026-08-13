@@ -9,7 +9,12 @@ Item {
     signal goBack()
 
     property real fontSize: (width + height) / 60
-    property color accentColor: "#D08831"
+
+    /*
+     * Page-level accent — used by the window bar and the status bar.
+     * Mint = media/audio in the Theme palette.
+     */
+    property color accentColor: Theme.accentMint
 
     // ── Injected shared player & state owner (e.g. mainWindow) ──
     required property MediaPlayer mediaPlayer
@@ -25,17 +30,30 @@ Item {
     // get out of the way — it is drawn over the page, not above it.
     property bool videoFullScreen: false
 
+    // Cards are sized from how many there are, mirroring the settings page
+    // layout so a future fourth card cannot silently overflow.
+    readonly property int  cardCount:   3
+    readonly property real cardSpacing: root.width / 32
+    readonly property real cardWidth:
+        (root.width * 0.675 - cardSpacing * (cardCount - 1)) / cardCount
+    readonly property real cardHeight: root.height / 2.3
+
     WindowBar {
         id: titleBar
-        z: 1
+        z: 2
         visible: !root.videoFullScreen
         window: mainWindow
         titleName: "Media Player"
         showBackButton: true
         onBackRequested: root.goBack()
-        color0: '#082839'
-        color1: '#10475E'
-        color2: '#3D717E'
+
+        // Gradient ends follow the glass backdrop rather than the old teal.
+        color0: Theme.gradientTop
+        color1: Theme.gradientMid
+        color2: Theme.gradientBot
+        accent: root.accentColor
+        titleColor: Theme.textPrimary
+        surface: Theme.surface
 
         brightnessValue: mainWindow.appBrightness
         volumeValue: systemVolume.volume
@@ -51,30 +69,9 @@ Item {
     }
 
     // ============================================ Background ================================================
-    Rectangle {
+    GlassBackground {
+        id: background
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: '#082839' }
-            GradientStop { position: 0.5; color: '#10475E' }
-            GradientStop { position: 1.0; color: '#082839' }
-        }
-
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.04
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = "#D08831"
-                var step = 40
-                for (var x = 0; x < width; x += step) {
-                    for (var y = 0; y < height; y += step) {
-                        ctx.beginPath()
-                        ctx.arc(x, y, 1.5, 0, Math.PI * 2)
-                        ctx.fill()
-                    }
-                }
-            }
-        }
 
         StackView {
             id: stackView
@@ -85,79 +82,130 @@ Item {
             Component {
                 id: mainPageComponent
                 Item {
+                    id: app
                     anchors.fill: parent
+                    // Clears the window bar.
+                    anchors.topMargin: 48
 
                     Row {
-                        id: mainRow
+                        id: cardRow
+                        spacing: root.cardSpacing
                         anchors.centerIn: parent
-                        spacing: root.width / 20
 
-                        MediaCard {
-                            cardWidth: root.width / 5
-                            cardHeight: root.height / 2.2
-                            cardColSpacing: cardHeight / 12
-                            accentColor: root.accentColor
-                            cardRadius: mainRow.spacing / 3
-                            cardBorderColor: '#50FFFFFF'
-                            cardBorderWidth: 1
-                            cardOpacity: 0.85
-                            cardText: qsTr("Radio")
-                            cardIcon: "qrc:/assets/icons/radio.png"
-                            cardTextFontSize: root.fontSize * 1.1
-                            cardTextFontFamily: "Arial"
-                            cardTextColor: '#f8ffff'
-                            cardIconWidth: cardWidth / 1.5
-                            cardIconHeight: cardHeight / 1.5
+                        // RADIO
+                        GlassCard {
+                            width: root.cardWidth
+                            height: root.cardHeight
+                            accent: Theme.accentAmber
+                            floatAmplitude: 4
+                            floatPhase: 0
+                            onClicked: stackView.push(radioPageComponent)
 
-                            onCardClicked: stackView.push(radioPageComponent)
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: parent.height * 0.06
+
+                                IconWell {
+                                    accent: Theme.accentAmber
+                                    diameter: root.cardHeight * 0.32
+                                    source: "qrc:/assets/icons/radio.png"
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: qsTr("Radio")
+                                    color: Theme.textPrimary
+                                    font { bold: true; family: "Arial"; pixelSize: root.fontSize }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: qsTr("FM stations")
+                                    color: Theme.textSecondary
+                                    font { family: "Arial"; pixelSize: root.fontSize * 0.55 }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                            }
                         }
 
-                        MediaCard {
-                            cardWidth: root.width / 5
-                            cardHeight: root.height / 2.2
-                            cardColSpacing: cardHeight / 12
-                            accentColor: root.accentColor
-                            cardRadius: mainRow.spacing / 3
-                            cardBorderColor: '#50FFFFFF'
-                            cardBorderWidth: 1
-                            cardOpacity: 0.85
-                            cardText: qsTr("Audio")
-                            cardIcon: "qrc:/assets/icons/audio.png"
-                            cardTextFontSize: root.fontSize * 1.1
-                            cardTextFontFamily: "Arial"
-                            cardTextColor: '#f8ffff'
-                            cardIconWidth: cardWidth / 1.5
-                            cardIconHeight: cardHeight / 1.5
+                        // AUDIO
+                        GlassCard {
+                            width: root.cardWidth
+                            height: root.cardHeight
+                            accent: Theme.accentMint
+                            floatAmplitude: 4
+                            floatPhase: 700
+                            onClicked: stackView.push(audioPageComponent)
 
-                            onCardClicked: stackView.push(audioPageComponent)
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: parent.height * 0.06
+
+                                IconWell {
+                                    accent: Theme.accentMint
+                                    diameter: root.cardHeight * 0.32
+                                    source: "qrc:/assets/icons/audio.png"
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: qsTr("Audio")
+                                    color: Theme.textPrimary
+                                    font { bold: true; family: "Arial"; pixelSize: root.fontSize }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: qsTr("Music files")
+                                    color: Theme.textSecondary
+                                    font { family: "Arial"; pixelSize: root.fontSize * 0.55 }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                            }
                         }
 
-                        MediaCard {
-                            cardWidth: root.width / 5
-                            cardHeight: root.height / 2.2
-                            cardColSpacing: cardHeight / 12
-                            accentColor: root.accentColor
-                            cardRadius: mainRow.spacing / 3
-                            cardBorderColor: '#50FFFFFF'
-                            cardBorderWidth: 1
-                            cardOpacity: 0.85
-                            cardText: qsTr("Video")
-                            cardIcon: "qrc:/assets/icons/video.png"
-                            cardTextFontSize: root.fontSize * 1.1
-                            cardTextFontFamily: "Arial"
-                            cardTextColor: '#f8ffff'
-                            cardIconWidth: cardWidth / 1.5
-                            cardIconHeight: cardHeight / 1.5
+                        // VIDEO
+                        GlassCard {
+                            width: root.cardWidth
+                            height: root.cardHeight
+                            accent: Theme.accentBlue
+                            floatAmplitude: 4
+                            floatPhase: 1400
+                            onClicked: stackView.push(videoPageComponent)
 
-                            onCardClicked: stackView.push(videoPageComponent)
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: parent.height * 0.06
+
+                                IconWell {
+                                    accent: Theme.accentBlue
+                                    diameter: root.cardHeight * 0.32
+                                    source: "qrc:/assets/icons/video.png"
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: qsTr("Video")
+                                    color: Theme.textPrimary
+                                    font { bold: true; family: "Arial"; pixelSize: root.fontSize }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+
+                                Text {
+                                    text: qsTr("Video player")
+                                    color: Theme.textSecondary
+                                    font { family: "Arial"; pixelSize: root.fontSize * 0.55 }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                            }
                         }
-
                     }
                 }
             }
         }
 
         // Status bar inside MediaPlayerPage (visible when on media home and something is playing)
+        // Re-skinned as a glass pill to match the new backdrop.
         Rectangle {
             id: statusBar
             anchors.bottom: parent.bottom
@@ -168,11 +216,21 @@ Item {
             anchors.rightMargin: root.width / 15
             height: root.height / 12
             radius: height / 2
-            color: "#5A3211"
-            border.color: "#D08831"
+            color: Theme.glassFill
+            border.color: Theme.glassBorder
             border.width: 1
             visible: stackView.depth === 1 && mediaPage.currentMediaType !== 0
             z: 2
+
+            // Accent halo behind the pill, same idea as GlassCard's halo.
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -2
+                radius: parent.radius + 2
+                z: -1
+                color: root.accentColor
+                opacity: 0.07
+            }
 
             Row {
                 anchors.fill: parent
@@ -193,7 +251,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: mediaPage.currentMediaType === 1 ? " 📻" : mediaPage.currentMediaType === 2 ? " 🎵" : " 🎬"
                     font.pixelSize: parent.height * 0.7
-                    color: "#D08831"
+                    color: root.accentColor
                     visible: !root.btActive
                 }
 
@@ -203,7 +261,7 @@ Item {
 
                     Text {
                         text: mediaPage.currentMediaTitle || "Unknown"
-                        color: "#e7f1ef"
+                        color: Theme.textPrimary
                         font.pixelSize: statusBar.height * 0.3
                         font.bold: true
                         font.family: "Arial"
@@ -212,7 +270,7 @@ Item {
                     }
                     Text {
                         text: mediaPage.currentMediaSubtitle
-                        color: '#518693'
+                        color: Theme.textSecondary
                         font.pixelSize: statusBar.height * 0.21
                         font.family: "Arial"
                         elide: Text.ElideRight
@@ -225,7 +283,7 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.mediaPlaying ? "Playing" : "Paused"
-                    color: '#ffffff'
+                    color: Theme.textPrimary
                     opacity: 0.6
                     font.pixelSize: statusBar.height * 0.25
                     font.family: "Arial"
@@ -236,8 +294,11 @@ Item {
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: statusBar.height * 0.65; height: width; radius: width / 2
-                    color: statusPrevArea.containsMouse ? "#082839" : "#964405"
-                    border.color: "#D08831"; border.width: 1
+                    color: statusPrevArea.containsMouse
+                           ? Theme.tint(root.accentColor, 0.25)
+                           : Theme.glassFill
+                    border.color: Theme.tint(root.accentColor, 0.6)
+                    border.width: 1
                     visible: mediaPage.currentMediaType === 1 || root.btActive
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Image{
@@ -261,8 +322,10 @@ Item {
                     width: statusBar.height * 0.65
                     height: width
                     radius: width / 2
-                    color: statusPlayArea.containsMouse ? "#082839" : "#964405"
-                    border.color: "#D08831"
+                    color: statusPlayArea.containsMouse
+                           ? Theme.tint(root.accentColor, 0.25)
+                           : Theme.glassFill
+                    border.color: Theme.tint(root.accentColor, 0.6)
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -292,8 +355,10 @@ Item {
                     width: statusBar.height * 0.65
                     height: width
                     radius: width / 2
-                    color: statusStopArea.containsMouse ? "#082839" : "#964405"
-                    border.color: "#D08831"
+                    color: statusStopArea.containsMouse
+                           ? Theme.tint(root.accentColor, 0.25)
+                           : Theme.glassFill
+                    border.color: Theme.tint(root.accentColor, 0.6)
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -324,8 +389,11 @@ Item {
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: statusBar.height * 0.65; height: width; radius: width / 2
-                    color: statusNextArea.containsMouse ? "#082839" : "#964405"
-                    border.color: "#D08831"; border.width: 1
+                    color: statusNextArea.containsMouse
+                           ? Theme.tint(root.accentColor, 0.25)
+                           : Theme.glassFill
+                    border.color: Theme.tint(root.accentColor, 0.6)
+                    border.width: 1
                     visible: mediaPage.currentMediaType === 1 || root.btActive
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Image{

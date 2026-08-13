@@ -1420,10 +1420,11 @@ ApplicationWindow {
 
                                     Rectangle {
                                         width: 32; height: 32; radius: 16
-                                        color: tilePrevArea.containsMouse ? "#082839" : "#21cfa4"
-                                        border.color: "#21cfa4"; border.width: 1
+                                        color: tilePrevArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
+                                        border.color: Theme.accentMint; border.width: 1
                                         visible: mainWindow.currentMediaType === 1
                                                  || mainWindow.currentMediaType === 4
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
                                             width: 18; height: 18
@@ -1441,8 +1442,9 @@ ApplicationWindow {
 
                                     Rectangle {
                                         width: 32; height: 32; radius: 16
-                                        color: tilePlayArea.containsMouse ? "#082839" : "#21cfa4"
-                                        border.color: "#21cfa4"; border.width: 1
+                                        color: tilePlayArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
+                                        border.color: Theme.accentMint; border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
                                             width: 25; height: 25
@@ -1463,8 +1465,9 @@ ApplicationWindow {
 
                                     Rectangle {
                                         width: 32; height: 32; radius: 16
-                                        color: tileStopArea.containsMouse ? "#082839" : "#ff4444"
-                                        border.color: "#ff4444"; border.width: 1
+                                        color: tileStopArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
+                                        border.color: Theme.danger; border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
                                             width: 16; height: 16
@@ -1489,10 +1492,11 @@ ApplicationWindow {
 
                                     Rectangle {
                                         width: 32; height: 32; radius: 16
-                                        color: tileNextArea.containsMouse ? "#082839" : "#21cfa4"
-                                        border.color: "#21cfa4"; border.width: 1
+                                        color: tileNextArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
+                                        border.color: Theme.accentMint; border.width: 1
                                         visible: mainWindow.currentMediaType === 1
                                                  || mainWindow.currentMediaType === 4
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
                                             width: 18; height: 18
@@ -1511,25 +1515,23 @@ ApplicationWindow {
 
                                 Row {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 16
+                                    spacing: 14
                                     visible: mainWindow.currentMediaType === 0
-                                    Image{
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 18; height: 18
-                                        source: "qrc:/assets/icons/prev.png"
-                                        fillMode: Image.PreserveAspectFit
+
+                                    Rectangle {
+                                        width: 32; height: 32; radius: 16
+                                        color: Theme.glassFill; border.color: Theme.glassBorder; border.width: 1; opacity: 0.5
+                                        Image{ anchors.centerIn: parent; width: 18; height: 18; source: "qrc:/assets/icons/prev.png"; fillMode: Image.PreserveAspectFit }
                                     }
-                                    Image{
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 21; height: 21
-                                        source: "qrc:/assets/icons/play.png"
-                                        fillMode: Image.PreserveAspectFit
+                                    Rectangle {
+                                        width: 32; height: 32; radius: 16
+                                        color: Theme.glassFill; border.color: Theme.glassBorder; border.width: 1; opacity: 0.5
+                                        Image{ anchors.centerIn: parent; width: 25; height: 25; source: "qrc:/assets/icons/play.png"; fillMode: Image.PreserveAspectFit }
                                     }
-                                    Image{
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 18; height: 18
-                                        source: "qrc:/assets/icons/next.png"
-                                        fillMode: Image.PreserveAspectFit
+                                    Rectangle {
+                                        width: 32; height: 32; radius: 16
+                                        color: Theme.glassFill; border.color: Theme.glassBorder; border.width: 1; opacity: 0.5
+                                        Image{ anchors.centerIn: parent; width: 18; height: 18; source: "qrc:/assets/icons/next.png"; fillMode: Image.PreserveAspectFit }
                                     }
                                 }
                             }

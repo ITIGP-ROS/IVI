@@ -66,11 +66,13 @@ Item {
         SequentialAnimation {
             loops: Animation.Infinite
             NumberAnimation {
-                target: drift; property: "y"; to: -card.floatAmplitude
+                target: drift; property: "y"
+                from: card.floatAmplitude; to: -card.floatAmplitude
                 duration: card.floatDuration; easing.type: Easing.InOutSine
             }
             NumberAnimation {
-                target: drift; property: "y"; to: card.floatAmplitude
+                target: drift; property: "y"
+                from: -card.floatAmplitude; to: card.floatAmplitude
                 duration: card.floatDuration; easing.type: Easing.InOutSine
             }
         }

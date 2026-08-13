@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtMultimedia
-import Qt5Compat.GraphicalEffects
 
 Rectangle {
     id: radioPage
@@ -11,42 +10,16 @@ Rectangle {
     anchors.fill: parent
     color: "transparent"
 
+    readonly property color accent: Theme.accentAmber
+
     // ── Listen to shared player status ──
     Connections {
         target: mediaPlayer
         function onMediaStatusChanged() {
-            if (mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia) statusDot.color = "#D08831"
-            else if (mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia) statusDot.color = "#00ffaa"
-            else if (mediaPlayer.mediaStatus === MediaPlayer.StalledMedia) statusDot.color = "#964405"
-            else if (mediaPlayer.mediaStatus === MediaPlayer.NoMedia) statusDot.color = "#5A3211"
-        }
-    }
-
-    // BACKGROUND
-    Rectangle {
-        z: -1
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#082839" }
-            GradientStop { position: 0.5; color: "#10475E" }
-            GradientStop { position: 1.0; color: "#082839" }
-        }
-
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.04
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = "#D08831"
-                var step = 40
-                for (var x = 0; x < width; x += step) {
-                    for (var y = 0; y < height; y += step) {
-                        ctx.beginPath()
-                        ctx.arc(x, y, 1.5, 0, Math.PI * 2)
-                        ctx.fill()
-                    }
-                }
-            }
+            if (mediaPlayer.mediaStatus === MediaPlayer.BufferingMedia) statusDot.color = Theme.tint(radioPage.accent, 0.5)
+            else if (mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia) statusDot.color = Theme.accentMint
+            else if (mediaPlayer.mediaStatus === MediaPlayer.StalledMedia) statusDot.color = Theme.danger
+            else if (mediaPlayer.mediaStatus === MediaPlayer.NoMedia) statusDot.color = Theme.textMuted
         }
     }
 
@@ -68,9 +41,10 @@ Rectangle {
                 width: parent.width * 0.35
                 height: parent.height
                 radius: height / 2
-                color: "#082839"
-                border.color: searchMouse.containsMouse ? "#D08831" : "#3D717E"
+                color: Theme.glassFill
+                border.color: searchMouse.containsMouse ? radioPage.accent : Theme.glassBorder
                 border.width: 1
+                Behavior on border.color { ColorAnimation { duration: 150 } }
 
                 // Hidden input — syncs with VirtualKeyboard
                 TextInput {
@@ -85,11 +59,11 @@ Rectangle {
 
                 Text {
                     anchors.fill: parent
-                    anchors.leftMargin: 14
-                    anchors.rightMargin: 14
+                    anchors.leftMargin: 18
+                    anchors.rightMargin: 18
                     verticalAlignment: Text.AlignVCenter
                     text: searchField.text
-                    color: "#e7f1ef"
+                    color: Theme.textPrimary
                     font.pixelSize: radioPage.width / 60
                     font.family: "Arial"
                     elide: Text.ElideRight
@@ -98,11 +72,11 @@ Rectangle {
 
                 Text {
                     anchors.fill: parent
-                    anchors.leftMargin: 14
-                    anchors.rightMargin: 14
+                    anchors.leftMargin: 18
+                    anchors.rightMargin: 18
                     verticalAlignment: Text.AlignVCenter
                     text: "🔍 Search station name..."
-                    color: "#3D717E"
+                    color: Theme.textSecondary
                     font.pixelSize: radioPage.width / 65
                     font.family: "Arial"
                     visible: searchField.text === ""
@@ -121,15 +95,15 @@ Rectangle {
                 width: parent.width * 0.15
                 height: parent.height
                 radius: height / 2
-                color: searchBtnArea.containsMouse ? "#964405" : "#5A3211"
-                border.color: "#D08831"
+                color: searchBtnArea.containsMouse ? Theme.tint(radioPage.accent, 0.3) : Theme.tint(radioPage.accent, 0.15)
+                border.color: radioPage.accent
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
 
                 Text {
                     anchors.centerIn: parent
                     text: "Search"
-                    color: "#e7f1ef"
+                    color: Theme.textPrimary
                     font.pixelSize: radioPage.width / 60
                     font.family: "Arial"
                     font.bold: true
@@ -154,56 +128,35 @@ Rectangle {
                 height: parent.height
 
                 Rectangle {
-                    id: titleGlass
                     anchors.fill: parent
                     radius: height / 5
-                    color: mediaPage.currentRadioStation ? "#964405" : "#3D717E"
-                    border.width: 1
-                    border.color: "#50FFFFFF"
-                    visible: false
-                }
-
-                InnerShadow {
-                    id: titleInner
-                    anchors.fill: titleGlass
-                    source: titleGlass
-                    horizontalOffset: -2
-                    verticalOffset: -2
-                    radius: 8
-                    samples: 16
-                    color: "#80FFFFFF"
-                    visible: false
-                }
-
-                DropShadow {
-                    anchors.fill: titleGlass
-                    source: titleInner
-                    horizontalOffset: 4
-                    verticalOffset: 4
-                    radius: 10
-                    samples: 20
-                    color: "#50000000"
+                    color: mediaPage.currentRadioStation ? Theme.tint(radioPage.accent, 0.2) : Theme.glassFill
+                    border.width: mediaPage.currentRadioStation ? 2 : 1
+                    border.color: mediaPage.currentRadioStation ? radioPage.accent : Theme.glassBorder
+                    Behavior on color { ColorAnimation { duration: 200 } }
+                    Behavior on border.color { ColorAnimation { duration: 200 } }
                 }
 
                 Text {
                     anchors.centerIn: parent
                     text: mediaPage.currentRadioStation ? "▶ " + mediaPage.currentRadioStation.name : "📻  Radio Browser"
-                    color: "#e7f1ef"
+                    color: mediaPage.currentRadioStation ? radioPage.accent : Theme.textSecondary
                     font.pixelSize: radioPage.width / 70
                     font.family: "Arial"
                     font.bold: true
                     elide: Text.ElideRight
-                    width: parent.width - 20
+                    width: parent.width - 30
                     horizontalAlignment: Text.AlignHCenter
                 }
 
                 Rectangle {
                     id: statusDot
                     width: 8; height: 8; radius: 4
-                    color: "#5A3211"
+                    color: Theme.textMuted
                     anchors.right: parent.right
-                    anchors.rightMargin: 10
+                    anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
+                    Behavior on color { ColorAnimation { duration: 200 } }
                 }
             }
         }
@@ -214,41 +167,17 @@ Rectangle {
             height: radioPage.height * 0.62
 
             Rectangle {
-                id: listGlass
                 anchors.fill: parent
                 radius: radioPage.height / 50
-                color: "#3D717E"
+                color: Theme.glassFill
                 border.width: 1
-                border.color: "#50FFFFFF"
-                visible: false
-            }
-
-            InnerShadow {
-                id: listInner
-                anchors.fill: listGlass
-                source: listGlass
-                horizontalOffset: -3
-                verticalOffset: -3
-                radius: 10
-                samples: 20
-                color: "#80FFFFFF"
-                visible: false
-            }
-
-            DropShadow {
-                anchors.fill: listGlass
-                source: listInner
-                horizontalOffset: 6
-                verticalOffset: 6
-                radius: 14
-                samples: 28
-                color: "#50000000"
+                border.color: Theme.glassBorder
             }
 
             // Loading spinner overlay
             Rectangle {
                 anchors.fill: parent
-                color: "#082839"
+                color: Theme.surface
                 opacity: 0.85
                 visible: mediaPage.radioIsLoading
                 radius: radioPage.height / 50
@@ -258,32 +187,32 @@ Rectangle {
                     anchors.centerIn: parent
                     spacing: 12
 
-                    Canvas {
-                        id: spinner
-                        width: 48; height: 48
+                    Rectangle {
+                        width: 40; height: 40
+                        color: "transparent"
+                        border.color: radioPage.accent
+                        border.width: 3
+                        radius: width / 2
                         anchors.horizontalCenter: parent.horizontalCenter
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            var cx = width / 2, cy = height / 2, r = 18
-                            ctx.clearRect(0, 0, width, height)
-                            ctx.lineWidth = 4
-                            ctx.lineCap = "round"
-                            ctx.strokeStyle = "#D08831"
-                            ctx.beginPath()
-                            ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 1.5)
-                            ctx.stroke()
+
+                        Rectangle {
+                            width: 6; height: 6
+                            color: Theme.surface
+                            anchors.top: parent.top
+                            anchors.horizontalCenter: parent.horizontalCenter
                         }
 
                         RotationAnimation on rotation {
-                            from: 0; to: 360
-                            duration: 800
+                            running: parent.parent.parent.visible
                             loops: Animation.Infinite
+                            duration: 800
+                            from: 0; to: 360
                         }
                     }
 
                     Text {
                         text: "Searching stations..."
-                        color: "#D08831"
+                        color: radioPage.accent
                         font { pixelSize: radioPage.width / 55; family: "Arial"; bold: true }
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
@@ -292,30 +221,30 @@ Rectangle {
 
             ListView {
                 id: stationList
-                anchors { fill: parent; margins: 6; rightMargin: 16 }
+                anchors { fill: parent; margins: 8; rightMargin: 16 }
                 model: mediaPage.globalStationsModel
                 clip: true
-                spacing: 4
+                spacing: 6
                 visible: !mediaPage.radioIsLoading
 
                 ScrollBar.vertical: ScrollBar {
-                    width: 8
+                    width: 6
                     policy: ScrollBar.AsNeeded
                     interactive: true
 
                     contentItem: Rectangle {
                         implicitWidth: 6
-                        radius: width / 2
-                        color: parent.pressed ? "#964405" : "#D08831"
-                        opacity: parent.pressed ? 1.0 : 0.85
+                        radius: 3
+                        color: parent.pressed ? Theme.tint(radioPage.accent, 0.5) : radioPage.accent
+                        opacity: parent.pressed ? 1.0 : 0.6
                         anchors.horizontalCenter: parent.horizontalCenter
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
                     background: Rectangle {
-                        implicitWidth: 8
-                        color: "#082839"
-                        radius: width / 2
+                        implicitWidth: 6
+                        color: Theme.glassFill
+                        radius: 3
                         opacity: 0.5
                         anchors.fill: parent
                     }
@@ -332,30 +261,37 @@ Rectangle {
                     required property string country
                     required property int index
 
-                    width: stationList.width - 14
+                    width: stationList.width - 12
                     height: radioPage.height / 12
-                    radius: height / 8
+                    radius: height / 4
                     anchors.right: parent.right
-                    anchors.rightMargin: 14
-                    color: delegateArea.containsMouse ? "#964405" : (mediaPage.currentRadioStation && mediaPage.currentRadioStation.name === stationDelegate.name ? "#5A3211" : "#082839")
-                    border.color: mediaPage.currentRadioStation && mediaPage.currentRadioStation.name === stationDelegate.name ? "#D08831" : "#3D717E"
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    anchors.rightMargin: 12
 
-                    Row {
+                    property bool isActive: mediaPage.currentRadioStation && mediaPage.currentRadioStation.name === stationDelegate.name
+
+                    color: delegateArea.containsMouse ? Theme.tint(radioPage.accent, 0.25) : (isActive ? Theme.tint(radioPage.accent, 0.15) : Theme.glassFill)
+                    border.color: isActive ? radioPage.accent : Theme.glassBorder
+                    border.width: isActive ? 2 : 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                    Item {
                         anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
-                        spacing: 12
 
                         Rectangle {
+                            id: stationIconRect
                             width: parent.height * 0.7
                             height: parent.height * 0.7
                             anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
                             radius: width / 5
-                            color: "#3D717E"
+                            color: Theme.glassFill
+                            border.color: Theme.glassBorder
+                            border.width: 1
 
                             Image {
                                 anchors.fill: parent
-                                anchors.margins: 3
+                                anchors.margins: 4
                                 source: stationDelegate.favicon || ""
                                 fillMode: Image.PreserveAspectFit
                                 visible: status === Image.Ready
@@ -370,29 +306,30 @@ Rectangle {
                         }
 
                         Column {
-                            width: parent.width * 0.6
+                            anchors.left: stationIconRect.right
+                            anchors.leftMargin: 16
+                            anchors.right: playBtnRect.left
+                            anchors.rightMargin: 16
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.children[0].right
-                            anchors.leftMargin: 8
-                            spacing: 1
+                            spacing: 2
 
                             Text {
                                 text: stationDelegate.name
-                                color: "#e7f1ef"
+                                color: stationDelegate.isActive ? radioPage.accent : Theme.textPrimary
                                 font { pixelSize: radioPage.width / 80; bold: true; family: "Arial" }
                                 elide: Text.ElideRight
                                 width: parent.width
                             }
                             Text {
                                 text: stationDelegate.country + " • " + stationDelegate.codec
-                                color: "#D08831"
+                                color: Theme.textSecondary
                                 font { pixelSize: radioPage.width / 90; family: "Arial" }
                                 elide: Text.ElideRight
                                 width: parent.width
                             }
                             Text {
                                 text: stationDelegate.tags
-                                color: "#3D717E"
+                                color: Theme.textMuted
                                 font { pixelSize: radioPage.width / 95; family: "Arial" }
                                 elide: Text.ElideRight
                                 width: parent.width
@@ -400,21 +337,21 @@ Rectangle {
                         }
 
                         Rectangle {
+                            id: playBtnRect
                             width: parent.height * 0.6
                             height: parent.height * 0.6
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
-                            anchors.rightMargin: 12
-                            radius: height / 5
-                            color: playBtnArea.containsMouse ? "#082839" : "#5A3211"
-                            border.color: "#D08831"
+                            radius: width / 2
+                            color: playBtnArea.containsMouse ? Theme.tint(radioPage.accent, 0.4) : Theme.tint(radioPage.accent, 0.1)
+                            border.color: radioPage.accent
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 150 } }
 
                             Image{
                                 anchors.centerIn: parent
                                 width: 20; height: 20
-                                source:  mediaPage.currentRadioStation && mediaPage.currentRadioStation.name === stationDelegate.name
+                                source:  stationDelegate.isActive
                                     && mediaPlayer.playbackState === MediaPlayer.PlayingState ? "qrc:/assets/icons/pause.png" : "qrc:/assets/icons/play.png"
                                 fillMode: Image.PreserveAspectFit
                             }
@@ -424,7 +361,7 @@ Rectangle {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
-                                    if (mediaPage.currentRadioStation && mediaPage.currentRadioStation.name === stationDelegate.name)
+                                    if (stationDelegate.isActive)
                                         mediaPage.globalRadioAPI.togglePlayPause()
                                     else
                                         mediaPage.globalRadioAPI.playStation({ stationuuid: stationDelegate.stationuuid, name: stationDelegate.name,
@@ -449,7 +386,7 @@ Rectangle {
                 }
             }
 
-            // EMPTY STATE — sibling of ListView, not a child inside it
+            // EMPTY STATE
             Column {
                 anchors.centerIn: parent
                 spacing: 8
@@ -459,7 +396,7 @@ Rectangle {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: mediaPage.radioSearchAttempted ? "⚠" : "📻"
-                    color: "#D08831"
+                    color: Theme.textSecondary
                     font { pixelSize: radioPage.width / 30; family: "Arial" }
                 }
 
@@ -468,7 +405,7 @@ Rectangle {
                     text: mediaPage.radioSearchAttempted
                         ? "No station found with that name."
                         : "No stations.\nSearch or filter above."
-                    color: "#e7f1ef"
+                    color: Theme.textSecondary
                     horizontalAlignment: Text.AlignHCenter
                     font { pixelSize: radioPage.width / 55; family: "Arial"; bold: true }
                 }
@@ -478,22 +415,22 @@ Rectangle {
         // Spacer
         Rectangle {width: parent.width; height: 3; color: "transparent" }
 
-        // CONTROLS ROW — Back | centered Prev/Play/Next | Volume
+        // CONTROLS ROW
         Row {
             id: audioContRow
             width: parent.width
             height: radioPage.height / 15
             spacing: 0
 
-            // Back button (left) — does NOT stop playback
+            // Back button
             Rectangle {
                 id: backBtnRect
                 anchors.verticalCenter: parent.verticalCenter
                 width: backText.width + 40
                 height: backText.height + 14
-                radius: height / 3
-                color: backArea.containsMouse ? "#964405" : "#5A3211"
-                border.color: "#D08831"
+                radius: height / 2
+                color: backArea.containsMouse ? Theme.tint(radioPage.accent, 0.25) : Theme.glassFill
+                border.color: radioPage.accent
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -501,7 +438,7 @@ Rectangle {
                     id: backText
                     anchors.centerIn: parent
                     text: "Back"
-                    color: "#e7f1ef"
+                    color: Theme.textPrimary
                     font { pixelSize: radioPage.width / 55; family: "Arial"; bold: true }
                 }
                 MouseArea {
@@ -525,8 +462,8 @@ Rectangle {
                     width: radioPage.width / 25
                     height: width
                     radius: width / 2
-                    color: prevArea.containsMouse ? "#082839" : "#5A3211"
-                    border.color: "#D08831"
+                    color: prevArea.containsMouse ? Theme.tint(radioPage.accent, 0.2) : Theme.glassFill
+                    border.color: radioPage.accent
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Image{
@@ -550,8 +487,8 @@ Rectangle {
                     width: radioPage.width / 20
                     height: width
                     radius: width / 2
-                    color: playArea.containsMouse ? "#082839" : "#5A3211"
-                    border.color: "#D08831"
+                    color: playArea.containsMouse ? Theme.tint(radioPage.accent, 0.25) : Theme.glassFill
+                    border.color: radioPage.accent
                     border.width: 2
                     Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -578,8 +515,8 @@ Rectangle {
                     width: radioPage.width / 25
                     height: width
                     radius: width / 2
-                    color: nextArea.containsMouse ? "#082839" : "#5A3211"
-                    border.color: "#D08831"
+                    color: nextArea.containsMouse ? Theme.tint(radioPage.accent, 0.2) : Theme.glassFill
+                    border.color: radioPage.accent
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Image{
@@ -602,7 +539,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
                 anchors.rightMargin: radioPage.width / 50
-                spacing: radioPage.width / 80
+                spacing: radioPage.width / 60
 
                 // Mute
                 Rectangle {
@@ -611,18 +548,14 @@ Rectangle {
                     width: radioPage.width / 25
                     height: width
                     radius: width / 2
-                    color: muteArea.containsMouse ? "#082839" : "#5A3211"
-                    border.color: "#D08831"
+                    color: muteArea.containsMouse ? Theme.tint(radioPage.accent, 0.2) : Theme.glassFill
+                    border.color: radioPage.accent
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
                     Image {
                         anchors.centerIn: parent
                         width: 20; height: 20
-                        // Only two states, unlike the emoji this replaced:
-                        // volumedown.png is a speaker with a cross, i.e. muted,
-                        // not "quiet". Showing it at low-but-audible volume
-                        // would tell the driver the audio is off when it is not.
                         source: volumeBtn.muted ? "qrc:/assets/icons/volumedown.png"
                                                 : "qrc:/assets/icons/volumeup.png"
                         fillMode: Image.PreserveAspectFit
@@ -654,14 +587,14 @@ Rectangle {
                         x: volumeSlider.leftPadding
                         y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
                         width: volumeSlider.availableWidth; height: 6; radius: 3
-                        color: "#082839"
+                        color: Theme.glassBorder
                         Rectangle {
                             width: volumeSlider.visualPosition * parent.width
                             height: parent.height; radius: parent.radius
                             gradient: Gradient {
                                 orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: "#D08831" }
-                                GradientStop { position: 1.0; color: '#964405' }
+                                GradientStop { position: 0.0; color: Theme.tint(radioPage.accent, 0.4) }
+                                GradientStop { position: 1.0; color: radioPage.accent }
                             }
                         }
                     }
@@ -670,7 +603,7 @@ Rectangle {
         }
     }
 
-    // Virtual Keyboard Popup — parented to Overlay so it isn't clipped
+    // Virtual Keyboard Popup
     Popup {
         id: keyboardPopup
         parent: Overlay.overlay
@@ -678,19 +611,17 @@ Rectangle {
         height: radioPage.height * 0.7
         anchors.centerIn: Overlay.overlay
         modal: true
-        // Dim the page behind the dialog
         Overlay.modal: Rectangle {
-            color: "#000000"
-            opacity: 0.6
+            color: Theme.scrim
             Behavior on opacity { NumberAnimation { duration: 180 } }
         }
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: Rectangle {
-            color: "#082839"
+            color: Theme.surface
             radius: 16
-            border.color: "#D08831"
+            border.color: radioPage.accent
             border.width: 2
         }
 
@@ -702,7 +633,7 @@ Rectangle {
             Text {
                 text: "Search Station"
                 font.pixelSize: radioPage.height * 0.04
-                color: "#D08831"
+                color: radioPage.accent
                 font.bold: true
                 font.family: "Arial"
                 anchors.horizontalCenter: parent.horizontalCenter

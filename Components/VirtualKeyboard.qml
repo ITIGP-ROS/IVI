@@ -25,16 +25,16 @@ Rectangle {
      * every page that does not set them keeps exactly the keyboard it had —
      * only Settings, which has moved to the glass theme, overrides them.
      */
-    property color accent:        "#D08831"   // outlines, Enter, active shift
-    property color panelColor:    "#082839"   // key area backing
-    property color fieldColor:    "#082839"   // preview field backing
-    property color keyColor:      "#10475E"   // key at rest
-    property color keyHoverColor: "#964405"   // key under the finger
-    property color keyBorder:     "#3D717E"
-    property color keyTextColor:  "#e7f1ef"
-    property color enterColor:    "#5A3211"
-    property color danger:        "#ff4444"
-    property color dangerDim:     "#aa2222"
+    property color accent:        Theme.accentAmber   // outlines, Enter, active shift
+    property color panelColor:    Theme.glassFill     // key area backing
+    property color fieldColor:    Theme.glassFill     // preview field backing
+    property color keyColor:      Theme.glassFill     // key at rest
+    property color keyHoverColor: Theme.tint(accent, 0.25) // key under the finger
+    property color keyBorder:     Theme.glassBorder
+    property color keyTextColor:  Theme.textPrimary
+    property color enterColor:    Theme.tint(accent, 0.15)
+    property color danger:        Theme.danger
+    property color dangerDim:     Theme.tint(Theme.danger, 0.25)
 
     width: parent ? parent.width : 0
     height: keyArea.height + previewArea.height + 16
@@ -134,7 +134,7 @@ Rectangle {
                 // symbols here does not rescue it, and the button came up blank
                 // on the head unit. U+00D7 is in Latin-1 and is what the other
                 // close buttons in this app already use.
-                Text { text: "×"; color: "#ffffff"; font.pixelSize: 24; font.bold: true; font.family: "Arial"; anchors.centerIn: parent }
+                Text { text: "×"; color: virtualKeyboard.keyTextColor; font.pixelSize: 24; font.bold: true; font.family: "Arial"; anchors.centerIn: parent }
 
                 MouseArea {
                     id: clearArea
@@ -282,7 +282,7 @@ Rectangle {
                     color: canMouse.containsMouse ? virtualKeyboard.danger : virtualKeyboard.dangerDim
                     border.color: canMouse.containsMouse ? virtualKeyboard.danger : virtualKeyboard.keyBorder; border.width: 1
                     Behavior on color { ColorAnimation { duration: 80 } }
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: "#ffffff"; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
                     MouseArea { id: canMouse; anchors.fill: parent; hoverEnabled: true; onClicked: { targetText = ""; if (targetItem) targetItem.text = ""; cancelled() } }
                 }
                 // Space

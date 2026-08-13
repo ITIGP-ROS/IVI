@@ -135,8 +135,7 @@ Rectangle {
                 }
                 Text {
                     // Says which of the three states it is in, because "off" and
-                    // "no ECU on the bus" look identical on an unlit strip.
-                    text: !card.live      ? "No ECU"
+                    text: !card.live      ? "Off"
                         : AmbientLight.on ? card.modes[AmbientLight.mode - 1].name
                                           : "Off"
                     color: !card.live ? "#dd9c4d" : AmbientLight.on ? "#8899bb" : "#66738a"

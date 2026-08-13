@@ -11,6 +11,7 @@ Rectangle {
     anchors.fill: parent
     color: "transparent"
 
+    property color accent: Theme.accentMint
     property bool audioSelected: mediaPage.currentMediaType === 2
     property string errorMessage: ""
     property int currentFileIndex: -1
@@ -46,39 +47,14 @@ Rectangle {
     }
 
     // ========================================== BACKGROUND =========================================
-    Rectangle {
-        z: -1
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#082839" }
-            GradientStop { position: 0.5; color: "#10475E" }
-            GradientStop { position: 1.0; color: "#082839" }
-        }
-
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.04
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = "#D08831"
-                var step = 40
-                for (var x = 0; x < width; x += step) {
-                    for (var y = 0; y < height; y += step) {
-                        ctx.beginPath()
-                        ctx.arc(x, y, 1.5, 0, Math.PI * 2)
-                        ctx.fill()
-                    }
-                }
-            }
-        }
-    }
-
+    // Transparent background, inheriting the glass background from MediaPlayerPage.
+    
     // ========================================== Left Panel (Source Selection) =========================================
     Rectangle {
         id: leftPanel
         width: audioPage.width / 5
         height: parent.height
-        color: '#082839'
+        color: "transparent"
 
         Column {
             anchors.top: parent.top
@@ -88,9 +64,9 @@ Rectangle {
             // ========================================= Audio Sources ===================================================
             Repeater {
                 model: [
-                    { label: "🗂️  Local",    idx: 0 },
-                    { label: "🔵  Bluetooth",idx: 2 },
-                    { label: "💾  USB",      idx: 3 }
+                    { label: "Local", iconText: "🗂️", iconImg: "", idx: 0 },
+                    { label: "Bluetooth", iconText: "", iconImg: "qrc:/assets/icons/bt.png", idx: 2 },
+                    { label: "USB", iconText: "💾", iconImg: "", idx: 3 }
                 ]
 
                 delegate: Rectangle {
@@ -99,22 +75,42 @@ Rectangle {
                     width: leftPanel.width * 0.8
                     height: audioPage.height / 14
                     radius: height / 5
-                    color: rightPanel.currentIndex === modelData.idx ? '#5A3211'
-                            : (srcArea.containsMouse ? '#10475E' : 'transparent')
-                    border.color: rightPanel.currentIndex === modelData.idx ? '#D08831' : 'transparent'
+                    color: rightPanel.currentIndex === modelData.idx ? Theme.tint(audioPage.accent, 0.4)
+                            : (srcArea.containsMouse ? Theme.tint(audioPage.accent, 0.1) : Theme.glassFill)
+                    border.color: rightPanel.currentIndex === modelData.idx ? audioPage.accent : Theme.glassBorder
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 150 } }
 
-                    Text {
-                        text: optionRect.modelData.label
-                        color: rightPanel.currentIndex === optionRect.modelData.idx ? '#D08831' : '#3D717E'
-                        font.pixelSize: audioPage.width / 60
-                        font.family: "Arial"
-                        font.bold: rightPanel.currentIndex === optionRect.modelData.idx
-                        horizontalAlignment: Text.AlignLeft
+                    Row {
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: optionRect.left
-                        anchors.leftMargin: optionRect.width / 8
+                        anchors.left: parent.left
+                        anchors.leftMargin: parent.width / 8
+                        spacing: 12
+
+                        Text {
+                            visible: optionRect.modelData.iconText !== ""
+                            text: optionRect.modelData.iconText
+                            font.pixelSize: audioPage.width / 70
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Image {
+                            visible: optionRect.modelData.iconImg !== ""
+                            source: optionRect.modelData.iconImg
+                            width: audioPage.width / 70
+                            height: audioPage.width / 70
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Text {
+                            text: optionRect.modelData.label
+                            color: rightPanel.currentIndex === optionRect.modelData.idx ? audioPage.accent : Theme.textPrimary
+                            font.pixelSize: audioPage.width / 60
+                            font.family: "Arial"
+                            font.bold: rightPanel.currentIndex === optionRect.modelData.idx
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
 
                     MouseArea {
@@ -138,8 +134,8 @@ Rectangle {
                 width: backText.width * 2.5
                 height: backText.height + backText.height * 0.6
                 radius: height / 1.5
-                color: backArea.containsMouse ? "#964405" : '#5A3211'
-                border.color: "#D08831"
+                color: backArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
+                border.color: Theme.danger
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -147,7 +143,7 @@ Rectangle {
                     id: backText
                     anchors.centerIn: parent
                     text: "Back"
-                    color: '#e7f1ef'
+                    color: Theme.textPrimary
                     font.pixelSize: audioPage.width / 55
                     font.family: "Arial"
                     font.bold: true
@@ -175,17 +171,14 @@ Rectangle {
         anchors.left: leftPanel.right
         anchors.leftMargin: audioPage.width / 20
         color: 'transparent'
-        border.color: '#D08831'
-        border.width: 2
+        border.color: Theme.glassBorder
+        border.width: 1
         radius: height / 20
 
         property int currentIndex: 0
 
         // ================================================ Local audio ===============================================
         Rectangle {
-            // Bottom is pinned to the progress slider rather than to the panel, so
-            // the track list and its scrollbar stop just above the track position
-            // instead of running underneath it.
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
@@ -206,15 +199,13 @@ Rectangle {
                     Text {
                         id: localCount
                         text: musicLibrary.count + (musicLibrary.count === 1 ? " track" : " tracks")
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.pixelSize: audioPage.width / 85
                         font.family: "Arial"
                         anchors.right: parent.right
                     }
                 }
 
-                // Empty state — a missing or empty folder must say so, otherwise
-                // a blank panel looks like the player is broken.
                 Column {
                     width: parent.width
                     spacing: audioPage.height / 60
@@ -222,14 +213,14 @@ Rectangle {
 
                     Text {
                         text: "No audio files found"
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.pixelSize: audioPage.width / 45
                         font.family: "Arial"
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Text {
                         text: "Add music to the library folder"
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.pixelSize: audioPage.width / 80
                         font.family: "Arial"
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -253,14 +244,14 @@ Rectangle {
                         contentItem: Rectangle {
                             implicitWidth: parent.width
                             radius: width / 2
-                            color: localScrollBar.pressed ? '#964405' : localScrollBar.hovered ? '#D08831' : '#5A3211'
+                            color: localScrollBar.pressed ? Theme.tint(audioPage.accent, 0.4) : localScrollBar.hovered ? audioPage.accent : Theme.glassFill
                             opacity: localScrollBar.hovered || localScrollBar.pressed ? 1.0 : 0.6
                             Behavior on color { ColorAnimation { duration: 150 } }
                             Behavior on opacity { NumberAnimation { duration: 150 } }
                         }
                         background: Rectangle {
                             implicitWidth: parent.width
-                            color: '#082839'
+                            color: Theme.glassFill
                             radius: width / 2
                             opacity: 0.3
                         }
@@ -279,9 +270,9 @@ Rectangle {
                         width: ListView.view.width - localScrollBar.width * 2
                         height: audioPage.height / 14
                         radius: height / 5
-                        color: isCurrent ? '#5A3211'
-                                         : localRowArea.containsMouse ? '#10475E' : 'transparent'
-                        border.color: isCurrent ? '#D08831' : 'transparent'
+                        color: isCurrent ? Theme.tint(audioPage.accent, 0.3)
+                                         : localRowArea.containsMouse ? Theme.tint(audioPage.accent, 0.1) : Theme.glassFill
+                        border.color: isCurrent ? audioPage.accent : Theme.glassBorder
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -300,13 +291,11 @@ Rectangle {
 
                             Text {
                                 text: localRow.fileName.replace(/\.[^.]+$/, "")
-                                color: localRow.isCurrent ? '#D08831' : '#e7f1ef'
+                                color: localRow.isCurrent ? audioPage.accent : Theme.textPrimary
                                 font.pixelSize: audioPage.width / 70
                                 font.family: "Arial"
                                 elide: Text.ElideRight
                                 width: parent.parent.width * 0.7
-                                // Pin left, otherwise an RTL filename (Arabic) drifts
-                                // to the far edge and detaches from its icon.
                                 horizontalAlignment: Text.AlignLeft
                                 anchors.verticalCenter: parent.verticalCenter
                             }
@@ -355,29 +344,26 @@ Rectangle {
                 anchors.verticalCenterOffset: -audioController.height / 2
                 spacing: audioPage.width / 40
 
-                // Status disc — A2DP/AVRCP carries no cover art, so this shows
-                // the stream's state rather than pretending to be album art.
                 Rectangle {
                     id: btDisc
                     width: audioPage.height / 3
                     height: width
                     radius: width / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: '#10475E'
-                    border.color: '#D08831'
+                    color: Theme.glassFill
+                    border.color: audioPage.accent
                     border.width: 2
                     visible: btManager && btManager.connected
                     opacity: btManager && btManager.playerStatus === "playing" ? 1.0 : 0.5
                     Behavior on opacity { NumberAnimation { duration: 300 } }
 
-                    // Breathing ring while the phone is actually playing
                     Rectangle {
                         anchors.centerIn: parent
                         width: parent.width + 18
                         height: width
                         radius: width / 2
                         color: 'transparent'
-                        border.color: '#D08831'
+                        border.color: audioPage.accent
                         border.width: 2
                         opacity: 0
                         SequentialAnimation on opacity {
@@ -405,7 +391,7 @@ Rectangle {
                     Text {
                         visible: !btManager || !btManager.connected
                         text: "No device connected"
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.family: "Arial"
                         font.pixelSize: audioPage.width / 35
                     }
@@ -415,15 +401,15 @@ Rectangle {
                         width: deviceNameText.width + 24
                         height: deviceNameText.height + 10
                         radius: height / 2
-                        color: '#5A3211'
-                        border.color: '#D08831'
+                        color: Theme.tint(audioPage.accent, 0.2)
+                        border.color: audioPage.accent
                         border.width: 1
 
                         Text {
                             id: deviceNameText
                             anchors.centerIn: parent
                             text: btManager ? "🔵  " + btManager.deviceName : ""
-                            color: '#D08831'
+                            color: audioPage.accent
                             font.pixelSize: audioPage.width / 90
                             font.family: "Arial"
                         }
@@ -434,7 +420,7 @@ Rectangle {
                         text: btManager && btManager.trackTitle !== ""
                             ? btManager.trackTitle
                             : "Play music on your phone"
-                        color: btManager && btManager.trackTitle !== "" ? '#e7f1ef' : '#3D717E'
+                        color: btManager && btManager.trackTitle !== "" ? Theme.textPrimary : Theme.textSecondary
                         font.family: "Arial"
                         font.bold: btManager && btManager.trackTitle !== ""
                         font.pixelSize: audioPage.width / 55
@@ -450,7 +436,7 @@ Rectangle {
                                 return btManager.trackArtist + "  ·  " + btManager.trackAlbum
                             return btManager.trackArtist
                         }
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.family: "Arial"
                         font.pixelSize: audioPage.width / 80
                         wrapMode: Text.WordWrap
@@ -462,8 +448,8 @@ Rectangle {
                         width: statusText.width + 24
                         height: statusText.height + 10
                         radius: height / 2
-                        color: btManager && btManager.playerStatus === "playing" ? '#5A3211' : '#1a1a1a'
-                        border.color: btManager && btManager.playerStatus === "playing" ? '#D08831' : '#50FFFFFF'
+                        color: btManager && btManager.playerStatus === "playing" ? Theme.tint(audioPage.accent, 0.2) : Theme.glassFill
+                        border.color: btManager && btManager.playerStatus === "playing" ? audioPage.accent : Theme.glassBorder
                         border.width: 1
 
                         Rectangle {
@@ -471,7 +457,7 @@ Rectangle {
                             anchors.left: parent.left
                             anchors.leftMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
-                            color: btManager && btManager.playerStatus === "playing" ? '#D08831' : '#3D717E'
+                            color: btManager && btManager.playerStatus === "playing" ? audioPage.accent : Theme.textSecondary
 
                             SequentialAnimation on opacity {
                                 running: btManager && btManager.playerStatus === "playing"
@@ -487,7 +473,7 @@ Rectangle {
                             leftPadding: 8
                             text: btManager ? btManager.playerStatus.charAt(0).toUpperCase()
                                             + btManager.playerStatus.slice(1) : ""
-                            color: btManager && btManager.playerStatus === "playing" ? '#D08831' : '#3D717E'
+                            color: btManager && btManager.playerStatus === "playing" ? audioPage.accent : Theme.textSecondary
                             font.pixelSize: audioPage.width / 95
                             font.family: "Arial"
                         }
@@ -511,7 +497,7 @@ Rectangle {
                 anchors.centerIn: parent
                 visible: !usbManager.connected
                 text: "Plug in a USB device"
-                color: '#3D717E'
+                color: Theme.textSecondary
                 font.pixelSize: audioPage.width / 35
                 font.family: "Arial"
             }
@@ -522,7 +508,9 @@ Rectangle {
                 anchors.rightMargin: audioPage.width / 65
                 anchors.leftMargin: audioPage.width / 65
                 anchors.bottomMargin: audioPage.width / 18
-                color: '#082839'
+                color: Theme.glassFill
+                border.color: Theme.glassBorder
+                border.width: 1
                 visible: usbManager.scanning
                 z: 5
                 radius: audioPage.width / 60
@@ -534,13 +522,13 @@ Rectangle {
                     Rectangle {
                         width: 40; height: 40; radius: 20
                         color: 'transparent'
-                        border.color: '#D08831'
+                        border.color: audioPage.accent
                         border.width: 3
                         anchors.horizontalCenter: parent.horizontalCenter
                         
                         Rectangle {
                             width: 6; height: 6
-                            color: '#082839'
+                            color: Theme.glassFill
                             anchors.top: parent.top
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.topMargin: -2
@@ -557,7 +545,7 @@ Rectangle {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "Scanning " + usbManager.driveName + "..."
-                        color: '#D08831'
+                        color: audioPage.accent
                         font.pixelSize: audioPage.width / 60
                         font.family: "Arial"
                     }
@@ -565,7 +553,7 @@ Rectangle {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "This may take a moment for phones (MTP)"
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.pixelSize: audioPage.width / 80
                         font.family: "Arial"
                     }
@@ -575,13 +563,15 @@ Rectangle {
                         width: cancelText.width * 2.5
                         height: cancelText.height + 16
                         radius: height / 2
-                        color: cancelArea.containsMouse ? "#ff4444" : "#aa2222"
+                        color: cancelArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
+                        border.color: Theme.danger
+                        border.width: 1
                         
                         Text {
                             id: cancelText
                             anchors.centerIn: parent
                             text: "Cancel Scan"
-                            color: "#ffffff"
+                            color: Theme.textPrimary
                             font.pixelSize: audioPage.width / 60
                             font.family: "Arial"
                             font.bold: true
@@ -598,7 +588,7 @@ Rectangle {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "Found: " + usbManager.audioFiles.length + " audio files"
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.pixelSize: audioPage.width / 80
                         visible: usbManager.audioFiles.length > 0
                     }
@@ -617,14 +607,14 @@ Rectangle {
                     spacing: 10
                     Text {
                         text: "💾  " + usbManager.driveName
-                        color: '#D08831'
+                        color: audioPage.accent
                         font.pixelSize: audioPage.width / 55
                         font.bold: true
                         font.family: "Arial"
                     }
                     Text {
                         text: usbManager.audioFiles.length + " files"
-                        color: '#3D717E'
+                        color: Theme.textSecondary
                         font.pixelSize: audioPage.width / 75
                         font.family: "Arial"
                         anchors.verticalCenter: parent.verticalCenter
@@ -647,7 +637,7 @@ Rectangle {
                         contentItem: Rectangle {
                             implicitWidth: parent.width
                             radius: width / 2
-                            color: listScrollBar.pressed ? '#964405' : listScrollBar.hovered ? '#D08831' : '#5A3211'
+                            color: listScrollBar.pressed ? Theme.tint(audioPage.accent, 0.4) : listScrollBar.hovered ? audioPage.accent : Theme.glassFill
                             opacity: listScrollBar.hovered || listScrollBar.pressed ? 1.0 : 0.6
                             Behavior on color { ColorAnimation { duration: 150 } }
                             Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -655,7 +645,7 @@ Rectangle {
                         
                         background: Rectangle {
                             implicitWidth: parent.width
-                            color: '#082839'
+                            color: Theme.glassFill
                             radius: width / 2
                             opacity: 0.3
                         }
@@ -671,10 +661,10 @@ Rectangle {
                         height: audioPage.height / 14
                         radius: height / 5
                         color: mediaPlayer.source.toString() === ("file://" + modelData)
-                            ? '#5A3211'
-                            : rowArea.containsMouse ? '#10475E' : 'transparent'
+                            ? Theme.tint(audioPage.accent, 0.3)
+                            : rowArea.containsMouse ? Theme.tint(audioPage.accent, 0.1) : Theme.glassFill
                         border.color: mediaPlayer.source.toString() === ("file://" + modelData)
-                                    ? '#D08831' : 'transparent'
+                                    ? audioPage.accent : Theme.glassBorder
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -693,7 +683,7 @@ Rectangle {
                             Text {
                                 text: usbManager.fileName(fileRow.modelData)
                                 color: mediaPlayer.source.toString() === ("file://" + fileRow.modelData)
-                                    ? '#D08831' : '#e7f1ef'
+                                    ? audioPage.accent : Theme.textPrimary
                                 font.pixelSize: audioPage.width / 70
                                 font.family: "Arial"
                                 elide: Text.ElideRight
@@ -751,28 +741,26 @@ Rectangle {
                     x: progressSlider.leftPadding
                     y: progressSlider.topPadding + progressSlider.availableHeight / 2 - height / 2
                     width: progressSlider.availableWidth
-                    height: 3
-                    radius: 2
-                    color: '#082839'
+                    height: 6
+                    radius: 3
+                    color: Theme.glassFill
+                    border.color: Theme.glassBorder
+                    border.width: 1
 
                     Rectangle {
                         width: progressSlider.visualPosition * parent.width
                         height: parent.height
                         radius: parent.radius
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0.0; color: '#D08831' }
-                            GradientStop { position: 1.0; color: '#964405' }
-                        }
+                        color: audioPage.accent
                     }
                 }
 
                 handle: Rectangle {
                     x: progressSlider.leftPadding + progressSlider.visualPosition * (progressSlider.availableWidth - width)
                     y: progressSlider.topPadding + progressSlider.availableHeight / 2 - height / 2
-                    width: 10; height: 10; radius: 5
-                    color: progressSlider.pressed ? '#D08831' : '#e7f1ef'
-                    border.color: '#D08831'
+                    width: 14; height: 14; radius: 7
+                    color: progressSlider.pressed ? audioPage.accent : Theme.textPrimary
+                    border.color: audioPage.accent
                     border.width: 2
                     visible: mediaPlayer.duration > 0
                 }
@@ -789,7 +777,7 @@ Rectangle {
                 Text {
                     id: currentTimeText 
                     text: audioPage.formatTime(mediaPlayer.position)
-                    color: '#3D717E'
+                    color: Theme.textSecondary
                     font.pixelSize: audioController.height / 5
                     font.family: "Arial"
                 }
@@ -799,7 +787,7 @@ Rectangle {
                 Text {
                     id: totalTimeText
                     text: audioPage.formatTime(mediaPlayer.duration)
-                    color: '#3D717E'
+                    color: Theme.textSecondary
                     font.pixelSize: audioController.height / 5
                     font.family: "Arial"
                 }
@@ -814,8 +802,8 @@ Rectangle {
             anchors.margins: audioPage.height / 30
             height: audioPage.height / 11
             radius: height / 2
-            color: '#5A3211'
-            border.color: '#D08831'
+            color: Theme.glassFill
+            border.color: Theme.glassBorder
             border.width: 1
 
             // Mute
@@ -853,18 +841,25 @@ Rectangle {
                     width: volumeSlider.availableWidth
                     height: 6
                     radius: 3
-                    color: '#082839'
+                    color: Theme.glassFill
+                    border.color: Theme.glassBorder
+                    border.width: 1
 
                     Rectangle {
                         width: volumeSlider.visualPosition * parent.width
                         height: parent.height
                         radius: parent.radius
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0.0; color: '#D08831' }
-                            GradientStop { position: 1.0; color: '#964405' }
-                        }
+                        color: audioPage.accent
                     }
+                }
+                
+                handle: Rectangle {
+                    x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
+                    y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
+                    width: 12; height: 12; radius: 6
+                    color: volumeSlider.pressed ? audioPage.accent : Theme.textPrimary
+                    border.color: audioPage.accent
+                    border.width: 2
                 }
             }
 
@@ -878,10 +873,10 @@ Rectangle {
                     width: audioController.height * 0.6
                     height: width
                     radius: width / 2
-                    color: prevArea.containsMouse ? "#964405" : "#5A3211"
-                    border.color: "#D08831"
+                    color: prevArea.containsMouse ? Theme.tint(audioPage.accent, 0.4) : Theme.glassFill
+                    border.color: audioPage.accent
                     border.width: 1
-                    scale: prevArea.containsMouse ? 1.15 : 1
+                    scale: prevArea.containsMouse ? 1.05 : 1
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Behavior on scale { NumberAnimation { duration: 150 } }
 
@@ -920,10 +915,12 @@ Rectangle {
                     width: audioController.height * 0.72
                     height: width
                     radius: width / 2
-                    color: playMainArea.containsMouse ? '#964405' : '#5A3211'
-                    border.color: '#D08831'
+                    color: playMainArea.containsMouse ? Theme.tint(audioPage.accent, 0.4) : Theme.glassFill
+                    border.color: audioPage.accent
                     border.width: 2
+                    scale: playMainArea.containsMouse ? 1.05 : 1
                     Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on scale { NumberAnimation { duration: 150 } }
 
                     Image{
                         anchors.centerIn: parent
@@ -964,10 +961,10 @@ Rectangle {
                     width: audioController.height * 0.6
                     height: width
                     radius: width / 2
-                    color: nextArea.containsMouse ? "#964405" : "#5A3211"
-                    border.color: "#D08831"
+                    color: nextArea.containsMouse ? Theme.tint(audioPage.accent, 0.4) : Theme.glassFill
+                    border.color: audioPage.accent
                     border.width: 1
-                    scale: nextArea.containsMouse ? 1.15 : 1
+                    scale: nextArea.containsMouse ? 1.05 : 1
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Behavior on scale { NumberAnimation { duration: 150 } }
 
@@ -1035,18 +1032,25 @@ Rectangle {
                     width: speedSlider.availableWidth
                     height: 6
                     radius: 3
-                    color: '#082839'
+                    color: Theme.glassFill
+                    border.color: Theme.glassBorder
+                    border.width: 1
 
                     Rectangle {
                         width: speedSlider.visualPosition * parent.width
                         height: parent.height
                         radius: parent.radius
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0.0; color: '#D08831' }
-                            GradientStop { position: 1.0; color: '#964405' }
-                        }
+                        color: audioPage.accent
                     }
+                }
+                
+                handle: Rectangle {
+                    x: speedSlider.leftPadding + speedSlider.visualPosition * (speedSlider.availableWidth - width)
+                    y: speedSlider.topPadding + speedSlider.availableHeight / 2 - height / 2
+                    width: 12; height: 12; radius: 6
+                    color: speedSlider.pressed ? audioPage.accent : Theme.textPrimary
+                    border.color: audioPage.accent
+                    border.width: 2
                 }
             }
 
@@ -1074,10 +1078,10 @@ Rectangle {
         height: btnSize
         radius: width / 2
 
-        color: btnArea.containsMouse ? "#964405" : "#5A3211"
-        border.color: "#D08831"
+        color: btnArea.containsMouse ? Theme.tint(audioPage.accent, 0.4) : Theme.glassFill
+        border.color: audioPage.accent
         border.width: 1
-        scale: btnArea.containsMouse ? 1.15 : 1
+        scale: btnArea.containsMouse ? 1.05 : 1
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on scale { NumberAnimation { duration: 150 } }
 
@@ -1086,7 +1090,7 @@ Rectangle {
             anchors.centerIn: parent
             text: parent.icon
             visible: String(controlBtn.iconSource) === ""
-            color: '#ffffff'
+            color: Theme.textPrimary
             font.pixelSize: controlBtn.fontPixel
         }
 
