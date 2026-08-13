@@ -176,9 +176,9 @@ Item {
 
             Row {
                 anchors.fill: parent
-                anchors.margins: height * 0.2
-                anchors.leftMargin: height * 0.5
-                anchors.rightMargin: height * 0.5
+                anchors.margins: parent.height * 0.2
+                anchors.leftMargin: parent.height * 0.5
+                anchors.rightMargin: parent.height * 0.5
                 spacing: root.width / 60
 
                 Image {
