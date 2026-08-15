@@ -16,6 +16,10 @@ Node {
     property bool showGround: true
     property bool showCity: true
 
+    // Vehicle speed in m/s — drives the city scroll, so the world stands still
+    // at a standstill just like the ego car's wheels do.
+    property real speed: 0
+
     // created city entries (for teardown on theme/palette change)
     property var cityEntries: []
 
@@ -156,8 +160,11 @@ Node {
     // (z=-6000) — nothing past the road at rest, and the loop keeps rows
     // behind the car at all times (nearest row is 4 m behind at loop start).
     // Pattern: deterministic 12-row cycle, spacing 800 -> the city tiles
-    // perfectly every 12*800 = 9600 units, and the model animates by exactly
-    // one period (-9600 -> 0) so the loop has no seam. Building depth stays
+    // perfectly every 12*800 = 9600 units, and the model scrolls by exactly
+    // one period (-9600 -> 0) before wrapping, so the loop has no seam. The
+    // scroll is integrated per frame at the car's own speed rather than run on
+    // a fixed duration: a duration binding would restart (and visibly jump)
+    // the loop on every velocity update. Building depth stays
     // below the spacing (max 760 < 800) so cubes never overlap each other.
     // Buildings are BIG and drastically varied (8..20 m wide, 3..7.6 m deep,
     // 3..40 m tall); their inner edge sits cityInset..cityInset+4.5 m from the
@@ -167,17 +174,46 @@ Node {
     // which is world-space and seamless, and also hides the loop-wrap pop
     // beyond the road end. No opacity bands -> no banding and no flash at
     // the loop boundary.
+
+    // 12 rows x 800 spacing — the tiling period the scroll has to wrap on.
+    readonly property real cityPeriod: 9600
+
+    // Scroll rate in units/s (100 units = 1 m, as everywhere else here).
+    // Below 0.05 m/s the car counts as stopped and the scroll stops with it.
+    // Guarded for NaN and clamped because carInfo.currVel is whatever the ROS
+    // side last published — a bad reading must not strobe the whole city.
+    readonly property real scrollRate:
+        (isFinite(root.speed) && root.speed > 0.05) ? Math.min(root.speed, 60) * 100 : 0
+
+    // Resting phase of the scroll. The band is 16000 long but wraps every
+    // 9600, so the stretch covered at EVERY phase is only the 6400 between the
+    // road's far end and 4 m behind the car — where the remaining 9600 sits is
+    // purely a matter of phase. At -cityPeriod that surplus is all dumped past
+    // the road end (invisible, it is deep in the fog) and the nearest row ends
+    // up 4 m behind the car, leaving the camera at z=+960 sitting in a gap with
+    // bare road behind it. -2400 spends it the other way: 76 m of city behind
+    // the car, out to the point where fog closes in anyway (+7760), while the
+    // far end still reaches -8400, well past the fog wall at -5840.
+    // This is the frame the user actually sits on, since the city is frozen
+    // until the car moves.
+    readonly property real cityRestZ: -2400
+
     Node {
         id: cityGroup
         visible: root.showCity
-        position: Qt.vector3d(0, floorY + 0.5, 0)
 
-        Vector3dAnimation on position {
-            loops: Animation.Infinite
-            from: Qt.vector3d(0, floorY + 0.5, -9600)
-            to: Qt.vector3d(0, floorY + 0.5, 0)
-            duration: 13333 // 9600 units / 13.333 s = 7.2 m/s ~ 26 km/h — relaxed
-            easing.type: Easing.Linear
+        // Walks up to 0, then wraps back by a full period.
+        property real scrollZ: root.cityRestZ
+        position: Qt.vector3d(0, floorY + 0.5, scrollZ)
+
+        FrameAnimation {
+            running: root.showCity && root.scrollRate > 0
+            onTriggered: {
+                // Cap the step so a stall (hidden window, hitch) resumes smoothly
+                // instead of teleporting the city by the whole missed interval.
+                let z = cityGroup.scrollZ + root.scrollRate * Math.min(frameTime, 0.1)
+                cityGroup.scrollZ = z >= 0 ? z - root.cityPeriod : z
+            }
         }
 
         Model { source: "#Cube"; receivesShadows: false; castsShadows: false; materials: cityMaterial; instancing: cityList }

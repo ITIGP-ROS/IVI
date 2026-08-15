@@ -1,7 +1,9 @@
 #include "inc/car_info.h"
 
 CarInfo::CarInfo(QObject *parent)
-    : QObject{parent}
+    : QObject{parent}, m_currVel(0.0),
+      m_currLatitude(0.0), m_currLongitude(0.0), m_currAltitude(0.0),
+      m_currImuX(0.0), m_currImuY(0.0), m_currImuZ(0.0), m_currImuW(0.0)
 {}
 
 double CarInfo::getCurrVel() const

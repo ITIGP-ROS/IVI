@@ -180,6 +180,8 @@ Item {
         Environment3D {
             id: environment3D
             asphalt: root.asphaltRoad
+            // m/s — the city scrolls at the car's own speed, frozen at standstill
+            speed: carInfo.currVel
         }
 
         Node {
