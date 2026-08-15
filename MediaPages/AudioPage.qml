@@ -718,10 +718,13 @@ Rectangle {
 
             GlassSlider {
                 id: progressSlider
+                // Fills everything under the title rather than taking a fixed
+                // 23 px: the gap between the two was dead area, and a scrubber
+                // is the control on this page most worth being able to hit.
+                anchors.top: nowTitle.bottom
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: audioPage.height / 26
                 accent: audioPage.accent
                 handleSize: 14
                 from: 0

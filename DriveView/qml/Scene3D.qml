@@ -827,7 +827,7 @@ Item {
 
     Rectangle {
         id: settingsDrawer
-        property bool open: true   // TEMP-SCREENSHOT
+        property bool open: false
         z: 100
         clip: true
 
