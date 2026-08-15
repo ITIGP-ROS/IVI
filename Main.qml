@@ -401,7 +401,7 @@ ApplicationWindow {
     Timer {
         interval: 1200
         running: mainWindow.splashDone && !driveViewLoader.active
-        onTriggered: driveViewLoader.active = true
+        onTriggered: { driveViewLoader.active = true; driveViewLoader.shown = true }
     }
 
     // LAUNCHER PAGE

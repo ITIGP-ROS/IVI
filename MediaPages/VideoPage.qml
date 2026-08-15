@@ -1,18 +1,75 @@
 import QtQuick
 import QtQuick.Controls
-pragma ComponentBehavior: Bound
 import QtMultimedia
+pragma ComponentBehavior: Bound
 
+/*
+ * Video player: local library and USB.
+ *
+ * Same skeleton as the radio and audio pages — narrow left rail, bordered
+ * content panel, glass transport pill along the bottom of it — with one extra
+ * mode: fullscreen folds the rail, the panel chrome, the transport bar and the
+ * window title bar away, leaving the picture and a single minimise button.
+ */
 Rectangle {
     id: videoPage
     required property StackView stackView
     anchors.fill: parent
     color: "transparent"
 
-    property color accent: Theme.accentMint
+    readonly property color accent: Theme.accentBlue
 
-    // Stop playback and show the local library list again. The Local tab has
-    // no file picker, so this is how you get back to choosing a video.
+    // ---- geometry ----------------------------------------------------------
+    // Shared with RadioPage and AudioPage. Fullscreen collapses the insets to
+    // zero rather than re-targeting anchors, so the change can be animated.
+    readonly property real railW:  videoPage.width / 5
+    readonly property real topPad: videoPage.height / 10
+    readonly property real panelH: videoPage.height - videoPage.height / 6
+
+    readonly property int srcLocal: 0
+    readonly property int srcUsb:   1
+    property int source: srcLocal
+
+    /*
+     * MediaPlayerPage watches this to hide its WindowBar, which is drawn over
+     * this page and would otherwise sit on top of the picture.
+     */
+    property bool fullScreen: false
+
+    /*
+     * Fullscreen chrome.
+     *
+     * The minimise button used to be dim until hovered, which on a touch panel
+     * means dim forever — there is no pointer to hover with, so the one control
+     * left on screen was permanently at 45% over a picture that could be any
+     * colour. It is shown outright now and only settles back after a few idle
+     * seconds, never to nothing: a control you cannot see is a control that is
+     * not there. A tap anywhere on the picture brings it straight back.
+     */
+    property bool chromeShown: true
+
+    function revealChrome() {
+        videoPage.chromeShown = true
+        chromeTimer.restart()
+    }
+
+    // A Connections rather than an `onFullScreenChanged` handler on the root:
+    // MediaPlayerPage assigns that same handler at the instantiation site to
+    // fold its title bar away, and the outer assignment would replace this one.
+    Connections {
+        target: videoPage
+        function onFullScreenChanged() { videoPage.revealChrome() }
+    }
+
+    Timer {
+        id: chromeTimer
+        interval: 4000
+        running: videoPage.fullScreen && videoPage.chromeShown
+        onTriggered: videoPage.chromeShown = false
+    }
+
+    // Stop playback and show the library list again. The Local tab has no file
+    // picker, so this is how you get back to choosing a video.
     function showLocalLibrary() {
         videoPlayer.stop()
         videoPlayer.source = ""
@@ -21,14 +78,44 @@ Rectangle {
         videoPage.fullScreen = false
     }
 
-    // ── Full screen ──
-    // The video takes the entire screen: source list, panel chrome, transport
-    // controls and the title bar all fold away, leaving only a small minimise
-    // button in the top-left corner.
-    //
-    // MediaPlayerPage watches this to hide its WindowBar, which is drawn over
-    // this page and would otherwise sit on top of the picture.
-    property bool fullScreen: false
+    function stripExtension(name) { return name.replace(/\.[^.]+$/, "") }
+
+    // "MP4", "MKV". Used as the row subtitle: repeating "Local library" or the
+    // drive name down every row of a list that is entirely one or the other
+    // says nothing, where the format is the one thing that differs.
+    function fileFormat(name) {
+        var m = String(name).match(/\.([^.]+)$/)
+        return m ? m[1].toUpperCase() : ""
+    }
+
+    function isCurrent(path) {
+        return videoPlayer.source.toString() === ("file://" + path)
+    }
+
+    function playFile(path, index) {
+        videoPlayer.source = "file://" + path
+        videoPlayer.videoSelected = true
+        videoPlayer.currentFileIndex = index
+        videoPlayer.play()
+    }
+
+    // Step through the USB list in either direction, wrapping. Both transport
+    // buttons did this inline with the sign flipped and the bounds check
+    // written out twice.
+    function stepUsb(delta) {
+        if (!usbManager.connected || usbManager.videoFiles.length === 0) return
+        var n = usbManager.videoFiles.length
+        var i = (videoPlayer.currentFileIndex + delta + n) % n
+        videoPage.playFile(usbManager.videoFiles[i], i)
+    }
+
+    function formatTime(ms) {
+        if (ms <= 0) return "0:00"
+        var totalSec = Math.floor(ms / 1000)
+        var min = Math.floor(totalSec / 60)
+        var sec = totalSec % 60
+        return min + ":" + (sec < 10 ? "0" + sec : sec)
+    }
 
     // Escape and a double tap on the picture are alternatives to the button —
     // worth having when the only control on screen is one small icon.
@@ -40,29 +127,30 @@ Rectangle {
 
     MediaPlayer {
         id: videoPlayer
-        audioOutput: AudioOutput { id: audioOut; volume: 0.7; }
+        audioOutput: AudioOutput { id: audioOut; volume: 0.7 }
         videoOutput: videoOut
-        property bool videoSelected: false
-        property string errorMessage: ""
-        property int currentFileIndex: -1
 
-        onErrorOccurred: function(error, errorString) {
+        property bool   videoSelected: false
+        property string errorMessage: ""
+        property int    currentFileIndex: -1
+
+        onErrorOccurred: function (error, errorString) {
             videoSelected = false
-            // Both remaining sources are local files, so the wording is about
-            // files, not servers. Anything else falls through to the player's
-            // own string rather than being dressed up in a guess.
-            switch(error) {
-                case MediaPlayer.FormatError:
-                    errorMessage = "⚠  Unsupported video format"
-                    break
-                case MediaPlayer.AccessDeniedError:
-                    errorMessage = "⚠  Cannot read the file — permission denied"
-                    break
-                case MediaPlayer.ResourceError:
-                    errorMessage = "⚠  File not found or unreadable"
-                    break
-                default:
-                    errorMessage = "⚠  " + errorString
+            // Both sources are local files, so the wording is about files, not
+            // servers. Anything else falls through to the player's own string
+            // rather than being dressed up in a guess.
+            switch (error) {
+            case MediaPlayer.FormatError:
+                errorMessage = "Unsupported video format"
+                break
+            case MediaPlayer.AccessDeniedError:
+                errorMessage = "Cannot read the file — permission denied"
+                break
+            case MediaPlayer.ResourceError:
+                errorMessage = "File not found or unreadable"
+                break
+            default:
+                errorMessage = errorString
             }
         }
 
@@ -72,136 +160,78 @@ Rectangle {
         }
     }
 
-    // ========================================== BACKGROUND =========================================
-    // Transparent background, inheriting the glass background from MediaPlayerPage.
-
-    // ========================================== Left Panel (Source Selection) =========================================
-    Rectangle {
-        id: leftPanel
-        width: videoPage.width / 5
-        height: parent.height
-        color: 'transparent'
+    // ========================================== Left rail =========================================
+    Item {
+        id: leftRail
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.topMargin: videoPage.topPad
+        width: videoPage.railW
+        height: videoPage.panelH
         visible: !videoPage.fullScreen
 
         Column {
             anchors.top: parent.top
-            anchors.topMargin: videoPage.height / 10
             anchors.horizontalCenter: parent.horizontalCenter
+            width: parent.width * 0.8
             spacing: videoPage.height / 40
 
-            Repeater {
-                model: [
-                    { label: "Local", iconText: "🗂️", iconImg: "", idx: 0 },
-                    { label: "USB", iconText: "💾", iconImg: "", idx: 1 }
-                ]
-
-                delegate: Rectangle {
-                    id: optionRect
-                    required property var modelData
-                    width: leftPanel.width * 0.8
-                    height: videoPage.height / 14
-                    radius: height / 5
-                    color: rightPanel.currentIndex === modelData.idx ? Theme.tint(videoPage.accent, 0.4)
-                            : (srcArea.containsMouse ? Theme.tint(videoPage.accent, 0.1) : Theme.glassFill)
-                    border.color: rightPanel.currentIndex === modelData.idx ? videoPage.accent : Theme.glassBorder
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: 150 } }
-
-                    Row {
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: parent.left
-                        anchors.leftMargin: parent.width / 8
-                        spacing: 12
-
-                        Text {
-                            visible: optionRect.modelData.iconText !== ""
-                            text: optionRect.modelData.iconText
-                            font.pixelSize: videoPage.width / 70
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Image {
-                            visible: optionRect.modelData.iconImg !== ""
-                            source: optionRect.modelData.iconImg
-                            width: videoPage.width / 70
-                            height: videoPage.width / 70
-                            fillMode: Image.PreserveAspectFit
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Text {
-                            text: optionRect.modelData.label
-                            color: rightPanel.currentIndex === optionRect.modelData.idx ? videoPage.accent : Theme.textPrimary
-                            font.pixelSize: videoPage.width / 60
-                            font.family: "Arial"
-                            font.bold: rightPanel.currentIndex === optionRect.modelData.idx
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
-
-                    MouseArea {
-                        id: srcArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: rightPanel.currentIndex = optionRect.modelData.idx
-                    }
-                }
+            SourceTab {
+                width: parent.width
+                height: videoPage.height / 14
+                accent: videoPage.accent
+                kind: "folder"
+                label: "Local"
+                fontSize: videoPage.width / 60
+                selected: videoPage.source === videoPage.srcLocal
+                onClicked: videoPage.source = videoPage.srcLocal
             }
 
-            // Spacer. Audio uses a bare height / 2.3 here, but it has three
-            // sources to this page's two — so that constant alone leaves this
-            // Back button one row high. Adding back a row plus the column
-            // spacing lands the two buttons at the same y.
-            Rectangle {
-                width: 1
-                height: videoPage.height / 2.3
-                        + videoPage.height / 14
-                        + videoPage.height / 40
-                color: "transparent"
-            }
-
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: backText.width * 2.5
-                height: backText.height + backText.height * 0.6
-                radius: height / 1.5
-                color: backArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
-                border.color: Theme.danger
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 150 } }
-
-                Text {
-                    id: backText
-                    anchors.centerIn: parent
-                    text: "Back"
-                    color: Theme.textPrimary
-                    font.pixelSize: videoPage.width / 55
-                    font.family: "Arial"
-                    font.bold: true
-                }
-
-                MouseArea {
-                    id: backArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: videoPage.stackView.pop()
+            SourceTab {
+                width: parent.width
+                height: videoPage.height / 14
+                accent: videoPage.accent
+                kind: "usb"
+                label: "USB"
+                fontSize: videoPage.width / 60
+                selected: videoPage.source === videoPage.srcUsb
+                onClicked: {
+                    videoPage.source = videoPage.srcUsb
+                    if (usbManager.connected && usbManager.videoFiles.length === 0
+                            && !usbManager.scanning)
+                        usbManager.scanFiles()
                 }
             }
         }
+
+        // Level with the transport bar across the panel. The version this
+        // replaces padded a spacer column by a row height plus a spacing to get
+        // here, which had to be re-derived whenever a source was added.
+        BackButton {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: videoPage.height / 30
+                                  + (videoController.height - height) / 2
+            accent: Theme.danger
+            fontSize: videoPage.width / 55
+            onClicked: videoPage.stackView.pop()
+        }
     }
 
-    // ========================================== Right Panel (Content & Controls) =========================================
+    // ========================================== Content panel =========================================
     Rectangle {
         id: rightPanel
 
-        // Anchored to the page rather than to leftPanel so that going
-        // fullscreen only changes margins — an animatable number — instead of
-        // re-targeting the anchor, which would snap.
-        readonly property real insetLeft: videoPage.fullScreen
-                                          ? 0 : leftPanel.width + videoPage.width / 20
-        readonly property real insetRight: videoPage.fullScreen ? 0 : videoPage.width / 20
-        readonly property real insetTop: videoPage.fullScreen ? 0 : videoPage.height / 10
+        // Anchored to the page rather than to the rail, so going fullscreen
+        // only changes margins — animatable numbers — instead of re-targeting
+        // an anchor, which would snap.
+        readonly property real insetLeft:   videoPage.fullScreen
+                                            ? 0 : videoPage.railW + videoPage.width / 20
+        readonly property real insetRight:  videoPage.fullScreen ? 0 : videoPage.width / 20
+        readonly property real insetTop:    videoPage.fullScreen ? 0 : videoPage.topPad
         readonly property real insetBottom: videoPage.fullScreen ? 0 : videoPage.height / 15
+
+        readonly property real inset: rightPanel.width / 26
 
         width: videoPage.width - insetLeft - insetRight
         height: videoPage.height - insetTop - insetBottom
@@ -209,10 +239,11 @@ Rectangle {
         anchors.topMargin: insetTop
         anchors.left: parent.left
         anchors.leftMargin: insetLeft
+
         // Black behind the picture in fullscreen: a video whose aspect ratio
         // does not match the screen is letterboxed, and the page gradient
         // showing through those bars looks like a rendering fault.
-        color: videoPage.fullScreen ? '#000000' : 'transparent'
+        color: videoPage.fullScreen ? "#000000" : "transparent"
         border.color: Theme.glassBorder
         border.width: videoPage.fullScreen ? 0 : 1
         radius: videoPage.fullScreen ? 0 : height / 20
@@ -222,535 +253,424 @@ Rectangle {
         Behavior on anchors.topMargin  { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
         Behavior on anchors.leftMargin { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
 
-        property int currentIndex: 0
-
+        // ---- picture ----
         VideoOutput {
             id: videoOut
             z: 1
             anchors.fill: parent
-            // Windowed, the controls sit below the picture. Fullscreen, the
-            // picture takes the whole panel and the controls float over it.
-            anchors.margins: videoPage.fullScreen ? 0 : videoPage.height / 50
+            /*
+             * Windowed, the picture sits above the controls. Fullscreen, it
+             * takes the whole panel and the controls are gone.
+             *
+             * The inset here is roughly half the panel's: the picture is
+             * letterboxed inside whatever box it is given, so every pixel of
+             * padding comes straight off the picture. A full inset all round
+             * plus another one above the now bar was costing about 15% of the
+             * frame to margin nobody was looking at.
+             */
+            anchors.margins: videoPage.fullScreen ? 0 : rightPanel.inset * 0.45
+            // Clears the now bar and everything under it. Arithmetic rather
+            // than `anchors.bottom: videoNowBar.top`, because fullscreen has to
+            // change a number the Behavior can animate, not an anchor target.
             anchors.bottomMargin: videoPage.fullScreen
                                   ? 0
-                                  : videoController.height + videoProgress.height + videoPage.height / 16
+                                  : rightPanel.height - videoNowBar.y
+                                    + rightPanel.inset * 0.4
         }
 
-        // A double tap on the picture leaves fullscreen. Sits below the
-        // minimise button (z 10) so it never steals its clicks.
+        // Black behind the picture windowed, for the same reason fullscreen
+        // paints the panel black: a frame whose aspect ratio does not match its
+        // box is letterboxed, and the drifting page gradient showing through
+        // those bars reads as a rendering fault. It matters more now that the
+        // box reaches the panel edges and the bars are correspondingly wider.
+        Rectangle {
+            z: 0
+            anchors.fill: videoOut
+            color: "#000000"
+            visible: videoPlayer.videoSelected && !videoPage.fullScreen
+        }
+
+        // A double tap on the picture leaves fullscreen. Below the minimise
+        // button (z 10) so it never steals its clicks.
         MouseArea {
             id: videoSurfaceArea
             z: 1
             anchors.fill: parent
             enabled: videoPage.fullScreen && videoPlayer.videoSelected
+            // A single tap brings the minimise button back to full strength;
+            // the double tap still leaves fullscreen outright.
+            onClicked: videoPage.revealChrome()
             onDoubleClicked: videoPage.fullScreen = false
         }
 
-        // The only chrome left in fullscreen. Deliberately small and dim until
-        // hovered so it does not intrude on the picture.
+        // The only chrome left in fullscreen, so it has to be findable and it
+        // has to be hittable: a finger target, not the 27 px this used to be.
         ScreenBtn {
             id: minimiseBtn
             expanded: true
-            btnSize: videoPage.height / 22
+            btnSize: videoPage.height / 12
             visible: videoPage.fullScreen
-            opacity: minimiseHover.hovered ? 1.0 : 0.45
-            Behavior on opacity { NumberAnimation { duration: 150 } }
+            opacity: videoPage.chromeShown ? 1.0 : 0.55
+            Behavior on opacity { NumberAnimation { duration: 250 } }
+            // A dark disc, where the copy in the transport bar is glass. Glass
+            // is 5% white: it works over the page backdrop and disappears
+            // entirely over a bright frame, which is exactly where this one
+            // lives.
+            baseColor: Qt.rgba(0, 0, 0, 0.55)
+            ringColor: Qt.rgba(1, 1, 1, 0.55)
             z: 10
             anchors.top: parent.top
             anchors.left: parent.left
-            anchors.topMargin: videoPage.height / 35
-            anchors.leftMargin: videoPage.height / 32
+            anchors.topMargin: videoPage.height / 28
+            anchors.leftMargin: videoPage.height / 28
             onClicked: videoPage.fullScreen = false
 
-            HoverHandler { id: minimiseHover }
+            // Still useful on a desk with a mouse; it is no longer the only way
+            // to make the button visible.
+            HoverHandler {
+                onHoveredChanged: if (hovered) videoPage.revealChrome()
+            }
         }
 
-        // ================================================ Local video ===============================================
-        Rectangle {
-            anchors.fill: parent
-            visible: rightPanel.currentIndex === 0 && !videoPage.fullScreen
-            color: 'transparent'
+        // Closes the video and returns to the library. Fullscreen keeps only
+        // the minimise button, so this goes with the rest of the chrome.
+        TransportButton {
+            id: closeBtn
+            z: 10
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: videoPage.height / 35
+            anchors.rightMargin: videoPage.height / 32
+            accent: Theme.danger
+            diameter: videoPage.width / 32
+            iconScale: 0.42
+            glyph: "close"
+            // Now that the picture reaches the panel edges this sits on top of
+            // it, so it needs the same dark disc as the fullscreen minimise
+            // button rather than glass.
+            baseColor: Qt.rgba(0, 0, 0, 0.55)
+            visible: videoPlayer.videoSelected && !videoPage.fullScreen
+            onClicked: videoPage.showLocalLibrary()
+        }
 
-            Rectangle {
+        // ---- browser ----
+        // Hidden once a video is playing so the picture underneath is clear.
+        Item {
+            id: browser
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: rightPanel.inset
+            anchors.bottom: videoNowBar.top
+            anchors.bottomMargin: videoPage.height / 40
+            z: 2
+            visible: !videoPage.fullScreen && !videoPlayer.videoSelected
+
+            // ------------------------------------------------ Local
+            Item {
                 anchors.fill: parent
-                anchors.bottomMargin: videoController.height + videoProgress.height + videoPage.height / 16
-                anchors.margins: videoPage.height / 50
-                color: videoPlayer.videoSelected ? Theme.glassFill : 'transparent'
-                radius: height / 50
+                visible: videoPage.source === videoPage.srcLocal
 
-                // The library is a fixed on-disk location, so it loads itself —
-                // there is no file picker to drive from a head unit. Hidden once
-                // playback starts so the VideoOutput underneath is unobstructed.
-                Column {
-                    anchors.fill: parent
-                    anchors.margins: videoPage.width / 40
-                    spacing: videoPage.height / 40
-                    visible: !videoPlayer.videoSelected
-
-                    Item {
-                        id: localHeader
-                        width: parent.width
-                        height: localCount.height
-
-                        Text {
-                            id: localCount
-                            text: videoLibrary.count + (videoLibrary.count === 1 ? " video" : " videos")
-                            color: Theme.textSecondary
-                            font.pixelSize: videoPage.width / 85
-                            font.family: "Arial"
-                            anchors.right: parent.right
-                        }
-                    }
-
-                    // Empty state — a missing or empty folder must say so,
-                    // otherwise a blank panel looks like the player is broken.
-                    Column {
-                        width: parent.width
-                        spacing: videoPage.height / 60
-                        visible: videoLibrary.count === 0
-
-                        Text {
-                            text: "No video files found"
-                            color: Theme.textSecondary
-                            font.pixelSize: videoPage.width / 45
-                            font.family: "Arial"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                        Text {
-                            text: "Add videos to the library folder"
-                            color: Theme.textSecondary
-                            font.pixelSize: videoPage.width / 80
-                            font.family: "Arial"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                    }
-
-                    ListView {
-                        width: parent.width
-                        height: parent.height - localHeader.height - parent.spacing
-                        clip: true
-                        visible: videoLibrary.count > 0
-                        model: videoLibrary
-                        spacing: 4
-
-                        ScrollBar.vertical: ScrollBar {
-                            id: localScrollBar
-                            width: videoPage.width / 100
-                            anchors.right: parent.right
-                            anchors.rightMargin: 4
-
-                            contentItem: Rectangle {
-                                implicitWidth: parent.width
-                                radius: width / 2
-                                color: localScrollBar.pressed ? Theme.tint(videoPage.accent, 0.4) : localScrollBar.hovered ? videoPage.accent : Theme.glassFill
-                                opacity: localScrollBar.hovered || localScrollBar.pressed ? 1.0 : 0.6
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                            }
-                            background: Rectangle {
-                                implicitWidth: parent.width
-                                color: Theme.glassFill
-                                radius: width / 2
-                                opacity: 0.3
-                            }
-                            minimumSize: 0.1
-                        }
-
-                        delegate: Rectangle {
-                            id: localRow
-                            required property string fileName
-                            required property string filePath
-                            required property int index
-
-                            readonly property bool isCurrent:
-                                videoPlayer.source.toString() === ("file://" + localRow.filePath)
-
-                            width: ListView.view.width - localScrollBar.width * 2
-                            height: videoPage.height / 14
-                            radius: height / 5
-                            color: isCurrent ? Theme.tint(videoPage.accent, 0.3)
-                                             : localRowArea.containsMouse ? Theme.tint(videoPage.accent, 0.1) : Theme.glassFill
-                            border.color: isCurrent ? videoPage.accent : Theme.glassBorder
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            Row {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: parent.width / 20
-                                spacing: parent.width / 30
-
-                                Text {
-                                    text: "🎬"
-                                    font.pixelSize: videoPage.width / 70
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-
-                                Text {
-                                    text: localRow.fileName.replace(/\.[^.]+$/, "")
-                                    color: localRow.isCurrent ? videoPage.accent : Theme.textPrimary
-                                    font.pixelSize: videoPage.width / 70
-                                    font.family: "Arial"
-                                    elide: Text.ElideRight
-                                    width: parent.parent.width * 0.7
-                                    // Pin left, otherwise an RTL filename (Arabic)
-                                    // drifts to the far edge and detaches from its icon.
-                                    horizontalAlignment: Text.AlignLeft
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            MouseArea {
-                                id: localRowArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    videoPlayer.source = "file://" + localRow.filePath
-                                    videoPlayer.videoSelected = true
-                                    videoPlayer.currentFileIndex = localRow.index
-                                    videoPlayer.play()
-                                }
-                            }
-                        }
-                    }
+                Text {
+                    id: localHeader
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    text: videoLibrary.count + (videoLibrary.count === 1 ? " video" : " videos")
+                    color: Theme.textSecondary
+                    font { pixelSize: videoPage.width / 90; family: "Arial" }
+                    visible: videoLibrary.count > 0
                 }
-            }
-        }
 
-        // ================================================== USB video ==============================================
-        Rectangle {
-            anchors.fill: parent
-            anchors.topMargin: videoPage.width / 90
-            anchors.rightMargin: videoPage.width / 90
-            anchors.leftMargin: videoPage.width / 90
-            anchors.bottomMargin: videoPage.height / 5.35
-            radius: videoPage.width / 20
-            visible: rightPanel.currentIndex === 1 && !videoPage.fullScreen
-            color: 'transparent'
-
-            onVisibleChanged: {
-                if (visible && usbManager.connected
-                        && usbManager.videoFiles.length === 0 && !usbManager.scanning)
-                    usbManager.scanFiles()
-            }
-
-            Text {
-                anchors.top: parent.top
-                anchors.topMargin: parent.height / 2.2
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: !usbManager.connected
-                text: "Plug in a USB device"
-                color: Theme.textSecondary
-                font.pixelSize: videoPage.width / 35
-                font.family: "Arial"
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                color: Theme.glassFill
-                border.color: Theme.glassBorder
-                border.width: 1
-                visible: usbManager.scanning
-                z: 5
-                radius: videoPage.width / 60
-
-                Column {
+                EmptyState {
+                    glyphSize: videoPage.height / 8
+                    titleSize: videoPage.width / 55
+                    hintSize: videoPage.width / 90
                     anchors.centerIn: parent
-                    spacing: 20
-
-                    Rectangle {
-                        width: 40; height: 40; radius: 20
-                        color: 'transparent'
-                        border.color: videoPage.accent
-                        border.width: 3
-                        anchors.horizontalCenter: parent.horizontalCenter
-
-                        Rectangle {
-                            width: 6; height: 6
-                            color: Theme.glassFill
-                            anchors.top: parent.top
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.topMargin: -2
-                        }
-
-                        RotationAnimation on rotation {
-                            running: parent.visible
-                            loops: Animation.Infinite
-                            duration: 900
-                            from: 0; to: 360
-                        }
-                    }
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "Scanning " + usbManager.driveName + "..."
-                        color: videoPage.accent
-                        font.pixelSize: videoPage.width / 60
-                        font.family: "Arial"
-                    }
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "This may take a moment for phones (MTP)"
-                        color: Theme.textSecondary
-                        font.pixelSize: videoPage.width / 80
-                        font.family: "Arial"
-                    }
-
-                    Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: cancelText.width * 2.5
-                        height: cancelText.height + 16
-                        radius: height / 2
-                        color: cancelArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
-                        border.color: Theme.danger
-                        border.width: 1
-
-                        Text {
-                            id: cancelText
-                            anchors.centerIn: parent
-                            text: "Cancel Scan"
-                            color: Theme.textPrimary
-                            font.pixelSize: videoPage.width / 60
-                            font.family: "Arial"
-                            font.bold: true
-                        }
-
-                        MouseArea {
-                            id: cancelArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: usbManager.disconnectDevice()
-                        }
-                    }
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "Found: " + usbManager.videoFiles.length + " video files"
-                        color: Theme.textSecondary
-                        font.pixelSize: videoPage.width / 80
-                        visible: usbManager.videoFiles.length > 0
-                    }
-                }
-            }
-
-            Column {
-                anchors.fill: parent
-                anchors.topMargin: parent.height / 20
-                anchors.leftMargin: parent.width / 20
-                anchors.rightMargin: parent.width / 20
-                spacing: videoPage.height / 30
-                visible: usbManager.connected && !usbManager.scanning && !videoPlayer.videoSelected
-
-                Row {
-                    id: videoDriveHeader
-                    spacing: 10
-                    Text {
-                        text: "💾  " + usbManager.driveName
-                        color: videoPage.accent
-                        font.pixelSize: videoPage.width / 55
-                        font.bold: true
-                        font.family: "Arial"
-                    }
-                    Text {
-                        text: usbManager.videoFiles.length + " files"
-                        color: Theme.textSecondary
-                        font.pixelSize: videoPage.width / 75
-                        font.family: "Arial"
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
+                    visible: videoLibrary.count === 0
+                    kind: "film"
+                    tint: Theme.tint(videoPage.accent, 0.75)
+                    title: "No video files"
+                    hint: "Add videos to the library folder and they will appear here."
                 }
 
                 ListView {
-                    id: videoFileList
-                    width: parent.width
-                    height: parent.height - parent.spacing - videoDriveHeader.height
+                    id: localList
+                    anchors.fill: parent
+                    anchors.topMargin: localHeader.visible
+                                       ? localHeader.height + videoPage.height / 60 : 0
                     clip: true
-                    model: usbManager.videoFiles
-                    spacing: 4
+                    visible: videoLibrary.count > 0
+                    model: videoLibrary
+                    spacing: 6
 
-                    ScrollBar.vertical: ScrollBar {
-                        id: videoScrollBar
-                        width: videoPage.width / 100
-                        anchors.right: parent.right
-                        anchors.rightMargin: 4
-
-                        contentItem: Rectangle {
-                            implicitWidth: parent.width
-                            radius: width / 2
-                            color: videoScrollBar.pressed ? Theme.tint(videoPage.accent, 0.4) : videoScrollBar.hovered ? videoPage.accent : Theme.glassFill
-                            opacity: videoScrollBar.hovered || videoScrollBar.pressed ? 1.0 : 0.6
-                            Behavior on color { ColorAnimation { duration: 150 } }
-                            Behavior on opacity { NumberAnimation { duration: 150 } }
-                        }
-
-                        background: Rectangle {
-                            implicitWidth: parent.width
-                            color: Theme.glassFill
-                            radius: width / 2
-                            opacity: 0.3
-                        }
-                        minimumSize: 0.1
+                    ScrollBar.vertical: GlassScrollBar {
+                        id: localBar
+                        accent: videoPage.accent
+                        view: localList
+                        thickness: videoPage.width / 110
                     }
 
-                    delegate: Rectangle {
-                        required property string modelData
-                        required property int index
-                        width: ListView.view.width - videoScrollBar.width * 2
-                        height: videoPage.height / 14
-                        radius: height / 5
-                        color: videoPlayer.source.toString() === ("file://" + modelData)
-                            ? Theme.tint(videoPage.accent, 0.3)
-                            : videoRowArea.containsMouse ? Theme.tint(videoPage.accent, 0.1) : Theme.glassFill
-                        border.color: videoPlayer.source.toString() === ("file://" + modelData)
-                                    ? videoPage.accent : Theme.glassBorder
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                    delegate: TrackRow {
+                        required property string fileName
+                        required property string filePath
+                        required property int    index
 
-                        Row {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: parent.width / 20
-                            spacing: parent.width / 30
-
-                            Text {
-                                text: "🎬"
-                                font.pixelSize: videoPage.width / 70
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            Text {
-                                text: usbManager.fileName(modelData)
-                                color: videoPlayer.source.toString() === ("file://" + modelData)
-                                    ? videoPage.accent : Theme.textPrimary
-                                font.pixelSize: videoPage.width / 70
-                                font.family: "Arial"
-                                elide: Text.ElideRight
-                                width: parent.parent.width * 0.7
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-                        }
-
-                        MouseArea {
-                            id: videoRowArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
-                                videoPlayer.source = "file://" + modelData
-                                videoPlayer.videoSelected = true
-                                videoPlayer.currentFileIndex = index
-                                videoPlayer.play()
-                            }
-                        }
+                        width: localList.width - localBar.width * 2
+                        height: videoPage.height / 11
+                        accent: videoPage.accent
+                        kind: "film"
+                        title: videoPage.stripExtension(fileName)
+                        subtitle: videoPage.fileFormat(fileName)
+                        active: videoPage.isCurrent(filePath)
+                        playing: active
+                                 && videoPlayer.playbackState === MediaPlayer.PlayingState
+                        onClicked: videoPage.playFile(filePath, index)
                     }
                 }
             }
 
-            Rectangle {
+            // ------------------------------------------------ USB
+            Item {
                 anchors.fill: parent
-                color: Theme.glassFill
-                radius: height / 50
-                visible: videoPlayer.videoSelected
+                visible: videoPage.source === videoPage.srcUsb
+
+                EmptyState {
+                    glyphSize: videoPage.height / 8
+                    titleSize: videoPage.width / 55
+                    hintSize: videoPage.width / 90
+                    anchors.centerIn: parent
+                    visible: !usbManager.connected && !usbManager.scanning
+                    kind: "usb"
+                    tint: Theme.textSecondary
+                    title: "No USB device"
+                    hint: "Plug in a stick or a phone and its videos will be listed here."
+                }
+
+                // ---- scanning ----
+                Item {
+                    anchors.fill: parent
+                    visible: usbManager.scanning
+                    z: 5
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: videoPage.height / 40
+
+                        Spinner {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: videoPage.height / 12
+                            height: width
+                            tint: videoPage.accent
+                            running: usbManager.scanning
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "Scanning " + usbManager.driveName + "…"
+                            color: Theme.textPrimary
+                            font { pixelSize: videoPage.width / 62; family: "Arial"; bold: true }
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: usbManager.videoFiles.length > 0
+                                  ? usbManager.videoFiles.length + " video files so far"
+                                  : "This can take a moment for phones (MTP)"
+                            color: Theme.textSecondary
+                            font { pixelSize: videoPage.width / 95; family: "Arial" }
+                        }
+
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: cancelText.width * 2.4
+                            height: cancelText.height + cancelText.height * 0.7
+                            radius: height / 2
+                            color: cancelArea.containsMouse ? Theme.tint(Theme.danger, 0.4)
+                                                            : Theme.glassFill
+                            border.color: Theme.danger
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                            Text {
+                                id: cancelText
+                                anchors.centerIn: parent
+                                text: "Cancel scan"
+                                color: Theme.textPrimary
+                                font { pixelSize: videoPage.width / 75; family: "Arial"; bold: true }
+                            }
+
+                            MouseArea {
+                                id: cancelArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: usbManager.disconnectDevice()
+                            }
+                        }
+                    }
+                }
+
+                // ---- files ----
+                Item {
+                    anchors.fill: parent
+                    visible: usbManager.connected && !usbManager.scanning
+
+                    Row {
+                        id: driveHeader
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        spacing: videoPage.width / 90
+
+                        MediaGlyph {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: videoPage.width / 52
+                            height: width
+                            kind: "usb"
+                            tint: videoPage.accent
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: usbManager.driveName
+                            color: videoPage.accent
+                            font { pixelSize: videoPage.width / 60; family: "Arial"; bold: true }
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: usbManager.videoFiles.length
+                                  + (usbManager.videoFiles.length === 1 ? " file" : " files")
+                            color: Theme.textSecondary
+                            font { pixelSize: videoPage.width / 90; family: "Arial" }
+                        }
+                    }
+
+                    EmptyState {
+                        glyphSize: videoPage.height / 8
+                        titleSize: videoPage.width / 55
+                        hintSize: videoPage.width / 90
+                        anchors.centerIn: parent
+                        visible: usbManager.videoFiles.length === 0
+                        kind: "film"
+                        tint: Theme.textSecondary
+                        title: "No video on this device"
+                        hint: "The drive was read, but nothing playable turned up."
+                    }
+
+                    ListView {
+                        id: usbList
+                        anchors.fill: parent
+                        anchors.topMargin: driveHeader.height + videoPage.height / 40
+                        clip: true
+                        visible: usbManager.videoFiles.length > 0
+                        model: usbManager.videoFiles
+                        spacing: 6
+
+                        ScrollBar.vertical: GlassScrollBar {
+                            id: usbBar
+                            accent: videoPage.accent
+                            view: usbList
+                            thickness: videoPage.width / 110
+                        }
+
+                        delegate: TrackRow {
+                            required property string modelData
+                            required property int    index
+
+                            width: usbList.width - usbBar.width * 2
+                            height: videoPage.height / 11
+                            accent: videoPage.accent
+                            kind: "film"
+                            title: videoPage.stripExtension(usbManager.fileName(modelData))
+                            subtitle: videoPage.fileFormat(modelData)
+                            active: videoPage.isCurrent(modelData)
+                            playing: active
+                                     && videoPlayer.playbackState === MediaPlayer.PlayingState
+                            onClicked: videoPage.playFile(modelData, index)
+                        }
+                    }
+                }
             }
         }
 
-        // ======================================== Video Controls (Shared) ==========================================
-        Rectangle {
-            id: videoProgress
+        // ---- now playing + progress ----
+        Item {
+            id: videoNowBar
             z: 2
-            visible: !videoPage.fullScreen
             anchors.bottom: videoController.top
-            anchors.left: videoController.left
-            anchors.right: videoController.right
-            anchors.bottomMargin: videoController.height / 100
-            anchors.leftMargin: videoPage.width / 30
-            anchors.rightMargin: videoPage.width / 30
-            height: videoPage.height / 30
-            radius: height / 2
-            color: 'transparent'
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: rightPanel.inset
+            anchors.rightMargin: rightPanel.inset
+            anchors.bottomMargin: videoPage.height / 50
+            // Just the title row, a small gap and the scrubber. It was height/9,
+            // which left a dead band between the two that did nothing but push
+            // the picture up and shrink it.
+            height: videoPage.height / 12
+            visible: !videoPage.fullScreen
 
-            Slider {
-                id: progressSlider
-                anchors.bottom: parent.top
+            MediaGlyph {
+                id: errIcon
                 anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.topMargin: -height / 2
-                height: videoController.height / 4
-                from: 0
-                to: videoPlayer.duration > 0 ? videoPlayer.duration : 1
-                value: videoPlayer.position
-
-                onMoved: videoPlayer.position = value
-
-                background: Rectangle {
-                    x: progressSlider.leftPadding
-                    y: progressSlider.topPadding + progressSlider.availableHeight / 2 - height / 2
-                    width: progressSlider.availableWidth
-                    height: 6
-                    radius: 3
-                    color: Theme.glassFill
-                    border.color: Theme.glassBorder
-                    border.width: 1
-
-                    Rectangle {
-                        width: progressSlider.visualPosition * parent.width
-                        height: parent.height
-                        radius: parent.radius
-                        color: videoPage.accent
-                    }
-                }
-
-                handle: Rectangle {
-                    x: progressSlider.leftPadding + progressSlider.visualPosition * (progressSlider.availableWidth - width)
-                    y: progressSlider.topPadding + progressSlider.availableHeight / 2 - height / 2
-                    width: 14; height: 14; radius: 7
-                    color: progressSlider.pressed ? videoPage.accent : Theme.textPrimary
-                    border.color: videoPage.accent
-                    border.width: 2
-                    visible: videoPlayer.duration > 0
-                }
+                anchors.verticalCenter: nowTitle.verticalCenter
+                width: videoPage.width / 72
+                height: width
+                kind: "warning"
+                tint: Theme.danger
+                accent: Theme.danger
+                visible: videoPlayer.errorMessage !== ""
             }
 
             Text {
-                id: currentTimeText
-                anchors.top: videoProgress.top
-                anchors.left: videoProgress.left
-                anchors.leftMargin: videoController.width / 120
-                text: videoPage.formatTime(videoPlayer.position)
-                color: Theme.textSecondary
-                font.pixelSize: videoController.height / 5
-                font.family: "Arial"
-            }
-
-            Text {
-                visible: videoPlayer.videoSelected
-                anchors.top: videoProgress.top
-                anchors.left: currentTimeText.right
-                anchors.leftMargin: videoController.width / 20
-                anchors.right: totalTimeText.left
-                anchors.rightMargin: videoController.width / 20
-                text: videoPlayer.videoSelected
-                    ? videoPlayer.source.toString().split("/").pop().replace(/\.[^.]+$/, "")
-                    : ""
-                color: Theme.textPrimary
-                font.pixelSize: videoController.height / 5
-                font.family: "Arial"
-                horizontalAlignment: Text.AlignHCenter
+                id: nowTitle
+                anchors.top: parent.top
+                anchors.left: errIcon.visible ? errIcon.right : parent.left
+                anchors.leftMargin: errIcon.visible ? videoPage.width / 140 : 0
+                anchors.right: nowTime.left
+                anchors.rightMargin: videoPage.width / 60
+                text: videoPlayer.errorMessage !== "" ? videoPlayer.errorMessage
+                    : videoPlayer.videoSelected
+                      ? videoPage.stripExtension(videoPlayer.source.toString().split("/").pop())
+                      : "Nothing playing"
+                color: videoPlayer.errorMessage !== "" ? Theme.danger
+                     : videoPlayer.videoSelected ? Theme.textPrimary : Theme.textSecondary
+                font {
+                    pixelSize: videoPage.width / 68
+                    family: "Arial"
+                    bold: videoPlayer.videoSelected
+                }
                 elide: Text.ElideMiddle
             }
 
             Text {
-                id: totalTimeText
-                anchors.top: videoProgress.top
-                anchors.right: videoProgress.right
-                anchors.rightMargin: videoController.width / 120
-                text: videoPage.formatTime(videoPlayer.duration)
+                id: nowTime
+                anchors.top: parent.top
+                anchors.right: parent.right
+                text: videoPage.formatTime(videoPlayer.position) + "  /  "
+                      + videoPage.formatTime(videoPlayer.duration)
                 color: Theme.textSecondary
-                font.pixelSize: videoController.height / 5
-                font.family: "Arial"
+                font { pixelSize: videoPage.width / 90; family: "Arial" }
+            }
+
+            GlassSlider {
+                id: progressSlider
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: videoPage.height / 26
+                accent: videoPage.accent
+                handleSize: 14
+                from: 0
+                to: videoPlayer.duration > 0 ? videoPlayer.duration : 1
+                value: videoPlayer.position
+                enabled: videoPlayer.duration > 0
+                showHandle: videoPlayer.duration > 0
+
+                onMoved: videoPlayer.position = value
             }
         }
 
+        // ---- transport ----
         Rectangle {
             id: videoController
             z: 2
@@ -765,223 +685,114 @@ Rectangle {
             border.color: Theme.glassBorder
             border.width: 1
 
-            ControlBtn {
-                id: volumeBtn
-                property bool muted: false
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -2
+                radius: parent.radius + 2
+                z: -1
+                color: videoPage.accent
+                opacity: 0.07
+            }
+
+            // ---- volume, left ----
+            TransportButton {
+                id: muteBtn
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: videoController.height * 0.6
+                accent: videoPage.accent
+                diameter: videoController.height * 0.6
                 iconSource: audioOut.muted ? "qrc:/assets/icons/volumedown.png"
                                            : "qrc:/assets/icons/volumeup.png"
                 onClicked: audioOut.muted = !audioOut.muted
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: videoController.width / 20
             }
 
-            Slider {
+            GlassSlider {
                 id: volumeSlider
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.left: volumeBtn.right
-                anchors.leftMargin: videoController.width / 80
-                width: videoController.width / 8
-                from: 0; to: 1; value: 0.6
+                anchors.left: muteBtn.right
+                anchors.leftMargin: videoController.width / 60
+                width: videoController.width / 7
+                accent: videoPage.accent
+                from: 0
+                to: 1
+                value: 0.6
 
                 onValueChanged: {
                     audioOut.volume = value
-                    volumeBtn.muted = false
                     audioOut.muted = false
                 }
-
-                background: Rectangle {
-                    x: volumeSlider.leftPadding
-                    y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
-                    width: volumeSlider.availableWidth
-                    height: 6
-                    radius: 3
-                    color: Theme.glassFill
-                    border.color: Theme.glassBorder
-                    border.width: 1
-
-                    Rectangle {
-                        width: volumeSlider.visualPosition * parent.width
-                        height: parent.height
-                        radius: parent.radius
-                        color: videoPage.accent
-                    }
-                }
-                
-                handle: Rectangle {
-                    x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
-                    y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
-                    width: 12; height: 12; radius: 6
-                    color: volumeSlider.pressed ? videoPage.accent : Theme.textPrimary
-                    border.color: videoPage.accent
-                    border.width: 2
-                }
             }
 
-           Row {
+            // ---- transport, centre ----
+            Row {
                 anchors.centerIn: parent
-                spacing: videoController.width / 55
+                spacing: videoController.width / 34
 
-                // Prev
-                Rectangle {
-                    id: prevBtn
+                TransportButton {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: videoController.height * 0.6
-                    height: width
-                    radius: width / 2
-                    color: prevArea.containsMouse ? Theme.tint(videoPage.accent, 0.4) : Theme.glassFill
-                    border.color: videoPage.accent
-                    border.width: 1
-                    scale: prevArea.containsMouse ? 1.05 : 1
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150 } }
-
-                    Image {
-                        anchors.centerIn: parent
-                        source: "qrc:/assets/icons/prev.png"
-                        width: parent.width * 0.5
-                        height: parent.height * 0.5
-                        fillMode: Image.PreserveAspectFit
-                    }
-
-                    MouseArea {
-                        id: prevArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: {
-                            if (rightPanel.currentIndex === 1 && usbManager.connected && usbManager.videoFiles.length > 0) {
-                                var newIndex = videoPlayer.currentFileIndex - 1
-                                if (newIndex < 0) newIndex = usbManager.videoFiles.length - 1
-                                videoPlayer.currentFileIndex = newIndex
-                                videoPlayer.source = "file://" + usbManager.videoFiles[newIndex]
-                                videoPlayer.videoSelected = true
-                                videoPlayer.play()
-                            } else {
-                                videoPlayer.position = 0
-                            }
-                        }
+                    accent: videoPage.accent
+                    diameter: videoController.height * 0.6
+                    iconSource: "qrc:/assets/icons/prev.png"
+                    onClicked: {
+                        if (videoPage.source === videoPage.srcUsb) videoPage.stepUsb(-1)
+                        else videoPlayer.position = 0
                     }
                 }
 
-                // Play / Pause
-                Rectangle {
-                    width: videoController.height * 0.72
-                    height: width
-                    radius: width / 2
-                    color: playMainArea.containsMouse ? Theme.tint(videoPage.accent, 0.4) : Theme.glassFill
-                    border.color: videoPage.accent
-                    border.width: 2
-                    scale: playMainArea.containsMouse ? 1.05 : 1
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150 } }
-
-                    Image {
-                        anchors.centerIn: parent
-                        width: 26; height: 26
-                        source: videoPlayer.playbackState === MediaPlayer.PlayingState ? "qrc:/assets/icons/pause.png" : "qrc:/assets/icons/play.png"
-                        fillMode: Image.PreserveAspectFit
-                    }
-
-                    MouseArea {
-                        id: playMainArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: videoPlayer.playbackState === MediaPlayer.PlayingState
-                                ? videoPlayer.pause() : videoPlayer.play()
-                    }
+                TransportButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    accent: videoPage.accent
+                    diameter: videoController.height * 0.78
+                    ringWidth: 2
+                    iconScale: 0.44
+                    iconSource: videoPlayer.playbackState === MediaPlayer.PlayingState
+                                ? "qrc:/assets/icons/pause.png"
+                                : "qrc:/assets/icons/play.png"
+                    onClicked: videoPlayer.playbackState === MediaPlayer.PlayingState
+                               ? videoPlayer.pause() : videoPlayer.play()
                 }
 
-                // Next
-                Rectangle {
-                    id: nextBtn
+                TransportButton {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: videoController.height * 0.6
-                    height: width
-                    radius: width / 2
-                    color: nextArea.containsMouse ? Theme.tint(videoPage.accent, 0.4) : Theme.glassFill
-                    border.color: videoPage.accent
-                    border.width: 1
-                    scale: nextArea.containsMouse ? 1.05 : 1
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150 } }
-
-                    Image {
-                        anchors.centerIn: parent
-                        source: "qrc:/assets/icons/next.png"
-                        width: parent.width * 0.5
-                        height: parent.height * 0.5
-                        fillMode: Image.PreserveAspectFit
-                    }
-
-                    MouseArea {
-                        id: nextArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: {
-                            if (rightPanel.currentIndex === 1 && usbManager.connected && usbManager.videoFiles.length > 0) {
-                                var newIndex = videoPlayer.currentFileIndex + 1
-                                if (newIndex >= usbManager.videoFiles.length) newIndex = 0
-                                videoPlayer.currentFileIndex = newIndex
-                                videoPlayer.source = "file://" + usbManager.videoFiles[newIndex]
-                                videoPlayer.videoSelected = true
-                                videoPlayer.play()
-                            } else {
-                                videoPlayer.position = videoPlayer.duration
-                            }
-                        }
+                    accent: videoPage.accent
+                    diameter: videoController.height * 0.6
+                    iconSource: "qrc:/assets/icons/next.png"
+                    onClicked: {
+                        if (videoPage.source === videoPage.srcUsb) videoPage.stepUsb(1)
+                        else videoPlayer.position = videoPlayer.duration
                     }
                 }
             }
 
-            ControlBtn {
-                id: speedIndicator
-                icon: "1.0x"
-                onClicked: speedSlider.value = 1
+            // ---- speed + fullscreen, right ----
+            TransportButton {
+                id: speedBtn
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: speedSlider.left
-                anchors.rightMargin: videoController.width / 80
-                fontPixel: videoController.width / 55
+                anchors.rightMargin: videoController.width / 60
+                accent: videoPage.accent
+                diameter: videoController.height * 0.6
+                label: videoPlayer.playbackRate.toFixed(1) + "x"
+                labelSize: videoController.height * 0.24
+                onClicked: speedSlider.value = 1
             }
 
-            Slider {
+            GlassSlider {
                 id: speedSlider
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: screenToggle.left
-                anchors.rightMargin: videoController.width / 20
-                width: videoController.width / 8
-                from: 0.5; to: 8; value: 1
+                anchors.rightMargin: videoController.width / 60
+                width: videoController.width / 9
+                accent: videoPage.accent
+                // 0.5–2.0, where this used to run to 8x. Nothing is watchable
+                // above 2x, and with that range 93% of the travel sat above it —
+                // which made 1.0x impossible to hit on a touch panel.
+                from: 0.5
+                to: 2.0
+                value: 1
 
-                onValueChanged: {
-                    videoPlayer.playbackRate = value
-                    speedIndicator.icon = value.toFixed(1) + "x"
-                }
-
-                background: Rectangle {
-                    x: speedSlider.leftPadding
-                    y: speedSlider.topPadding + speedSlider.availableHeight / 2 - height / 2
-                    width: speedSlider.availableWidth
-                    height: 6
-                    radius: 3
-                    color: Theme.glassFill
-                    border.color: Theme.glassBorder
-                    border.width: 1
-
-                    Rectangle {
-                        width: speedSlider.visualPosition * parent.width
-                        height: parent.height
-                        radius: parent.radius
-                        color: videoPage.accent
-                    }
-                }
-                
-                handle: Rectangle {
-                    x: speedSlider.leftPadding + speedSlider.visualPosition * (speedSlider.availableWidth - width)
-                    y: speedSlider.topPadding + speedSlider.availableHeight / 2 - height / 2
-                    width: 12; height: 12; radius: 6
-                    color: speedSlider.pressed ? videoPage.accent : Theme.textPrimary
-                    border.color: videoPage.accent
-                    border.width: 2
-                }
+                onValueChanged: videoPlayer.playbackRate = value
             }
 
             ScreenBtn {
@@ -991,95 +802,88 @@ Rectangle {
                 visible: videoPlayer.videoSelected
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
-                anchors.rightMargin: videoController.width / 20
+                anchors.rightMargin: videoController.height * 0.6
                 onClicked: videoPage.fullScreen = !videoPage.fullScreen
-            }
-        }
-
-        // Close Video Button
-        Rectangle {
-            width: videoPage.width / 35
-            height: width
-            radius: width / 2
-            color: closeArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
-            border.color: Theme.danger
-            border.width: 1
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.topMargin: videoPage.height / 35
-            anchors.rightMargin: videoPage.height / 32
-            // Fullscreen keeps only the minimise button, so this goes away
-            // with the rest of the chrome.
-            visible: videoPlayer.videoSelected && !videoPage.fullScreen
-            opacity: 0.8
-            z: 10
-
-            Text {
-                anchors.centerIn: parent
-                text: "✖"
-                color: Theme.textPrimary
-                font.pixelSize: parent.width * 0.5
-                font.bold: true
-            }
-
-            MouseArea {
-                id: closeArea
-                anchors.fill: parent
-                hoverEnabled: true
-                onEntered: parent.opacity = 1
-                onExited: parent.opacity = 0.8
-                onClicked: videoPage.showLocalLibrary()
             }
         }
     }
 
+    // ========================================== Parts =========================================
+
+
     /*
      * Full screen toggle.
      *
-     * The glyph is drawn rather than set as text: the usual characters for
-     * this (⛶, ⤢) are outside DejaVu's coverage, and a target image without an
-     * emoji font renders them as empty boxes. Canvas has no such dependency.
+     * The glyph is drawn rather than set as text: the usual characters for this
+     * (⛶, ⤢) are outside the shipped font's coverage, and render as empty boxes
+     * on the target image. Canvas has no such dependency.
      */
     component ScreenBtn: Rectangle {
         id: screenBtn
         property bool expanded: false
-        // Set by the caller: this is used both inside the control bar and as a
+        // Set by the caller: used both inside the control bar and as a
         // standalone overlay, so it cannot size itself from one parent.
-        property real btnSize: videoController.height * 0.55
+        property real btnSize: videoController.height * 0.6
+        // Backing and ring at rest. The copy in the transport bar sits on glass
+        // and can be glass itself; the fullscreen one sits on the picture and
+        // has to bring its own contrast.
+        property color baseColor: Theme.glassFill
+        property color ringColor: videoPage.accent
         signal clicked()
 
         width: btnSize
         height: btnSize
         radius: width / 2
 
-        color: screenBtnArea.containsMouse ? Theme.tint(videoPage.accent, 0.4) : Theme.glassFill
-        border.color: videoPage.accent
+        color: screenBtnArea.pressed       ? Theme.tint(videoPage.accent, 0.5)
+             : screenBtnArea.containsMouse ? Theme.tint(videoPage.accent, 0.35)
+                                           : screenBtn.baseColor
+        border.color: screenBtn.ringColor
         border.width: 1
-        scale: screenBtnArea.containsMouse ? 1.05 : 1
-        Behavior on color { ColorAnimation { duration: 150 } }
+        scale: screenBtnArea.containsMouse ? 1.06 : 1
+        Behavior on color { ColorAnimation  { duration: 150 } }
         Behavior on scale { NumberAnimation { duration: 150 } }
 
         Canvas {
             id: screenBtnCanvas
             anchors.centerIn: parent
-            width: parent.width * 0.5
+            width: parent.width * 0.56
             height: width
+            onWidthChanged: requestPaint()
+
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
                 ctx.strokeStyle = Theme.textPrimary
-                ctx.lineWidth = Math.max(1.5, width / 9)
-                ctx.lineCap = "square"
+                // Heavier than the width/9 it was drawn at: on the small
+                // overlay button that worked out to a 1.5 px hairline.
+                ctx.lineWidth = Math.max(2, width / 9)
+                // Butt, not square. A square cap runs on by half the stroke at
+                // both ends — 1.5 px here — which is more than the gap between
+                // the facing brackets, so they met and the mark sealed itself
+                // into a plain box.
+                ctx.lineCap = "butt"
 
-                // Four corner brackets: pointing outward to enter fullscreen,
-                // inward to leave it.
-                var arm = width * 0.32
-                var pad = screenBtn.expanded ? width * 0.28 : 0
+                /*
+                 * Four corner brackets: on the corners to enter fullscreen,
+                 * pulled inward to leave it.
+                 *
+                 * The arm shortens in the expanded state as well as the elbow
+                 * moving in. At the old pad of 0.28 with the arm left at 0.32,
+                 * the pair on each side reached past each other and the four
+                 * brackets closed into a plain square — which is most of why
+                 * the mark could not be read.
+                 */
+                var edge = ctx.lineWidth / 2   // half the stroke sits outside the path
+                var pad = screenBtn.expanded ? width * 0.22 : 0
+                var arm = screenBtn.expanded ? width * 0.16 : width * 0.32
+                var lo = edge + pad
+                var hi = width - edge - pad
                 var corners = [
-                    [pad,          pad,          1,  1],
-                    [width - pad,  pad,         -1,  1],
-                    [pad,          width - pad,  1, -1],
-                    [width - pad,  width - pad, -1, -1]
+                    [lo, lo,  1,  1],
+                    [hi, lo, -1,  1],
+                    [lo, hi,  1, -1],
+                    [hi, hi, -1, -1]
                 ]
                 for (var i = 0; i < corners.length; ++i) {
                     var x = corners[i][0], y = corners[i][1]
@@ -1101,67 +905,5 @@ Rectangle {
             hoverEnabled: true
             onClicked: screenBtn.clicked()
         }
-    }
-
-    component ControlBtn: Rectangle {
-        id: controlBtn
-        property string icon: ""
-        // Set this instead of `icon` for a bitmap glyph. The two are exclusive;
-        // an image wins where both are given.
-        property url iconSource: ""
-        property var fontPixel: videoController.width / 35
-        signal clicked()
-
-        anchors.verticalCenter: parent.verticalCenter
-
-        // An image has no text metrics to grow from, so image buttons take the
-        // size of the round transport buttons sharing this bar rather than
-        // collapsing to nothing.
-        property real btnSize: String(controlBtn.iconSource) !== ""
-            ? videoController.height * 0.6
-            : Math.max(iconText.width + iconText.width * 0.6, iconText.height + iconText.height * 0.4)
-        width: btnSize
-        height: btnSize
-        radius: width / 2
-
-        color: btnArea.containsMouse ? Theme.tint(videoPage.accent, 0.4) : Theme.glassFill
-        border.color: videoPage.accent
-        border.width: 1
-        scale: btnArea.containsMouse ? 1.05 : 1
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on scale { NumberAnimation { duration: 150 } }
-
-        Text {
-            id: iconText
-            anchors.centerIn: parent
-            text: parent.icon
-            visible: String(controlBtn.iconSource) === ""
-            color: Theme.textPrimary
-            font.pixelSize: controlBtn.fontPixel
-        }
-
-        Image {
-            anchors.centerIn: parent
-            source: controlBtn.iconSource
-            visible: String(controlBtn.iconSource) !== ""
-            width: parent.width * 0.5
-            height: parent.height * 0.5
-            fillMode: Image.PreserveAspectFit
-        }
-
-        MouseArea {
-            id: btnArea
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: parent.clicked()
-        }
-    }
-
-    function formatTime(ms) {
-        if (ms <= 0) return "0:00"
-        var totalSec = Math.floor(ms / 1000)
-        var min = Math.floor(totalSec / 60)
-        var sec = totalSec % 60
-        return min + ":" + (sec < 10 ? "0" + sec : sec)
     }
 }

@@ -53,15 +53,26 @@ Item {
         id: fsd
         // Shows through where the road has faded out — this is the colour the
         // detection range ends in, so it wants to be near-black, not grey.
-        property color bg:          "#080a0d"
+        property color bg:          Theme.base
         property color ego:         CarColors.ego
         property color detection:   "#a6a6a6"
-        property color textPri:     "#f2f5f8"
-        property color textSec:     "#9aa4b0"
-        // Opaque enough to sit on top of texture. The old #18000000 was a
-        // 9%-black wash, which is invisible over the paving.
-        property color panelBg:     "#b4121619"
-        property color panelBorder: "#30ffffff"
+        property color textPri:     Theme.textPrimary
+        property color textSec:     Theme.textSecondary
+
+        /*
+         * The HUD's own colour, shared with the rest of the app.
+         *
+         * Deliberately NOT the car colour. The ego swatch, the legend and the
+         * car itself already carry that, and it is user-settable — a driver who
+         * picks red would otherwise repaint every border and every hover state
+         * on the page red along with the paintwork.
+         */
+        property color accent:      Theme.accentBlue
+
+        // Panel fill and border now live in HudPanel; these two remain for the
+        // settings drawer, which is a full surface rather than a floating one.
+        property color panelBg:     Qt.rgba(0.02, 0.04, 0.08, 0.80)
+        property color panelBorder: Theme.glassBorder
     }
 
     /*
@@ -329,14 +340,13 @@ Item {
         width: root.width * 0.22
         spacing: _m * 0.6
 
-        Rectangle {
+        HudPanel {
             id: statusPanel
             width: parent.width
             height: _statusCol.implicitHeight + _m * 2
-            radius: _r * 1.3
-            color: fsd.panelBg
-            border.color: fsd.panelBorder
-            border.width: 1
+            cardRadius: _r * 1.3
+            accent: fsd.accent
+            showAccentBar: true
             opacity: settingsDrawer.open ? 0.0 : 1.0
             visible: !settingsDrawer.open || opacity > 0.01
             Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
@@ -349,12 +359,25 @@ Item {
                 Row {
                     spacing: _m * 0.55
                     width: parent.width
+                    // Breathes while detections are arriving and sits still when
+                    // they are not, so the panel says whether the pipeline is
+                    // alive without spending a line of text on it.
                     Rectangle {
+                        id: liveDot
                         width: _fSm * 0.75
                         height: _fSm * 0.75
                         radius: width / 2
-                        color: fsd.ego
+                        color: detectionModel.detectCount > 0 ? Theme.success : fsd.textSec
                         anchors.verticalCenter: parent.verticalCenter
+                        Behavior on color { ColorAnimation { duration: 250 } }
+
+                        SequentialAnimation on opacity {
+                            running: detectionModel.detectCount > 0
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
+                            onStopped: liveDot.opacity = 1.0
+                        }
                     }
                     Text {
                         text: "Visualizer BETA"
@@ -403,56 +426,37 @@ Item {
             }
         }
 
-        Rectangle {
+        HudButton {
             id: settingsBtn
             width: _btnW
             height: _btnH
-            radius: _r
-            color: fsd.panelBg
-            border.color: fsd.panelBorder
-            border.width: 1
-            opacity: settingsDrawer.open ? 0.0 : 0.95
+            cardRadius: _r
+            accent: fsd.accent
+            textColor: fsd.textPri
+            fontSize: _fSm
+            text: "⚙  SETTINGS"
+            opacity: settingsDrawer.open ? 0.0 : 1.0
             visible: !settingsDrawer.open
             Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
-
-            Text {
-                anchors.centerIn: parent
-                text: "⚙  SETTINGS"
-                color: fsd.textPri
-                font.pixelSize: _fSm
-                font.letterSpacing: 1.2
-                font.family: "monospace"
-                width: parent.width * 0.9
-                height: implicitHeight
-                fontSizeMode: Text.HorizontalFit
-                minimumPixelSize: 8
-                horizontalAlignment: Text.AlignHCenter
-            }
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onEntered: parent.opacity = 1.0
-                onExited: parent.opacity = 0.95
-                onClicked: settingsDrawer.open = true
-            }
+            onClicked: settingsDrawer.open = true
         }
     }
 
     // ============================================================
     // HUD — BOTTOM LEFT: Legend
     // ============================================================
-    Rectangle {
+    HudPanel {
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.leftMargin: _m
         anchors.bottomMargin: _m
         width: parent.width * 0.13
         height: _legendCol.implicitHeight + _m * 1.6
-        radius: _r
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
+        cardRadius: _r
+        accent: fsd.accent
+        // The one panel that may as well be see-through: two static swatches
+        // that the driver reads once and then never again.
+        inkAlpha: 0.62
         opacity: settingsDrawer.open ? 0.0 : 1.0
         visible: !settingsDrawer.open || opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
@@ -523,17 +527,23 @@ Item {
     // ============================================================
     // HUD — TOP RIGHT: Camera Telemetry
     // ============================================================
-    Rectangle {
+    HudPanel {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.rightMargin: _m
         anchors.topMargin: _m + root.topInset
         width: parent.width * 0.17
         height: _camCol.implicitHeight + _m * 2
-        radius: _r * 1.3
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
+        cardRadius: _r * 1.3
+        accent: fsd.accent
+        // A telemetry dump, not something the driver acts on. Lighter ink than
+        // the rest so it recedes instead of competing with the road.
+        inkAlpha: 0.60
+        // Hidden with the others when the drawer is open, which it was not —
+        // it used to sit on top of the drawer's own panel.
+        opacity: settingsDrawer.open ? 0.0 : 1.0
+        visible: !settingsDrawer.open || opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
 
         Column {
             id: _camCol
@@ -573,23 +583,40 @@ Item {
     // ============================================================
     // HUD — BOTTOM CENTER: Speed Pill
     // ============================================================
-    Rectangle {
+    /*
+     * The one number on this page the driver actually reads, so it is the one
+     * thing allowed to look like an instrument: opaque enough to never fight
+     * the road, ringed in the HUD accent, with the speed also stated as a bar
+     * along the bottom of the pill.
+     *
+     * The bar is not decoration — a filling arc is readable from the corner of
+     * an eye at a glance, which is the only kind of attention a moving car has
+     * to spare for it.
+     */
+    HudPanel {
+        id: speedPill
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: parent.height * 0.05
-        width: parent.width * 0.15
-        height: parent.height * 0.10
-        radius: height / 2
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
+        width: parent.width * 0.17
+        height: parent.height * 0.115
+        cardRadius: height / 2
+        accent: fsd.accent
+        inkAlpha: 0.82
+
+        readonly property real kmh: carInfo.currVel * 3.6
+        // 140 as full scale rather than the top speed of anything: past that the
+        // bar would spend its whole life in the first third.
+        readonly property real fraction: Math.max(0, Math.min(1, kmh / 140))
 
         Row {
             anchors.centerIn: parent
+            anchors.verticalCenterOffset: -parent.height * 0.06
             spacing: _m * 0.4
+
             Text {
                 id: _speedNum
-                text: (carInfo.currVel * 3.6).toFixed(0)
+                text: speedPill.kmh.toFixed(0)
                 color: fsd.textPri
                 font.pixelSize: _fXl
                 font.bold: true
@@ -601,10 +628,32 @@ Item {
                 text: "KM/H"
                 color: fsd.textSec
                 font.pixelSize: _fSm
+                font.letterSpacing: 1.5
                 font.family: "Segoe UI, Roboto, sans-serif"
                 anchors.baseline: _speedNum.baseline
                 width: implicitWidth
                 height: implicitHeight
+            }
+        }
+
+        // Track and fill, inset from the pill's rounded ends so neither runs
+        // into the curve.
+        Rectangle {
+            id: speedTrack
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: parent.height * 0.16
+            width: parent.width * 0.62
+            height: 3
+            radius: 1.5
+            color: Qt.rgba(1, 1, 1, 0.14)
+
+            Rectangle {
+                width: parent.width * speedPill.fraction
+                height: parent.height
+                radius: parent.radius
+                color: fsd.accent
+                Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
             }
         }
     }
@@ -612,7 +661,7 @@ Item {
     // ============================================================
     // HUD — BOTTOM RIGHT: View buttons
     // ============================================================
-    Rectangle {
+    HudButton {
         id: viewToggle
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -620,39 +669,18 @@ Item {
         anchors.bottomMargin: _m
         width: _btnW
         height: _btnH
-        radius: _r
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
-        opacity: 0.95
-
-        Text {
-            anchors.centerIn: parent
-            text: topDownView ? "CHASE VIEW" : "TOP VIEW"
-            color: fsd.textPri
-            font.pixelSize: _fSm
-            font.letterSpacing: 1.2
-            font.family: "monospace"
-            width: parent.width * 0.9
-            height: implicitHeight
-            fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 8
-            horizontalAlignment: Text.AlignHCenter
-        }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: parent.opacity = 1.0
-            onExited: parent.opacity = 0.95
-            onClicked: {
-                topDownView = !topDownView
-                topDownView ? applyTopView() : applyChaseView()
-            }
+        cardRadius: _r
+        accent: fsd.accent
+        textColor: fsd.textPri
+        fontSize: _fSm
+        text: topDownView ? "CHASE VIEW" : "TOP VIEW"
+        onClicked: {
+            topDownView = !topDownView
+            topDownView ? applyTopView() : applyChaseView()
         }
     }
 
-    Rectangle {
+    HudButton {
         id: resetViewBtn
         anchors.right: viewToggle.left
         anchors.bottom: parent.bottom
@@ -660,45 +688,26 @@ Item {
         anchors.bottomMargin: _m
         width: _btnW
         height: _btnH
-        radius: _r
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
-        opacity: 0.95
-
-        Text {
-            anchors.centerIn: parent
-            text: "RESET VIEW"
-            color: fsd.textPri
-            font.pixelSize: _fSm
-            font.letterSpacing: 1.2
-            font.family: "monospace"
-            width: parent.width * 0.9
-            height: implicitHeight
-            fontSizeMode: Text.HorizontalFit
-            minimumPixelSize: 8
-            horizontalAlignment: Text.AlignHCenter
-        }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: parent.opacity = 1.0
-            onExited: parent.opacity = 0.95
-            onClicked: resetCurrentView()
-        }
+        cardRadius: _r
+        accent: fsd.accent
+        textColor: fsd.textPri
+        fontSize: _fSm
+        text: "RESET VIEW"
+        onClicked: resetCurrentView()
     }
 
     // ============================================================
     // LEFT DRAWER — Car Settings
     // ============================================================
 
-    // Volume-style slider: same chrome as the WindowBar volume control (dark
-    // track, white-ringed knob), but the fill and knob pick up the car colour
-    // like the theme toggle does.
+    // Volume-style slider: same chrome as the WindowBar volume control, but the
+    // fill and knob pick up the car colour like the theme toggle does.
+    //
+    // The track is a sunk well rather than a painted bar — the drawer is a
+    // translucent surface, and a solid track on it reads as a seam.
     component StyledSlider: Slider {
         id: styled
-        height: 32
+        height: 30
 
         background: Rectangle {
             x: styled.leftPadding
@@ -706,11 +715,9 @@ Item {
             width: styled.availableWidth
             height: 4
             radius: 2
-            color: "#082839"
+            color: Qt.rgba(0, 0, 0, 0.40)
 
             Rectangle {
-                x: 0
-                y: 0
                 width: styled.visualPosition * parent.width
                 height: parent.height
                 color: fsd.ego
@@ -721,38 +728,160 @@ Item {
         handle: Rectangle {
             x: styled.leftPadding + styled.visualPosition * (styled.availableWidth - width)
             y: styled.topPadding + styled.availableHeight / 2 - height / 2
-            width: 14
-            height: 14
-            radius: 7
+            width: styled.pressed ? 18 : 15
+            height: width
+            radius: width / 2
             color: styled.pressed ? "#ffffff" : fsd.ego
             border.color: "#ffffff"
             border.width: 1.5
+            Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
+        }
+    }
+
+    /*
+     * One control per setting: name on the left, live value on the right,
+     * slider underneath.
+     *
+     * The value used to be glued onto the label ("Brightness: 1.00"), which
+     * left the three numbers at three different x positions depending on how
+     * long each word was — so they could not be compared or even easily found.
+     * Right-aligned and monospaced, they form a column.
+     */
+    component SettingSlider: Column {
+        id: sRow
+
+        property string label: ""
+        property alias  from:  sSlider.from
+        property alias  to:    sSlider.to
+        property alias  value: sSlider.value
+        property int    decimals: 2
+
+        signal moved(real v)
+
+        spacing: _m * 0.12
+
+        Item {
+            width: parent.width
+            height: _sLabel.implicitHeight
+
+            Text {
+                id: _sLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: sRow.label
+                color: fsd.textSec
+                font.pixelSize: _fSm
+                font.letterSpacing: 0.8
+            }
+            Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: sSlider.value.toFixed(sRow.decimals)
+                color: fsd.textPri
+                font.pixelSize: _fSm
+                font.bold: true
+                font.family: "monospace"
+            }
+        }
+
+        StyledSlider {
+            id: sSlider
+            width: parent.width
+            onValueChanged: sRow.moved(value)
+        }
+    }
+
+    // Section heading. Small, spaced and quiet — it groups what follows without
+    // competing with it, the same way the ambient-light page labels its blocks.
+    component SectionLabel: Text {
+        color: fsd.textSec
+        font.pixelSize: _fSm * 0.92
+        font.bold: true
+        font.letterSpacing: 2.0
+        opacity: 0.75
+    }
+
+    /*
+     * Dims the scene while the drawer is out, and closes it on a tap anywhere
+     * else. Before this the only way back was the Close button: a driver who
+     * opened the drawer by accident had to find one specific target to undo it,
+     * on a touchscreen, while moving.
+     *
+     * Hidden rather than transparent when shut — a full-page MouseArea left
+     * lying over the scene would swallow every camera drag.
+     */
+    Rectangle {
+        id: drawerScrim
+        anchors.fill: parent
+        z: 99
+        color: Qt.rgba(0.01, 0.02, 0.04, 0.55)
+        opacity: settingsDrawer.open ? 1.0 : 0.0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: settingsDrawer.open = false
         }
     }
 
     Rectangle {
         id: settingsDrawer
-        property bool open: false
+        property bool open: true   // TEMP-SCREENSHOT
         z: 100
         clip: true
 
         y: 0
-        width: parent.width * 0.26
+        width: parent.width * 0.28
         height: parent.height
 
         x: open ? 0 : -width
 
+        // OutCubic rather than InOutQuad: a panel that leaves the edge fast and
+        // settles slowly reads as being pulled out, where a symmetric curve
+        // reads as a slide show.
         Behavior on x {
             NumberAnimation {
-                duration: 260; easing.type: Easing.InOutQuad
+                duration: 300; easing.type: Easing.OutCubic
                 onRunningChanged: if (!running && settingsDrawer.open) colorWheel.requestPaint()
             }
         }
         onOpenChanged: if (open) colorWheel.requestPaint()
 
-        color: fsd.panelBg
-        border.color: fsd.panelBorder
-        border.width: 1
+        // Nearly opaque. This one is a surface to read and aim at, not a window
+        // onto the road, and it is the only panel with small hit targets on it.
+        color: Qt.rgba(0.02, 0.04, 0.08, 0.94)
+
+        // Only the free edge is rounded — the other three run off the screen,
+        // and rounding those leaves slivers of scene in the corners.
+        topRightRadius: _r * 2
+        bottomRightRadius: _r * 2
+
+        // Sheen across the panel rather than down it: the light in this scene
+        // comes from above, and the HUD panels are lit the same way.
+        Rectangle {
+            anchors.fill: parent
+            topRightRadius: parent.topRightRadius
+            bottomRightRadius: parent.bottomRightRadius
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.07) }
+                GradientStop { position: 0.35; color: "transparent" }
+                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.10) }
+            }
+        }
+
+        // Lit edge where the panel meets the scene, in the car's own colour —
+        // the drawer's whole subject is the car, so it is the one surface that
+        // earns the paint colour rather than the HUD accent.
+        Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 2
+            color: fsd.ego
+            opacity: 0.55
+            Behavior on color { ColorAnimation { duration: 200 } }
+        }
 
         Column {
             id: _drawerCol
@@ -765,7 +894,11 @@ Item {
                 // was covered by the home button and could not be tapped.
                 topMargin: _m * 0.7 + root.topInset
             }
-            spacing: _m * 0.4
+            // Tuned against the 1024×600 panel with the window bar's inset
+            // already taken off the top: at 0.4 the last slider fell off the
+            // bottom edge, and a control you cannot see is worse than a tight
+            // one. The wheel below gives up height for the same reason.
+            spacing: _m * 0.3
 
             // ---- Header: title + close button (anchored, no overlap) ----
             Item {
@@ -788,43 +921,57 @@ Item {
                     horizontalAlignment: Text.AlignLeft
                 }
 
+                /*
+                 * Round, not a labelled pill.
+                 *
+                 * "× Close" spent a fifth of the drawer's width saying what the
+                 * × already says, and it was the widest thing in the header. A
+                 * circle is also a better touch target than a short wide box
+                 * for a thumb coming in at an angle.
+                 *
+                 * U+00D7, for the reason spelled out in VirtualKeyboard: the
+                 * prettier ✕ is a Dingbats glyph no font on the head unit
+                 * carries, and it renders as nothing there.
+                 */
                 Rectangle {
                     id: closeBtn
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    width: _btnW * 0.85
-                    height: _btnH * 0.78
-                    radius: _r * 0.8
-                    color: fsd.panelBg
-                    border.color: fsd.panelBorder
+                    width: _btnH * 0.78
+                    height: width
+                    radius: width / 2
+                    color: closeArea.containsMouse ? Qt.rgba(fsd.accent.r, fsd.accent.g, fsd.accent.b, 0.25)
+                                                   : Qt.rgba(1, 1, 1, 0.06)
+                    border.color: closeArea.containsMouse ? fsd.accent : Qt.rgba(1, 1, 1, 0.18)
                     border.width: 1
-                    opacity: 0.95
+                    Behavior on color        { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
 
                     Text {
-                        anchors.fill: parent
-                        anchors.margins: 6
-                        text: "× Close"
+                        anchors.centerIn: parent
+                        text: "×"
                         color: fsd.textPri
-                        font.pixelSize: _fSm
-                        minimumPixelSize: 9
-                        fontSizeMode: Text.Fit
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.letterSpacing: 0.8
-                        font.family: "monospace"
+                        font.pixelSize: closeBtn.height * 0.62
+                        font.bold: true
+                        font.family: "Arial"
                     }
                     MouseArea {
+                        id: closeArea
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onEntered: parent.opacity = 1.0
-                        onExited: parent.opacity = 0.95
                         onClicked: settingsDrawer.open = false
                     }
                 }
             }
 
-            Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: Qt.rgba(1, 1, 1, 0.10)
+            }
+
+            SectionLabel { text: "ENVIRONMENT"; width: parent.width }
 
             // ---- Theme: same switch look as the ambient-light card ----
             Item {
@@ -838,16 +985,18 @@ Item {
                     spacing: 1
 
                     Text {
-                        text: "Theme"
-                        color: fsd.textSec
-                        font.pixelSize: _fSm
-                        height: implicitHeight
-                    }
-                    Text {
-                        text: "Dark Theme"
+                        text: darkTheme ? "Dark Theme" : "Light Theme"
                         color: fsd.textPri
                         font.pixelSize: _fSm
                         font.bold: true
+                        height: implicitHeight
+                    }
+                    Text {
+                        // Says what the switch does, rather than repeating the
+                        // state the switch is already showing twice.
+                        text: "Sky and ground"
+                        color: fsd.textSec
+                        font.pixelSize: _fSm * 0.88
                         height: implicitHeight
                     }
                 }
@@ -883,30 +1032,64 @@ Item {
                 }
             }
 
-            Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
-
-            // ---- Car Color ----
-            Text {
-                text: "Car Color"
-                color: fsd.textSec
-                font.pixelSize: _fSm
-                width: parent.width
-                height: implicitHeight
-            }
-
             Rectangle {
                 width: parent.width
-                height: _m * 1.6
-                radius: _r * 0.7
-                color: fsd.ego
-                border.color: fsd.panelBorder
-                border.width: 1
+                height: 1
+                color: Qt.rgba(1, 1, 1, 0.10)
+            }
+
+            // ---- Car Color ----
+            SectionLabel { text: "PAINT"; width: parent.width }
+
+            /*
+             * The swatch, sitting in its own glow.
+             *
+             * A flat rectangle of colour states the value; the bloom behind it
+             * shows what that paint does to the light around it, which is the
+             * thing actually being chosen. The hex sits on top so the value is
+             * still readable as a value.
+             */
+            Item {
+                width: parent.width
+                height: _m * 1.9
+
+                Rectangle {
+                    anchors.centerIn: swatch
+                    width: swatch.width + _m * 0.5
+                    height: swatch.height + _m * 0.5
+                    radius: _r
+                    color: fsd.ego
+                    opacity: 0.28
+                }
+
+                Rectangle {
+                    id: swatch
+                    anchors.fill: parent
+                    anchors.margins: _m * 0.14
+                    radius: _r * 0.7
+                    color: fsd.ego
+                    border.color: Qt.rgba(1, 1, 1, 0.28)
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: fsd.ego.toString().toUpperCase()
+                        font.pixelSize: _fSm
+                        font.bold: true
+                        font.family: "monospace"
+                        font.letterSpacing: 1.2
+                        // Black on a pale car, white on a dark one — the paint
+                        // covers the whole wheel, so neither works alone.
+                        color: fsd.ego.hslLightness > 0.6 ? Qt.rgba(0, 0, 0, 0.75)
+                                                          : Qt.rgba(1, 1, 1, 0.9)
+                    }
+                }
             }
 
             Canvas {
                 id: colorWheel
                 width: parent.width
-                height: width * 0.62
+                height: width * 0.54
 
                 property real pickedHue: 0.583
                 property real pickedSat: 1.0
@@ -956,61 +1139,49 @@ Item {
                 }
             }
 
-            Text {
-                text: "Brightness: " + brightnessSlider.value.toFixed(2)
-                color: fsd.textSec
-                font.pixelSize: _fSm
-                width: parent.width
-                height: implicitHeight
-            }
-            StyledSlider {
+            SettingSlider {
                 id: brightnessSlider
                 width: parent.width
+                label: "Brightness"
                 from: 0.05
                 to: 1.0
                 value: 1.0
-                onValueChanged: {
+                onMoved: {
                     colorWheel.pickedVal = value
                     applyColor()
                     colorWheel.requestPaint()
                 }
             }
 
-            Rectangle { width: parent.width; height: 1; color: fsd.panelBorder }
-
-            Text {
-                text: "Metalness: " + metalSlider.value.toFixed(2)
-                color: fsd.textSec
-                font.pixelSize: _fSm
+            Rectangle {
                 width: parent.width
-                height: implicitHeight
+                height: 1
+                color: Qt.rgba(1, 1, 1, 0.10)
             }
-            StyledSlider {
+
+            SectionLabel { text: "FINISH"; width: parent.width }
+
+            SettingSlider {
                 id: metalSlider
                 width: parent.width
+                label: "Metalness"
                 from: 0
                 to: 1
                 value: egoCar.carMetalness
-                onValueChanged: {
+                onMoved: {
                     egoCar.carMetalness = value
                     driveSettings.carMetalness = value
                 }
             }
 
-            Text {
-                text: "Roughness: " + roughSlider.value.toFixed(2)
-                color: fsd.textSec
-                font.pixelSize: _fSm
-                width: parent.width
-                height: implicitHeight
-            }
-            StyledSlider {
+            SettingSlider {
                 id: roughSlider
                 width: parent.width
+                label: "Roughness"
                 from: 0
                 to: 1
                 value: egoCar.carRoughness
-                onValueChanged: {
+                onMoved: {
                     egoCar.carRoughness = value
                     driveSettings.carRoughness = value
                 }

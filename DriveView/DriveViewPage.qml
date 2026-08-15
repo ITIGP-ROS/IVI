@@ -38,9 +38,14 @@ Item {
             scene.closeSettings()
             root.goBack()
         }
-        color0: '#0e0e14'
-        color1: '#1a1a2e'
-        color2: '#2e2e4a'
+        // Same gradient and accent as the rest of the app. The bar was still
+        // amber-on-charcoal here, which put the one warm colour on the page in
+        // the corner of a scene that is otherwise entirely cool.
+        color0: Theme.gradientTop
+        color1: Theme.gradientMid
+        color2: Theme.gradientBot
+        accent: Theme.accentBlue
+        surface: Theme.surface
 
         brightnessValue: mainWindow.appBrightness
         volumeValue: systemVolume.volume

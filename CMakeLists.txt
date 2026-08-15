@@ -95,7 +95,19 @@ qt_add_qml_module(appIVI
         Components/GlassButton.qml
         Components/IconWell.qml
         Components/WifiGlyph.qml
+        Components/HudPanel.qml
+        Components/HudButton.qml
         Components/WeatherGlyph.qml
+        Components/MediaGlyph.qml
+        Components/TransportButton.qml
+        Components/Spinner.qml
+        Components/LevelMeter.qml
+        Components/SourceTab.qml
+        Components/TrackRow.qml
+        Components/GlassSlider.qml
+        Components/GlassScrollBar.qml
+        Components/EmptyState.qml
+        Components/BackButton.qml
         Components/WindowBar.qml
         Components/MediaCard.qml
         Components/CarInfoPopup.qml
