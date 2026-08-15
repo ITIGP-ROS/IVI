@@ -178,12 +178,25 @@ Node {
     // 12 rows x 800 spacing — the tiling period the scroll has to wrap on.
     readonly property real cityPeriod: 9600
 
-    // Scroll rate in units/s (100 units = 1 m, as everywhere else here).
-    // Below 0.05 m/s the car counts as stopped and the scroll stops with it.
-    // Guarded for NaN and clamped because carInfo.currVel is whatever the ROS
-    // side last published — a bad reading must not strobe the whole city.
+    /*
+     * Scroll rate in units/s (100 units = 1 m, as everywhere else here), so
+     * the city moves past at the car's true ground speed.
+     *
+     * Both bounds are set by what the vehicle can actually do — 0 to 50 m/min,
+     * i.e. 0 to 0.833 m/s — rather than by the KITTI recording this used to be
+     * fed from:
+     *
+     * - Standstill is 0.01 m/s. The wire resolution is 1 m/min = 0.0167 m/s,
+     *   so anything below one LSB is a stopped car by definition. The old
+     *   0.05 m/s threshold was 3 m/min, which on a 50 m/min vehicle left the
+     *   bottom 6% of the range showing a frozen city while the car crept.
+     * - The ceiling is 1 m/s, a little over the vehicle's own 0.833. It exists
+     *   only to stop a bad frame strobing the whole city: 0x200 speed is a
+     *   u16, so a corrupt one decodes to 1092 m/s. The old clamp of 60 m/s
+     *   would have let that through as a 6000 units/s smear.
+     */
     readonly property real scrollRate:
-        (isFinite(root.speed) && root.speed > 0.05) ? Math.min(root.speed, 60) * 100 : 0
+        (isFinite(root.speed) && root.speed > 0.01) ? Math.min(root.speed, 1.0) * 100 : 0
 
     // Resting phase of the scroll. The band is 16000 long but wraps every
     // 9600, so the stretch covered at EVERY phase is only the 6400 between the

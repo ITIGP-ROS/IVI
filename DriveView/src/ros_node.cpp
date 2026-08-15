@@ -50,7 +50,7 @@ RosNode::~RosNode() {
     }
 }
 
-void RosNode::initialize(const QString& topic,const QString& topic_detect , const QString& velTopic, const QString& imuTopic, const QString& gpsTopic,
+void RosNode::initialize(const QString& topic,const QString& topic_detect , const QString& /*velTopic*/, const QString& imuTopic, const QString& gpsTopic,
                          int maxPoints) {
     maxPoints_ = maxPoints;
 
@@ -78,12 +78,15 @@ void RosNode::initialize(const QString& topic,const QString& topic_detect , cons
 
         });
 
-    velSub_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(
-        velTopic.toStdString(),10,
-        [this](const geometry_msgs::msg::TwistStamped::ConstSharedPtr msg) {
-            velocityCallback(msg);
-
-        });
+    /*
+     * No velocity subscription any more. Speed comes off CAN 0x200
+     * VehicleStatus and from nowhere else — see VehicleBus. This topic carried
+     * the KITTI bag's recorded velocity, which is not this car's speed, so
+     * leaving it subscribed would only give it a second way back in.
+     *
+     * velTopic is kept in the signature so callers and the other branches do
+     * not have to change; it is deliberately unused.
+     */
 
     imuSub_ =node_->create_subscription<sensor_msgs::msg::Imu>(
         imuTopic.toStdString(),10,
@@ -305,14 +308,6 @@ void RosNode::objectDetectionCallback(const object_detection_msgs::msg::Object3d
     detectionSmoother_.update(
         detections);
 
-}
-
-void RosNode::velocityCallback(const geometry_msgs::msg::TwistStamped::ConstSharedPtr msg)
-{
-    // calc speed from linear velocity components
-    double speed_mps = sqrt(pow(msg->twist.linear.x, 2) + pow(msg->twist.linear.y, 2) + pow(msg->twist.linear.z, 2));
-
-    carInfo_.setCurrVel(speed_mps);
 }
 
 void RosNode::imuCallback(const sensor_msgs::msg::Imu::ConstSharedPtr msg)

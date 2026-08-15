@@ -31,6 +31,7 @@ qt_add_executable(appIVI
     Backend/SpeechManager.cpp
     Backend/MediaLibrary.cpp
     Backend/AmbientLightManager.cpp
+    Backend/VehicleBus.cpp
     DriveView/src/ros_node.cpp
     DriveView/src/detection_model.cpp
     DriveView/src/detection_instancing.cpp

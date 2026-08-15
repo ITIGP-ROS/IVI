@@ -11,6 +11,7 @@
 #include "Backend/SpeechManager.hpp"
 #include "Backend/MediaLibrary.hpp"
 #include "Backend/AmbientLightManager.hpp"
+#include "Backend/VehicleBus.hpp"
 #include "DriveView/inc/ros_node.h"
 #include "DriveView/inc/detection_instancing.h"
 #include "Backend/OtaManager.hpp"
@@ -96,6 +97,40 @@ int main(int argc, char *argv[]){
     engine.rootContext()->setContextProperty("rosNodeInstance", rosNode);
     engine.rootContext()->setContextProperty("detectionModel", rosNode->detectionModel());
     engine.rootContext()->setContextProperty("carInfo", rosNode->carInfo());
+
+    /*
+     * The speed shown in DriveView comes off the bus, and off nothing else.
+     *
+     * 0x200 VehicleStatus is what the Tiva measures from the wheel encoders, so
+     * it is the only honest answer to how fast this car is going. The ROS
+     * velocity topic that used to feed this is a KITTI recording being replayed
+     * — a different vehicle, years ago — so RosNode no longer subscribes to it
+     * at all. This connection is the single writer of carInfo.currVel.
+     *
+     * Both objects live on the GUI thread, so these connections are direct.
+     */
+    VehicleBus vehicleBus;
+    engine.rootContext()->setContextProperty("vehicleBus", &vehicleBus);
+
+    CarInfo *carInfo = rosNode->carInfo();
+    QObject::connect(&vehicleBus, &VehicleBus::speedChanged, carInfo,
+                     [&vehicleBus, carInfo] { carInfo->setCurrVel(vehicleBus.speedMps()); });
+
+    /*
+     * Silence reads as a stop, not as "carry on at the last speed you heard".
+     *
+     * VehicleBus itself holds its last decoded value on purpose — it reports
+     * what the bus said, and `live` says whether to believe it. Deciding what
+     * to show instead is this layer's call, and here holding would be worse
+     * than zeroing: DriveView scrolls the city at exactly this number, so a
+     * stale speed leaves the world sliding past a car that may well be parked,
+     * with nothing on screen admitting the link is dead.
+     */
+    QObject::connect(&vehicleBus, &VehicleBus::liveChanged, carInfo,
+                     [&vehicleBus, carInfo] {
+                         if (!vehicleBus.live())
+                             carInfo->setCurrVel(0.0);
+                     });
 
     std::unique_ptr<DetectionInstancing> planeInstancing =
         std::make_unique<DetectionInstancing>();

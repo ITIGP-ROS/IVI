@@ -85,7 +85,6 @@ signals:
 private:
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
     void objectDetectionCallback(const object_detection_msgs::msg::Object3dArray::ConstSharedPtr msg);
-    void velocityCallback(const geometry_msgs::msg::TwistStamped::ConstSharedPtr msg);
     void imuCallback(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
     void gpsCallback(const sensor_msgs::msg::NavSatFix::ConstSharedPtr msg);
 
@@ -99,8 +98,8 @@ private:
     DetectionModel detectionModel_;
     DetectionSmoother detectionSmoother_;
 
-    // car info subscription (velocity and IMU)
-    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr velSub_;
+    // car info subscriptions (IMU and GPS). Speed is NOT among them: it comes
+    // off CAN 0x200 VehicleStatus, via VehicleBus.
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imuSub_;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gpsSub_;
     CarInfo carInfo_;

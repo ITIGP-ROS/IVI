@@ -606,10 +606,23 @@ Item {
         accent: fsd.accent
         inkAlpha: 0.82
 
-        readonly property real kmh: carInfo.currVel * 3.6
-        // 140 as full scale rather than the top speed of anything: past that the
-        // bar would spend its whole life in the first third.
-        readonly property real fraction: Math.max(0, Math.min(1, kmh / 140))
+        /*
+         * Metres per minute, not km/h.
+         *
+         * This is the unit the Tiva actually sends (0x200 speed, 1 LSB =
+         * 1 m/min) and the only one that reads as an instrument on this
+         * vehicle. The whole range is 0-50 m/min, which is 0-3 km/h: a km/h
+         * readout would show 0, 1, 2 or 3 for an entire drive and look like a
+         * car that never left the kerb. The DBC makes the same argument for
+         * choosing the unit on the wire.
+         */
+        readonly property real mPerMin: carInfo.currVel * 60
+
+        // Full scale is the vehicle's own ceiling, so the bar uses its whole
+        // width. On the old 140 km/h scale it never left the first 2%.
+        readonly property real topSpeed: 50
+
+        readonly property real fraction: Math.max(0, Math.min(1, mPerMin / topSpeed))
 
         Row {
             anchors.centerIn: parent
@@ -618,7 +631,7 @@ Item {
 
             Text {
                 id: _speedNum
-                text: speedPill.kmh.toFixed(0)
+                text: speedPill.mPerMin.toFixed(0)
                 color: fsd.textPri
                 font.pixelSize: _fXl
                 font.bold: true
@@ -627,7 +640,7 @@ Item {
                 height: implicitHeight
             }
             Text {
-                text: "KM/H"
+                text: "M/MIN"
                 color: fsd.textSec
                 font.pixelSize: _fSm
                 font.letterSpacing: 1.5
