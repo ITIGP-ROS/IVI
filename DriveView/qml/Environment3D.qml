@@ -16,8 +16,9 @@ Node {
     property bool showGround: true
     property bool showCity: true
 
-    // Vehicle speed in m/s — drives the city scroll, so the world stands still
-    // at a standstill just like the ego car's wheels do.
+    // Vehicle speed in m/s, straight off the bus — NOT a scroll rate. It goes
+    // through DriveSpeed below, which is what decides how fast the city moves;
+    // the world still stands still at a standstill just like the wheels do.
     property real speed: 0
 
     // created city entries (for teardown on theme/palette change)
@@ -179,24 +180,18 @@ Node {
     readonly property real cityPeriod: 9600
 
     /*
-     * Scroll rate in units/s (100 units = 1 m, as everywhere else here), so
-     * the city moves past at the car's true ground speed.
+     * Scroll rate in units/s (100 units = 1 m, as everywhere else here).
      *
-     * Both bounds are set by what the vehicle can actually do — 0 to 50 m/min,
-     * i.e. 0 to 0.833 m/s — rather than by the KITTI recording this used to be
-     * fed from:
+     * DriveSpeed owns the mapping — including the standstill threshold and the
+     * corrupt-frame clamp — so the city and the ego car's wheels are driven off
+     * one number and cannot disagree about how fast the ground is moving.
      *
-     * - Standstill is 0.01 m/s. The wire resolution is 1 m/min = 0.0167 m/s,
-     *   so anything below one LSB is a stopped car by definition. The old
-     *   0.05 m/s threshold was 3 m/min, which on a 50 m/min vehicle left the
-     *   bottom 6% of the range showing a frozen city while the car crept.
-     * - The ceiling is 1 m/s, a little over the vehicle's own 0.833. It exists
-     *   only to stop a bad frame strobing the whole city: 0x200 speed is a
-     *   u16, so a corrupt one decodes to 1092 m/s. The old clamp of 60 m/s
-     *   would have let that through as a 6000 units/s smear.
+     * This is NOT the car's literal ground speed. The vehicle tops out at
+     * 50 m/min (0.833 m/s), which on a real-scale city is one building past the
+     * camera every 9.6 seconds — a frozen backdrop at full throttle. See
+     * DriveSpeed.qml for why the scenery is scaled and what is left alone.
      */
-    readonly property real scrollRate:
-        (isFinite(root.speed) && root.speed > 0.01) ? Math.min(root.speed, 1.0) * 100 : 0
+    readonly property real scrollRate: DriveSpeed.sceneMps(root.speed) * 100
 
     // Resting phase of the scroll. The band is 16000 long but wraps every
     // 9600, so the stretch covered at EVERY phase is only the 6400 between the

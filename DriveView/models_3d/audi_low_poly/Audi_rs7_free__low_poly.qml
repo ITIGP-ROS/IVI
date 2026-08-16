@@ -21,11 +21,28 @@ Node {
     property real wheelSpeed: 0
     property real wheelAngle: 0
 
-    Timer {
-        interval: 16
-        repeat: true
+    /*
+     * Integrated on the real frame time, like the city scroll in
+     * Environment3D. This was a 16 ms Timer advancing by a hard-coded 0.016 s,
+     * which assumed every tick landed exactly on schedule: Qt timers are coarse
+     * and fire late under load, so the wheels quietly ran slow — on a busy
+     * Jetson, slower than the ground they are standing on, which is exactly the
+     * skid this is supposed to avoid.
+     *
+     * frameTime is capped for the same reason the city caps it: a hidden window
+     * or a hitch must resume smoothly, not snap the wheels through a spin.
+     */
+    FrameAnimation {
         running: Math.abs(node.wheelSpeed) > 0.01
-        onTriggered: node.wheelAngle += node.wheelSpeed * 0.016
+        onTriggered: {
+            const a = node.wheelAngle
+                    + node.wheelSpeed * Math.min(frameTime, 0.1)
+            // Wrap to 0..360. Visually identical, but eulerRotation is float:
+            // an angle left to grow reaches ~3e6 degrees after an hour at speed,
+            // where the float step is a quarter of a degree and the spin visibly
+            // stutters. Math.floor rather than %, so it also wraps in reverse.
+            node.wheelAngle = a - Math.floor(a / 360) * 360
+        }
     }
 
     Texture {

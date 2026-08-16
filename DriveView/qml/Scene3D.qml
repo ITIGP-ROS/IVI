@@ -233,8 +233,10 @@ Item {
                 scale: Qt.vector3d(137, 250, 137)
                 eulerRotation: Qt.vector3d(0, -90, 0)
                 carColor: fsd.ego; carMetalness: 0.6; carRoughness: 0.1
-                // deg/s per m/s — wheels spin with the car, stop at standstill
-                wheelSpeed: carInfo.currVel * 120
+                // Wheels spin with the car and stop at standstill — at the
+                // same scaled rate the city scrolls at, so they roll on the
+                // ground rather than skidding over it.
+                wheelSpeed: DriveSpeed.wheelDegPerSec(carInfo.currVel)
             }
         }
 

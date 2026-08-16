@@ -126,8 +126,9 @@ Item {
                 carColor: CarColors.ego
                 carMetalness: 0.3
                 carRoughness: 0.15
-                // deg/s per m/s — wheels spin with the car, stop at standstill
-                wheelSpeed: carInfo.currVel * 120
+                // Same scaled rate as the full scene (DriveSpeed) — the tile
+                // shows the same car and must not spin its wheels differently.
+                wheelSpeed: DriveSpeed.wheelDegPerSec(carInfo.currVel)
             }
         }
 
