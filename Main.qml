@@ -214,9 +214,32 @@ ApplicationWindow {
      * a second time.
      */
     function openSettingsSection(section) {
-        // Reachable from Drive View's window bar, which is not on the stack —
-        // step off it first, or the pushed page lands under a hidden StackView.
+        /*
+         * Reachable from Drive View's window bar, which is not on the stack —
+         * step off it first, or the pushed page lands under a hidden StackView.
+         *
+         * Leaving Drive View this way skips the pop animation, so it also has
+         * to undo by hand what that animation would have undone. Opening Drive
+         * View parks the StackView a full screen width to the left
+         * (launcherOut drives launcherSlide.x to -width) and only launcherIn
+         * ever brings it back. Without the reset below, Settings was pushed
+         * correctly — the stack really did hold it — and then drawn entirely
+         * off the left edge, with Drive View already hidden behind it: a black
+         * screen with nothing left on it to touch, which is indistinguishable
+         * from a crash and just as unrecoverable.
+         *
+         * The two stop() calls matter for a tap that lands during the 400 ms
+         * open slide. A running NumberAnimation keeps writing its target every
+         * frame, so it would overwrite the reset a moment after it was made.
+         */
+        slideIn.stop()
+        launcherOut.stop()
+        driveViewLoader.entering = false
+        driveViewLoader.exiting = false
         driveViewLoader.shown = false
+        driveSlide.x = 0
+        launcherSlide.x = 0
+
         const settings = stackView.currentItem as SettingPage
         if (settings)
             settings.showSection(section)
