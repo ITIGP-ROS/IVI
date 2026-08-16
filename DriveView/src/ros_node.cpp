@@ -50,25 +50,37 @@ RosNode::~RosNode() {
     }
 }
 
-void RosNode::initialize(const QString& topic,const QString& topic_detect , const QString& /*velTopic*/, const QString& imuTopic, const QString& gpsTopic,
+void RosNode::initialize(const QString& /*topic*/,const QString& topic_detect , const QString& /*velTopic*/, const QString& imuTopic, const QString& gpsTopic,
                          int maxPoints) {
     maxPoints_ = maxPoints;
 
     // 60 Hz interpolation between detection messages
     detectionSmoother_.setModel(&detectionModel_);
 
-    qDebug() << "[RosNode] Initializing with topic:" << topic;
+    qDebug() << "[RosNode] Initializing with detection topic:" << topic_detect;
 
     node_ = std::make_shared<rclcpp::Node>("qt_pcl_visualizer");
 
-    auto qos_profile = rclcpp::SensorDataQoS().keep_last(2);
-
-    pointCloudSub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-        topic.toStdString(),
-        qos_profile,
-        [this](const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
-            pointCloudCallback(msg);
-        });
+    /*
+     * No point cloud subscription.
+     *
+     * pointCloudCallback's body is entirely commented out, and nothing in the
+     * scene draws a cloud any more — Environment3D replaced that view — so
+     * every byte of this topic was received and dropped on the floor.
+     *
+     * Free on a laptop, where publisher and subscriber share memory. Ruinous
+     * on the head unit: a KITTI velodyne frame is ~1.9 MB, and at 10 Hz that
+     * is ~155 Mbit/s against the Jetson's 11 Mbit/s of 2.4 GHz WiFi. DDS only
+     * puts a topic on the wire when something remote asks for it, so this
+     * subscription on its own was what dragged that stream onto the radio.
+     *
+     * Nothing came of it — the kernel reassembled 281 of 11227 fragmented
+     * datagrams, and `ros2 topic hz /kitti/velo` on the board printed nothing
+     * at all — while the detections, a few hundred bytes each, had to cross
+     * the same saturated link and never made it to the screen.
+     *
+     * Restore this together with the callback body, not before it.
+     */
 
     // detected objects
     detectSub_ = node_->create_subscription<object_detection_msgs::msg::Object3dArray>(

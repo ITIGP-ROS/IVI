@@ -91,7 +91,8 @@ private:
 
     std::shared_ptr<rclcpp::Node> node_;
     std::unique_ptr<RosSpinThread> spinThread_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointCloudSub_;
+    // No point cloud subscription: the callback is disabled and nothing draws
+    // a cloud, so it only cost bandwidth. See RosNode::initialize.
 
     // detected objects subscription & model
     rclcpp::Subscription<object_detection_msgs::msg::Object3dArray>::SharedPtr detectSub_;
