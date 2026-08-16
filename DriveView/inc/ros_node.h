@@ -6,6 +6,7 @@
 #include <QVector3D>
 #include <QVector>
 #include <QMutex>
+#include <QSet>
 #include <QString>
 #include <memory>
 #include <atomic>
@@ -23,6 +24,7 @@
 #include "detection_model.h"
 #include "detection_smoother.h"
 #include "car_info.h"
+#include "interface_monitor.h"
 
 
 struct PointData {
@@ -53,6 +55,11 @@ protected:
 
 private:
     std::shared_ptr<rclcpp::Node> node_;
+    // The executor lives here, not on run()'s stack, because stop() has to be
+    // able to cancel() it from the GUI thread. Clearing a flag cannot end a
+    // spin(): it blocks in the middle of a wait and never looks at the flag,
+    // so stop() + wait() used to deadlock on shutdown.
+    rclcpp::executors::StaticSingleThreadedExecutor exec_;
     std::atomic<bool> running_{true};
 };
 
@@ -88,9 +95,37 @@ private:
     void imuCallback(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
     void gpsCallback(const sensor_msgs::msg::NavSatFix::ConstSharedPtr msg);
 
+    /*
+     * Build and tear down the ROS node.
+     *
+     * Split out of initialize() because the node has to be rebuilt, not just
+     * built: Fast DDS scans the host's interfaces once per DomainParticipant
+     * and never rescans, so a participant created before the WiFi has an
+     * address stays invisible to every other host for as long as the process
+     * lives. rmw_fastrtps keeps one participant per context, refcounted by
+     * node count, so destroying this process's only node drops the
+     * participant and creating the next one scans the interfaces afresh.
+     *
+     * Both run on the GUI thread; destroyNode() joins the spin thread, so
+     * no callback can be in flight once it returns.
+     */
+    void createNode();
+    void destroyNode();
+    void onAddressesChanged(const QSet<QString>& addrs);
 
     std::shared_ptr<rclcpp::Node> node_;
     std::unique_ptr<RosSpinThread> spinThread_;
+
+    // Topic names, kept so a rebuild can resubscribe without the caller.
+    QString detectTopic_;
+    QString imuTopic_;
+    QString gpsTopic_;
+
+    // Watches the kernel for IPv4 address changes, and the address set the
+    // live node was built on. Comparing against the latter is what stops a
+    // working node from being torn down for no reason.
+    InterfaceMonitor* ifMonitor_ = nullptr;
+    QSet<QString> nodeAddrs_;
     // No point cloud subscription: the callback is disabled and nothing draws
     // a cloud, so it only cost bandwidth. See RosNode::initialize.
 

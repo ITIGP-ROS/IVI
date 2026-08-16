@@ -10,19 +10,24 @@ RosSpinThread::RosSpinThread(std::shared_ptr<rclcpp::Node> node, QObject* parent
     : QThread(parent), node_(node) {}
 
 void RosSpinThread::stop() {
+    // Order matters. running_ is what closes the window where stop() lands
+    // before run() has reached spin(): cancel() on an executor that is not
+    // spinning yet does nothing, and the thread would then spin forever.
+    // Setting the flag first means run() sees it and never enters spin().
     running_ = false;
+    exec_.cancel();
 }
 
 
 void RosSpinThread::run() {
     qDebug() << "[ROS Thread] Spin thread started";
 
-    rclcpp::executors::StaticSingleThreadedExecutor exec;
-    exec.add_node(node_);  // Node added here
+    exec_.add_node(node_);  // Node added here
 
-    exec.spin(); // This will block until shutdown is called
+    if (running_)
+        exec_.spin(); // blocks until stop() cancels the executor
 
-    exec.remove_node(node_); // optional cleanup
+    exec_.remove_node(node_); // optional cleanup
     qDebug() << "[ROS Thread] Spin thread stopped";
 }
 
@@ -44,20 +49,104 @@ void RosSpinThread::run() {
 RosNode::RosNode(QObject* parent) : QObject(parent) {}
 
 RosNode::~RosNode() {
-    if (spinThread_) {
-        spinThread_->stop();
-        spinThread_->wait();
-    }
+    destroyNode();
 }
 
 void RosNode::initialize(const QString& /*topic*/,const QString& topic_detect , const QString& /*velTopic*/, const QString& imuTopic, const QString& gpsTopic,
                          int maxPoints) {
     maxPoints_ = maxPoints;
 
+    detectTopic_ = topic_detect;
+    imuTopic_    = imuTopic;
+    gpsTopic_    = gpsTopic;
+
     // 60 Hz interpolation between detection messages
     detectionSmoother_.setModel(&detectionModel_);
 
-    qDebug() << "[RosNode] Initializing with detection topic:" << topic_detect;
+    /*
+     * Watch for IPv4 addresses coming and going, and rebuild the node when the
+     * set changes.
+     *
+     * The head unit starts this app about a second before DHCP finishes, and a
+     * Fast DDS participant only ever knows the interfaces that existed when it
+     * was created. Built one second early, it never announces itself over WiFi
+     * and the detection publisher never sends it anything — permanently, since
+     * joining a network later changes nothing. That is not a corner case here:
+     * WiFi is joined *through* this app, so the first boot of a new unit
+     * always loses that race.
+     *
+     * Ordering the service after network-online.target is not the answer; it
+     * would leave the screen blank for the wait-online timeout on exactly the
+     * units that have no network yet.
+     */
+    ifMonitor_ = new InterfaceMonitor(this);
+    connect(ifMonitor_, &InterfaceMonitor::addressesChanged,
+            this, &RosNode::onAddressesChanged);
+
+    // Nothing to talk to yet: wait for the first address rather than burning a
+    // participant that would be born deaf. On a board that already has an
+    // address — the laptop, or a warm restart — this is taken immediately and
+    // startup is unchanged.
+    if (InterfaceMonitor::currentIPv4().isEmpty()) {
+        qDebug() << "[RosNode] no usable IPv4 yet; deferring ROS node until one appears";
+        return;
+    }
+
+    createNode();
+}
+
+void RosNode::onAddressesChanged(const QSet<QString>& addrs)
+{
+    // Losing every address is not a reason to act. The participant is no use
+    // without a network either way, and tearing it down mid-flap only to
+    // rebuild it a second later is churn for nothing — wait for an address to
+    // come back and rebuild once, there.
+    if (addrs.isEmpty()) {
+        qDebug() << "[RosNode] no IPv4 addresses left; waiting for one to return";
+        return;
+    }
+
+    // Same addresses the live node was built on: it can already reach
+    // everything it will ever reach, so leave it alone. This is what keeps a
+    // working node from being restarted by unrelated network activity.
+    if (node_ && addrs == nodeAddrs_)
+        return;
+
+    qDebug() << "[RosNode] rebuilding ROS node for new address set:"
+             << nodeAddrs_.values() << "->" << addrs.values();
+
+    destroyNode();
+    createNode();
+}
+
+void RosNode::destroyNode()
+{
+    if (spinThread_) {
+        spinThread_->stop();
+        spinThread_->wait();
+        spinThread_.reset();
+    }
+
+    // Subscriptions must go before the node: they hold it alive, and the
+    // participant is only dropped once the last node in the context is gone.
+    detectSub_.reset();
+    imuSub_.reset();
+    gpsSub_.reset();
+
+    node_.reset();
+    nodeAddrs_.clear();
+}
+
+void RosNode::createNode() {
+    nodeAddrs_ = InterfaceMonitor::currentIPv4();
+
+    // Tracks smoothed from the previous node's messages are stale the moment
+    // it goes away — without this, whatever was on screen at the rebuild would
+    // hang there as ghosts until the detector happened to reuse those ids.
+    detectionSmoother_.clear();
+
+    qDebug() << "[RosNode] Initializing with detection topic:" << detectTopic_
+             << "on" << nodeAddrs_.values();
 
     node_ = std::make_shared<rclcpp::Node>("qt_pcl_visualizer");
 
@@ -84,7 +173,7 @@ void RosNode::initialize(const QString& /*topic*/,const QString& topic_detect , 
 
     // detected objects
     detectSub_ = node_->create_subscription<object_detection_msgs::msg::Object3dArray>(
-        topic_detect.toStdString(),10,
+        detectTopic_.toStdString(),10,
         [this](const object_detection_msgs::msg::Object3dArray::ConstSharedPtr msg) {
             objectDetectionCallback(msg);
 
@@ -101,14 +190,14 @@ void RosNode::initialize(const QString& /*topic*/,const QString& topic_detect , 
      */
 
     imuSub_ =node_->create_subscription<sensor_msgs::msg::Imu>(
-        imuTopic.toStdString(),10,
+        imuTopic_.toStdString(),10,
         [this](const sensor_msgs::msg::Imu::ConstSharedPtr msg) {
             imuCallback(msg);
 
         });
 
     gpsSub_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(
-        gpsTopic.toStdString(),10,
+        gpsTopic_.toStdString(),10,
         [this](const sensor_msgs::msg::NavSatFix::ConstSharedPtr msg) {
             gpsCallback(msg);
         });

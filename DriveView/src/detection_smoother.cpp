@@ -241,6 +241,19 @@ void DetectionSmoother::tick()
         model_->setDetections(output);
 }
 
+void DetectionSmoother::clear()
+{
+    {
+        QMutexLocker locker(&mutex_);
+        tracks_.clear();
+    }
+
+    // Same rule as tick(): the model belongs to the GUI thread, so it is
+    // touched with the mutex released.
+    if (model_)
+        model_->setDetections({});
+}
+
 QList<DetectionData> DetectionSmoother::buildOutput() const
 {
     QList<DetectionData> out;

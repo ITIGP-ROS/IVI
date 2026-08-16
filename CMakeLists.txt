@@ -38,6 +38,7 @@ qt_add_executable(appIVI
     DriveView/src/detection_smoother.cpp
     DriveView/src/car_info.cpp
     DriveView/src/box_transform.cpp
+    DriveView/src/interface_monitor.cpp
     DriveView/inc/ros_node.h
     DriveView/inc/detection_model.h
     DriveView/inc/detection_instancing.h
@@ -45,6 +46,7 @@ qt_add_executable(appIVI
     DriveView/inc/car_info.h
     DriveView/inc/box_transform.h
     DriveView/inc/detection_data.h
+    DriveView/inc/interface_monitor.h
     Backend/OtaManager.cpp
 )
 

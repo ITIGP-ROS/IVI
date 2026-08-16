@@ -30,6 +30,12 @@ public:
     // thread-safe; call from the ROS callback with the raw detections
     void update(const QList<DetectionData>& raw);
 
+    // Drop every track and empty the model. For use when the message stream
+    // itself is replaced — a rebuilt ROS node means the ids coming next bear
+    // no relation to the ones on screen, so smoothing across the gap would
+    // leave ghosts sitting wherever they were last seen.
+    void clear();
+
 private:
     struct Track
     {
