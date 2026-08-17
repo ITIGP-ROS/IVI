@@ -39,12 +39,22 @@ private:
     void iteratePulse();
 
     static void contextStateCallback(pa_context *c, void *userdata);
+    static void serverInfoCallback(pa_context *c, const pa_server_info *i, void *userdata);
     static void sinkInfoCallback(pa_context *c, const pa_sink_info *i, int eol, void *userdata);
     static void successCallback(pa_context *c, int success, void *userdata);
+    static void subscribeCallback(pa_context *c, pa_subscription_event_type_t t,
+                                  uint32_t idx, void *userdata);
 
     pa_mainloop *m_mainloop = nullptr;
     pa_context *m_context = nullptr;
-    uint32_t m_sinkIndex = 0;
+    // PA_INVALID_INDEX until the server has told us which sink is the default.
+    // It used to default to 0, which is a real sink index — so a failed or
+    // not-yet-finished lookup silently wrote to whatever sink happened to be
+    // first instead of doing nothing.
+    uint32_t m_sinkIndex = PA_INVALID_INDEX;
+    // Channel count of that sink. A pa_cvolume has to carry exactly as many
+    // channels as the sink has or the server rejects the whole operation.
+    uint8_t m_sinkChannels = 2;
     int m_volume = 50;
     bool m_muted = false;
     bool m_ready = false;
