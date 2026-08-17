@@ -196,7 +196,7 @@ Rectangle {
     // only scans when the driver asks. One scan on entry, then the Scan button.
     Component.onCompleted: {
         if (BluetoothManager.bluetoothEnabled)
-            BluetoothManager.fetchKnownDevices()
+            BluetoothManager.scanDevices()
     }
 
     // Leaving the page must stop the radio; otherwise a 6s inquiry keeps running

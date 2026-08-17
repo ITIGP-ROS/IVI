@@ -1,0 +1,65 @@
+--- Backend/BluetoothHWManager.hpp
++++ Backend/BluetoothHWManager.hpp
+@@ -69,6 +69,7 @@
+ 
+     Q_INVOKABLE void scanDevices();
+     Q_INVOKABLE void stopScan();
++    Q_INVOKABLE void fetchKnownDevices();
+ 
+     // Set while A2DP is streaming. Inquiry starves the ACL link, so discovery is
+     // refused while there is audio to protect.
+--- Backend/BluetoothHWManager.cpp
++++ Backend/BluetoothHWManager.cpp
+@@ -485,6 +485,41 @@
+     });
+ }
+ 
++void BluetoothHWManager::fetchKnownDevices()
++{
++    BlueZ::managedObjects(this, [this](const DBusManagedObjects &objects) {
++        QVariantList devices;
++        for (auto it = objects.begin(); it != objects.end(); ++it) {
++            const DBusInterfaceMap &ifaces = it.value();
++            if (!ifaces.contains(BlueZ::DeviceIface)) continue;
++
++            const QVariantMap &p = ifaces.value(BlueZ::DeviceIface);
++            const QString address = p.value(QStringLiteral("Address")).toString();
++            if (address.isEmpty()) continue;
++
++            trackDevice(it.key().path(), p);
++
++            const bool paired = p.value(QStringLiteral("Paired"), false).toBool();
++            const bool hasRssi = p.contains(QStringLiteral("RSSI"));
++
++            if (!paired && !hasRssi) continue;
++
++            QVariantMap d;
++            d[QStringLiteral("name")]      = p.value(QStringLiteral("Alias"),
++                                             p.value(QStringLiteral("Name"),
++                                                     address)).toString();
++            d[QStringLiteral("address")]   = address;
++            d[QStringLiteral("paired")]    = paired;
++            d[QStringLiteral("trusted")]   = p.value(QStringLiteral("Trusted"), false).toBool();
++            d[QStringLiteral("connected")] = p.value(QStringLiteral("Connected"), false).toBool();
++            d[QStringLiteral("rssi")]      = hasRssi ? p.value(QStringLiteral("RSSI")).toInt() : 0;
++            d[QStringLiteral("icon")]      = p.value(QStringLiteral("Icon")).toString();
++            devices << d;
++        }
++        emit scanFinished(devices);
++    });
++}
++
+ void BluetoothHWManager::setDiscovering(bool on)
+ {
+     if (m_discovering == on) return;
+--- SettingPages/BluetoothPage.qml
++++ SettingPages/BluetoothPage.qml
+@@ -196,7 +196,7 @@
+     // only scans when the driver asks. One scan on entry, then the Scan button.
+     Component.onCompleted: {
+         if (BluetoothManager.bluetoothEnabled)
+-            BluetoothManager.scanDevices()
++            BluetoothManager.fetchKnownDevices()
+     }
+ 
+     // Main Layout

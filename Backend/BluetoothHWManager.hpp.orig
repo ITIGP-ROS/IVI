@@ -74,7 +74,6 @@ public:
 
     Q_INVOKABLE void scanDevices();
     Q_INVOKABLE void stopScan();
-    Q_INVOKABLE void fetchKnownDevices();
 
     // Set while A2DP is streaming. Inquiry starves the ACL link, so discovery is
     // refused while there is audio to protect.
