@@ -47,6 +47,19 @@ void BluetoothManager::rescan()
         for (auto it = objects.begin(); it != objects.end(); ++it) {
             const DBusInterfaceMap &ifaces = it.value();
             if (!ifaces.contains(BlueZ::DeviceIface)) continue;
+
+            /*
+             * Watch EVERY known device, not only the connected one.
+             *
+             * BlueZ keeps a Device1 object for as long as a phone stays paired,
+             * so a phone that reconnects emits no InterfacesAdded — the object
+             * was there the whole time. The only notice is PropertiesChanged
+             * (Connected) on that same path. Subscribing to just the connected
+             * device meant a phone that connected after startup, or dropped for
+             * a moment and came back, was never heard from again.
+             */
+            subscribe(it.key().path());
+
             const QVariantMap &p = ifaces.value(BlueZ::DeviceIface);
             if (!p.value(QStringLiteral("Connected"), false).toBool()) continue;
 
@@ -81,15 +94,6 @@ void BluetoothManager::subscribe(const QString &path)
                   SLOT(onPropertiesChanged(QString, QVariantMap, QStringList)));
 }
 
-void BluetoothManager::unsubscribeAll()
-{
-    for (const QString &path : m_subscribed)
-        m_bus.disconnect(BlueZ::Service, path, BlueZ::PropsIface,
-                         QStringLiteral("PropertiesChanged"), this,
-                         SLOT(onPropertiesChanged(QString, QVariantMap, QStringList)));
-    m_subscribed.clear();
-}
-
 void BluetoothManager::selectDevice(const QString &path, const QVariantMap &props)
 {
     m_devicePath = path;
@@ -115,7 +119,20 @@ void BluetoothManager::selectPlayer(const QString &path)
 
 void BluetoothManager::clearDevice()
 {
-    unsubscribeAll();
+    /*
+     * Drops the SELECTION, never the subscriptions.
+     *
+     * This used to call unsubscribeAll(), which is what wedged the page. Losing
+     * the device's PropertiesChanged subscription cost us the one signal that
+     * says the phone came back, and BlueZ sends no InterfacesAdded for a device
+     * it already knows — so after a single blip the UI stayed empty until the
+     * app was restarted, whatever the phone did afterwards. That read as "it
+     * shows sometimes", the "sometimes" being whether the phone happened to be
+     * connected at startup.
+     *
+     * Keeping the match rules is safe across a bluetoothd restart too: they are
+     * registered against the well-known name, not an owner.
+     */
     m_devicePath.clear();
     m_playerPath.clear();
 
@@ -200,9 +217,10 @@ void BluetoothManager::onPropertiesChanged(const QString &interface,
     }
 
     if (interface == BlueZ::DeviceIface) {
-        if (changed.contains(QStringLiteral("Connected"))
-            && !changed.value(QStringLiteral("Connected")).toBool()) {
-            // Our device dropped — re-evaluate in case another phone is still on.
+        // Both directions. Reacting only to Connected == false meant a phone
+        // coming back was ignored, and this signal is the ONLY notice of that:
+        // BlueZ reuses the Device1 object rather than announcing a new one.
+        if (changed.contains(QStringLiteral("Connected"))) {
             rescan();
             return;
         }
@@ -216,7 +234,14 @@ void BluetoothManager::onInterfacesAdded(const QDBusObjectPath &path,
     // A MediaPlayer1 appears when the phone starts playing; a Device1 when a new
     // phone connects. Either changes what we should be showing.
     if (interfaces.contains(BlueZ::PlayerIface)) {
-        if (m_playerPath.isEmpty()) selectPlayer(path.path());
+        const QString p = path.path();
+        // A player under the device we are showing always wins. BlueZ numbers
+        // these (player0, player1, ...) and hands out a fresh one on each AVRCP
+        // reconnect, so keeping the first one forever binds the UI to an object
+        // that no longer exists and silently ignores the live one.
+        if (m_playerPath.isEmpty()
+            || (!m_devicePath.isEmpty() && p.startsWith(m_devicePath + QLatin1Char('/'))))
+            selectPlayer(p);
         return;
     }
     if (interfaces.contains(BlueZ::DeviceIface))

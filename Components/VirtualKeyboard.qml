@@ -19,6 +19,7 @@ Rectangle {
     signal cancelled()
 
     property bool shiftActive: false
+    property bool symbolActive: false
 
     /*
      * Palette. Defaults are the amber-on-teal the keyboard shipped with, so
@@ -128,12 +129,6 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 100 } }
 
-                // × (U+00D7) rather than ✕ (U+2715): the latter is a Dingbats
-                // glyph that no font on the target image covers — it is not an
-                // emoji either, so the emoji font that carries the rest of the
-                // symbols here does not rescue it, and the button came up blank
-                // on the head unit. U+00D7 is in Latin-1 and is what the other
-                // close buttons in this app already use.
                 Text { text: "×"; color: virtualKeyboard.keyTextColor; font.pixelSize: 24; font.bold: true; font.family: "Arial"; anchors.centerIn: parent }
 
                 MouseArea {
@@ -162,13 +157,14 @@ Rectangle {
             id: keyGrid
             anchors.centerIn: parent
             spacing: 6
+            property real w: (virtualKeyboard.width - 70) / 10
 
-            // Row 1: Numbers
+            // Row 1
             Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
                 Repeater {
-                    model: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+                    model: symbolActive ? ["1","2","3","4","5","6","7","8","9","0"] : (shiftActive ? ["Q","W","E","R","T","Y","U","I","O","P"] : ["q","w","e","r","t","y","u","i","o","p"])
                     delegate: Rectangle {
-                        width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
+                        width: keyGrid.w; height: 44; radius: 6
                         color: keyMouse1.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
                         border.color: keyMouse1.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
                         Behavior on color { ColorAnimation { duration: 80 } }
@@ -178,12 +174,12 @@ Rectangle {
                 }
             }
 
-            // Row 2: QWERTY
+            // Row 2
             Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
                 Repeater {
-                    model: shiftActive ? ["Q","W","E","R","T","Y","U","I","O","P"] : ["q","w","e","r","t","y","u","i","o","p"]
+                    model: symbolActive ? ["-","/",":",";","(",")","$","&","@","\""] : (shiftActive ? ["A","S","D","F","G","H","J","K","L"] : ["a","s","d","f","g","h","j","k","l"])
                     delegate: Rectangle {
-                        width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
+                        width: keyGrid.w; height: 44; radius: 6
                         color: keyMouse2.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
                         border.color: keyMouse2.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
                         Behavior on color { ColorAnimation { duration: 80 } }
@@ -193,12 +189,36 @@ Rectangle {
                 }
             }
 
-            // Row 3: ASDF
+            // Row 3
             Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
+                // Shift or Extra Symbol
+                Rectangle {
+                    width: keyGrid.w * 1.5 + 3; height: 44; radius: 6
+                    color: shiftMouse.containsMouse ? virtualKeyboard.accent : (shiftActive ? virtualKeyboard.accent : virtualKeyboard.keyColor)
+                    border.color: shiftMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Image {
+                        visible: !symbolActive
+                        anchors.centerIn: parent; width: 23; height: 23;
+                        source: shiftActive ? "qrc:/assets/icons/upper.png" : "qrc:/assets/icons/lower.png"
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Text {
+                        visible: symbolActive
+                        anchors.centerIn: parent; text: "_"; color: virtualKeyboard.keyTextColor; font.pixelSize: 16; font.bold: true; font.family: "Arial"
+                    }
+                    MouseArea {
+                        id: shiftMouse; anchors.fill: parent; hoverEnabled: true;
+                        onClicked: {
+                            if (symbolActive) appendChar("_")
+                            else shiftActive = !shiftActive
+                        }
+                    }
+                }
                 Repeater {
-                    model: shiftActive ? ["A","S","D","F","G","H","J","K","L"] : ["a","s","d","f","g","h","j","k","l"]
+                    model: symbolActive ? [".", ",", "?", "!", "'", "+", "="] : (shiftActive ? ["Z","X","C","V","B","N","M"] : ["z","x","c","v","b","n","m"])
                     delegate: Rectangle {
-                        width: (virtualKeyboard.width - 66) / 9; height: 44; radius: 6
+                        width: keyGrid.w; height: 44; radius: 6
                         color: keyMouse3.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
                         border.color: keyMouse3.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
                         Behavior on color { ColorAnimation { duration: 80 } }
@@ -206,42 +226,53 @@ Rectangle {
                         MouseArea { id: keyMouse3; anchors.fill: parent; hoverEnabled: true; onClicked: appendChar(modelData) }
                     }
                 }
-            }
-
-            // Row 4: ZXCV + Shift + Dot + Backspace
-            // Ten keys, so this row uses the number row's width formula rather
-            // than the nine-key one the rows above it share.
-            Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
-                // Shift
+                // Backspace
                 Rectangle {
-                    width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
-                    color: shiftMouse.containsMouse ? virtualKeyboard.accent : (shiftActive ? virtualKeyboard.accent : virtualKeyboard.keyColor)
-                    border.color: shiftMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
+                    width: keyGrid.w * 1.5 + 3; height: 44; radius: 6
+                    color: bsMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
+                    border.color: bsMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
                     Behavior on color { ColorAnimation { duration: 80 } }
                     Image {
-                        anchors.centerIn: parent;
-                        width: 23; height: 23;
-                        source: shiftActive ? "qrc:/assets/icons/upper.png" : "qrc:/assets/icons/lower.png"
+                        anchors.centerIn: parent; width: 23; height: 23;
+                        source: "qrc:/assets/icons/back.png"
                         fillMode: Image.PreserveAspectFit
                     }
-                    MouseArea { id: shiftMouse; anchors.fill: parent; hoverEnabled: true; onClicked: shiftActive = !shiftActive }
+                    MouseArea { id: bsMouse; anchors.fill: parent; hoverEnabled: true; onClicked: backspace() }
                 }
-                Repeater {
-                    model: shiftActive ? ["Z","X","C","V","B","N","M"] : ["z","x","c","v","b","n","m"]
-                    delegate: Rectangle {
-                        width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
-                        color: keyMouse4.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
-                        border.color: keyMouse4.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
-                        Behavior on color { ColorAnimation { duration: 80 } }
-                        Text { anchors.centerIn: parent; text: modelData; color: virtualKeyboard.keyTextColor; font.pixelSize: 16; font.bold: true; font.family: "Arial" }
-                        MouseArea { id: keyMouse4; anchors.fill: parent; hoverEnabled: true; onClicked: appendChar(modelData) }
-                    }
-                }
-                // Dot. Its own key rather than a Repeater entry: shift must not
-                // turn it into anything else, and appendChar's auto-unshift
-                // would drop the caps the user just armed for the next letter.
+            }
+
+            // Row 4
+            Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
+                // ?123 / ABC Toggle
                 Rectangle {
-                    width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
+                    width: keyGrid.w * 1.5 + 3; height: 44; radius: 6
+                    color: symToggleMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
+                    border.color: symToggleMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Text { anchors.centerIn: parent; text: symbolActive ? "ABC" : "?123"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
+                    MouseArea { id: symToggleMouse; anchors.fill: parent; hoverEnabled: true; onClicked: { symbolActive = !symbolActive; shiftActive = false; } }
+                }
+                // Cancel
+                Rectangle {
+                    width: keyGrid.w * 2 + 6; height: 44; radius: 6
+                    color: canMouse.containsMouse ? virtualKeyboard.danger : virtualKeyboard.dangerDim
+                    border.color: canMouse.containsMouse ? virtualKeyboard.danger : virtualKeyboard.keyBorder; border.width: 1
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
+                    MouseArea { id: canMouse; anchors.fill: parent; hoverEnabled: true; onClicked: { targetText = ""; if (targetItem) targetItem.text = ""; cancelled() } }
+                }
+                // Space
+                Rectangle {
+                    width: keyGrid.w * 4 + 18; height: 44; radius: 6
+                    color: spaceMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
+                    border.color: spaceMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Text { anchors.centerIn: parent; text: "Space"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
+                    MouseArea { id: spaceMouse; anchors.fill: parent; hoverEnabled: true; onClicked: appendChar(" ") }
+                }
+                // Dot
+                Rectangle {
+                    width: keyGrid.w; height: 44; radius: 6
                     color: dotMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
                     border.color: dotMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
                     Behavior on color { ColorAnimation { duration: 80 } }
@@ -258,49 +289,13 @@ Rectangle {
                         }
                     }
                 }
-                // Backspace
-                Rectangle {
-                    width: (virtualKeyboard.width - 70) / 10; height: 44; radius: 6
-                    color: bsMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
-                    border.color: bsMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
-                    Behavior on color { ColorAnimation { duration: 80 } }
-                    Image {
-                        anchors.centerIn: parent;
-                        width: 23; height: 23;
-                        source: "qrc:/assets/icons/back.png"
-                        fillMode: Image.PreserveAspectFit
-                    }
-                    MouseArea { id: bsMouse; anchors.fill: parent; hoverEnabled: true; onClicked: backspace() }
-                }
-            }
-
-            // Row 5: Space, Cancel, Enter
-            Row { spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
-                // Cancel
-                Rectangle {
-                    width: (virtualKeyboard.width - 35) / 5; height: 44; radius: 6
-                    color: canMouse.containsMouse ? virtualKeyboard.danger : virtualKeyboard.dangerDim
-                    border.color: canMouse.containsMouse ? virtualKeyboard.danger : virtualKeyboard.keyBorder; border.width: 1
-                    Behavior on color { ColorAnimation { duration: 80 } }
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
-                    MouseArea { id: canMouse; anchors.fill: parent; hoverEnabled: true; onClicked: { targetText = ""; if (targetItem) targetItem.text = ""; cancelled() } }
-                }
-                // Space
-                Rectangle {
-                    width: (virtualKeyboard.width - 35) / 5 * 3; height: 44; radius: 6
-                    color: spaceMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.keyColor
-                    border.color: spaceMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.keyBorder; border.width: 1
-                    Behavior on color { ColorAnimation { duration: 80 } }
-                    Text { anchors.centerIn: parent; text: "Space"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
-                    MouseArea { id: spaceMouse; anchors.fill: parent; hoverEnabled: true; onClicked: appendChar(" ") }
-                }
                 // Enter
                 Rectangle {
-                    width: (virtualKeyboard.width - 35) / 5; height: 44; radius: 6
+                    width: keyGrid.w * 1.5 + 3; height: 44; radius: 6
                     color: entMouse.containsMouse ? virtualKeyboard.keyHoverColor : virtualKeyboard.enterColor
                     border.color: entMouse.containsMouse ? virtualKeyboard.accent : virtualKeyboard.accent; border.width: 1
                     Behavior on color { ColorAnimation { duration: 80 } }
-                    Text { anchors.centerIn: parent; text: "Enter"; color: virtualKeyboard.keyTextColor; font.pixelSize: 16; font.bold: true; font.family: "Arial" }
+                    Text { anchors.centerIn: parent; text: "Enter"; color: virtualKeyboard.keyTextColor; font.pixelSize: 14; font.bold: true; font.family: "Arial" }
                     MouseArea { id: entMouse; anchors.fill: parent; hoverEnabled: true; onClicked: accepted() }
                 }
             }

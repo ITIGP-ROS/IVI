@@ -71,7 +71,6 @@ private:
     void applyDeviceProps(const QVariantMap &props);
     void applyPlayerProps(const QVariantMap &props);
     void subscribe(const QString &path);
-    void unsubscribeAll();
     void sendAvrcpCommand(const QString& command);
 
     bool    m_connected = false;
