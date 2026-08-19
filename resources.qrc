@@ -24,5 +24,6 @@
         <file>assets/icons/lower.png</file>
         <file>assets/icons/back.png</file>
         <file>assets/videos/vpace_splash.gif</file>
+        <file>assets/icons/mic.png</file>
     </qresource>
 </RCC>

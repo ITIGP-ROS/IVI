@@ -20,6 +20,31 @@ Item {
     required property MediaPlayer mediaPlayer
     required property var        mediaPage
 
+    /*
+     * Jump straight to one sub-page (radio / audio / video).
+     *
+     * Set as an initial property when the page is pushed from a voice command
+     * or another page, or called directly when MediaPlayer is already on
+     * screen.
+     */
+    property string pendingSection: ""
+
+    function showSection(section) {
+        if (stackView.currentItem && stackView.currentItem.objectName === section) return
+        stackView.pop(null)
+        if (section === "radio")
+            stackView.push(radioPageComponent)
+        else if (section === "audio")
+            stackView.push(audioPageComponent)
+        else if (section === "video")
+            stackView.push(videoPageComponent)
+    }
+
+    Component.onCompleted: {
+        if (pendingSection !== "")
+            showSection(pendingSection)
+    }
+
     property bool btActive: mediaPage.currentMediaType === 4
     // Bluetooth is driven by the phone over AVRCP, not by mediaPlayer.
     property bool mediaPlaying: btActive
@@ -331,7 +356,7 @@ Item {
 
                     Image{
                         anchors.centerIn: parent
-                        width: 25; height: 25
+                        width: 18; height: 18
                         source: mainWindow.mediaPlaying? "qrc:/assets/icons/pause.png" : "qrc:/assets/icons/play.png"
                         fillMode: Image.PreserveAspectFit
                     }
@@ -364,7 +389,7 @@ Item {
 
                     Image{
                         anchors.centerIn: parent
-                        width: 16; height: 16
+                        width: 18; height: 18
                         source: "qrc:/assets/icons/stop.png"
                         fillMode: Image.PreserveAspectFit
                     }
@@ -418,6 +443,7 @@ Item {
     Component {
         id: radioPageComponent
         RadioPage {
+            objectName: "radio"
             stackView: stackView
             mediaPlayer: root.mediaPlayer
             mediaPage: root.mediaPage
@@ -427,6 +453,7 @@ Item {
     Component {
         id: audioPageComponent
         AudioPage {
+            objectName: "audio"
             stackView: stackView
             mediaPlayer: root.mediaPlayer
             mediaPage: root.mediaPage
@@ -436,6 +463,7 @@ Item {
     Component {
         id: videoPageComponent
         VideoPage {
+            objectName: "video"
             stackView: stackView
             // The title bar is drawn over this page, so the video page cannot
             // hide it itself — it reports the state and we hide it here.

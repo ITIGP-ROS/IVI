@@ -36,6 +36,7 @@ Item {
     property string pendingSection: ""
 
     function showSection(section) {
+        if (stackView.currentItem && stackView.currentItem.objectName === section) return
         stackView.pop(null)
         if (section === "wifi")
             stackView.push(wifiPageComponent)
@@ -534,6 +535,7 @@ Item {
         Component {
             id: wifiPageComponent
             WiFiPage {
+                objectName: "wifi"
                 id: wifiPage
                 stackView: stackView
             }
@@ -542,6 +544,7 @@ Item {
         Component {
             id: bluetoothPageComponent
             BluetoothPage {
+                objectName: "bluetooth"
                 id: btPage
                 stackView: stackView
             }
@@ -550,6 +553,7 @@ Item {
         Component {
             id: ambientPageComponent
             AmbientLightPage {
+                objectName: "ambient"
                 id: ambientPage
                 stackView: stackView
             }

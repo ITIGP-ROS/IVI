@@ -13,6 +13,30 @@ ApplicationWindow {
     flags: Qt.FramelessWindowHint | Qt.Window
 
     property bool splashDone: false
+    property bool isAwake: false
+
+    Timer {
+        id: wakeTimer
+        interval: 5000
+        onTriggered: {
+            mainWindow.isAwake = false
+            console.log("Wake timer expired. Going to sleep.")
+        }
+    }
+
+    function toggleAwake() {
+        if (mainWindow.isAwake) {
+            mainWindow.isAwake = false
+            wakeTimer.stop()
+        } else {
+            mainWindow.isAwake = true
+            wakeTimer.restart()
+        }
+    }
+
+    Component.onCompleted: {
+        if (speechManager) speechManager.startListening()
+    }
 
     /*
      * Splash: the branded clip, nothing else. It runs its 90 frames once (~3 s)
@@ -247,6 +271,45 @@ ApplicationWindow {
             stackView.push(settingPage, { pendingSection: section })
     }
 
+    /*
+     * Same idea as openSettingsSection but for the media sub-pages.
+     *
+     * Navigates to MediaPlayerPage and jumps straight to the requested
+     * section ("radio", "audio", or "video"). If the media page is already
+     * on screen its internal stack is switched instead of pushing a
+     * duplicate.
+     */
+    function openMediaSection(section) {
+        slideIn.stop()
+        launcherOut.stop()
+        driveViewLoader.entering = false
+        driveViewLoader.exiting = false
+        driveViewLoader.shown = false
+        driveSlide.x = 0
+        launcherSlide.x = 0
+
+        const media = stackView.currentItem as MediaPlayerPage
+        if (media)
+            media.showSection(section)
+        else
+            stackView.push(mediaPage, { pendingSection: section })
+    }
+
+    function goHome() {
+        if (driveViewLoader.shown) {
+            slideIn.stop()
+            launcherOut.stop()
+            driveViewLoader.entering = false
+            driveViewLoader.exiting = true
+            slideOut.from = driveSlide.x
+            launcherIn.from = launcherSlide.x
+            slideOut.start()
+            launcherIn.start()
+            driveViewLoader.shown = false
+        }
+        stackView.pop(null)
+    }
+
     // No WindowResize: the head unit runs at one fixed size, and edge drag
     // handles on a touchscreen only give the driver a way to break the layout.
 
@@ -439,13 +502,24 @@ ApplicationWindow {
             signal openCarInfo()
             signal openDriveView()
 
-            onOpenWeather:        stackView.push(weatherPage)
-            onOpenMedia:          stackView.push(mediaPage)
-            onOpenSettings:       stackView.push(settingPage)
+            onOpenWeather: {
+                if (stackView.currentItem && stackView.currentItem.objectName === "weatherPage") return
+                stackView.push(weatherPage)
+            }
+            onOpenMedia: {
+                if (stackView.currentItem && stackView.currentItem.objectName === "mediaPage") return
+                stackView.push(mediaPage)
+            }
+            onOpenSettings: {
+                if (stackView.currentItem && stackView.currentItem.objectName === "settingPage") return
+                stackView.push(settingPage)
+            }
             onOpenCarInfo:        carInfoPopup.visible = true
             // active latches on first use in case the warm-up timer has not
             // fired yet; after that this is just a visibility flip.
             onOpenDriveView: {
+                if (driveViewLoader.shown) return
+                
                 driveViewLoader.active = true
                 driveViewLoader.shown = true
                 driveViewLoader.entering = true
@@ -952,50 +1026,41 @@ ApplicationWindow {
                                 Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 48; height: 48; radius: 24
-                                    color: speechManager && speechManager.listening ? "#ff4444" : "#2674cc"
+                                    color: mainWindow.isAwake ? "#ff4444" : "#2674cc"
                                     Behavior on color { ColorAnimation { duration: 150 } }
 
-                                    Text {
+                                    Image {
                                         anchors.centerIn: parent
-                                        text: speechManager && speechManager.listening ? "🔴" : "🎤"
-                                        font.pixelSize: 22
+                                        source: "qrc:/assets/icons/mic.png"
+                                        width: 26; height: 26
+                                        fillMode: Image.PreserveAspectFit
                                     }
 
                                     MouseArea {
                                         anchors.fill: parent
                                         preventStealing: true
-                                        pressAndHoldInterval: 100
-                                        onPressed: {
-                                            console.log("MIC PRESSED - speechManager:", speechManager)
-                                            if (speechManager) speechManager.startListening()
-                                        }
-                                        onReleased: {
-                                            console.log("MIC RELEASED")
-                                            if (speechManager) speechManager.stopListening()
-                                        }
-                                        onCanceled: {
-                                            console.log("MIC CANCELED")
-                                            if (speechManager) speechManager.stopListening()
+                                        onClicked: {
+                                            mainWindow.toggleAwake()
                                         }
                                     }
                                 }
 
                                 Column {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width - 70
+                                    width: parent.width - 60 - 24
                                     spacing: 4
 
                                     Text {
                                         width: parent.width
                                         clip: true
                                         elide: Text.ElideRight
-                                        text: speechManager && speechManager.listening
+                                        text: mainWindow.isAwake
                                             ? (speechManager.partialResult !== "" ? speechManager.partialResult : "Listening...")
-                                            : "Hold to speak"
-                                        color: speechManager && speechManager.listening ? "#ffffff" : "#8899bb"
+                                            : "Say 'amigo' to wake"
+                                        color: mainWindow.isAwake ? "#ffffff" : "#8899bb"
                                         font {
                                             pixelSize: 14
-                                            italic: !speechManager || !speechManager.listening
+                                            italic: !mainWindow.isAwake
                                             family: "Arial"
                                         }
                                     }
@@ -1010,14 +1075,14 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             color: {
                                                 if (!speechManager) return "#444"
-                                                if (speechManager.listening) return "#ff4444"
+                                                if (mainWindow.isAwake) return "#ff4444"
                                                 return "#444"
                                             }
                                             Behavior on color { ColorAnimation { duration: 150 } }
 
                                             // Pulsing animation when listening
                                             SequentialAnimation on opacity {
-                                                running: speechManager && speechManager.listening
+                                                running: mainWindow.isAwake
                                                 loops: Animation.Infinite
                                                 NumberAnimation { to: 0.3; duration: 500 }
                                                 NumberAnimation { to: 1.0; duration: 500 }
@@ -1029,12 +1094,12 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: {
                                                 if (!speechManager) return "Unavailable"
-                                                if (speechManager.listening) return "Recording..."
+                                                if (mainWindow.isAwake) return "Recording..."
                                                 return "Ready"
                                             }
                                             color: {
                                                 if (!speechManager) return "#555"
-                                                if (speechManager.listening) return "#ff8888"
+                                                if (mainWindow.isAwake) return "#ff8888"
                                                 return "#556677"
                                             }
                                             font.pixelSize: 11
@@ -1052,16 +1117,50 @@ ApplicationWindow {
                             Connections {
                                 target: speechManager
                                 function onResultReady(text) {
-                                    console.log("Recognized:", text)
                                     var lowerText = text.toLowerCase().trim()
+                                    console.log("Recognized:", lowerText)
+                                    
+                                    if (!mainWindow.isAwake) {
+                                        if (lowerText.includes("amigo")) {
+                                            mainWindow.isAwake = true
+                                            wakeTimer.restart()
+                                            console.log("WOKE UP! Waiting for command...")
+                                            lowerText = lowerText.replace("amigo", "").trim()
+                                            if (lowerText === "") return
+                                        } else {
+                                            return // Ignore while sleeping
+                                        }
+                                    } else {
+                                        // We are awake. Reset timer on any speech.
+                                        wakeTimer.restart()
+                                        lowerText = lowerText.replace("amigo", "").trim()
+                                        if (lowerText === "") return
+                                    }
+                                    
                                     if (lowerText.includes("weather"))
                                         launcherItem.openWeather()
-                                    else if (lowerText.includes("media") || lowerText.includes("music") || lowerText.includes("radio"))
+                                    else if (lowerText.includes("radio"))
+                                        mainWindow.openMediaSection("radio")
+                                    else if (lowerText.includes("audio") || lowerText.includes("music"))
+                                        mainWindow.openMediaSection("audio")
+                                    else if (lowerText.includes("video"))
+                                        mainWindow.openMediaSection("video")
+                                    else if (lowerText.includes("media"))
                                         launcherItem.openMedia()
+                                    else if (lowerText.includes("wifi"))
+                                        mainWindow.openSettingsSection("wifi")
+                                    else if (lowerText.includes("bluetooth"))
+                                        mainWindow.openSettingsSection("bluetooth")
                                     else if (lowerText.includes("settings") || lowerText.includes("setting"))
                                         launcherItem.openSettings()
                                     else if (lowerText.includes("about"))
                                         launcherItem.openCarInfo()
+                                    else if (lowerText.includes("ambient light") || lowerText.includes("ambient"))
+                                        mainWindow.openSettingsSection("ambient")
+                                    else if (lowerText.includes("drive view") || lowerText.includes("navigation") || lowerText.includes("drive") || lowerText.includes("view"))
+                                        launcherItem.openDriveView()
+                                    else if (lowerText.includes("home"))
+                                        mainWindow.goHome()
                                     // VOLUME COMMANDS
                                     else if (lowerText.includes("volume up") || lowerText.includes("increase volume")) {
                                         var newVol = Math.min(systemVolume.maxVolume, systemVolume.volume + 11)
@@ -1082,6 +1181,61 @@ ApplicationWindow {
                                         if (systemVolume.muted)
                                             systemVolume.toggleMute()
                                         console.log("Volume unmuted")
+                                    }
+                                    else if (lowerText === "volume") {
+                                        if (systemVolume.muted)
+                                            systemVolume.toggleMute()
+                                        console.log("Volume → unmuted")
+                                    }
+                                    // BRIGHTNESS COMMANDS
+                                    else if (lowerText.includes("brightness up")) {
+                                        mainWindow.appBrightness = Math.min(1.0, mainWindow.appBrightness + 0.1)
+                                        console.log("Brightness up →", Math.round(mainWindow.appBrightness * 100) + "%")
+                                    }
+                                    else if (lowerText.includes("brightness down")) {
+                                        mainWindow.appBrightness = Math.max(0.0, mainWindow.appBrightness - 0.1)
+                                        console.log("Brightness down →", Math.round(mainWindow.appBrightness * 100) + "%")
+                                    }
+                                    else if (lowerText.includes("brightness max")) {
+                                        mainWindow.appBrightness = 1.0
+                                        console.log("Brightness max → 100%")
+                                    }
+                                    else if (lowerText.includes("brightness min")) {
+                                        mainWindow.appBrightness = 0.2
+                                        console.log("Brightness min → 20%")
+                                    }
+                                    // PLAYBACK COMMANDS
+                                    else if (lowerText.includes("pause")) {
+                                        if (mainWindow.btMediaActive) btManager.pause()
+                                        else sharedMediaPlayer.pause()
+                                        console.log("Media paused")
+                                    }
+                                    else if (lowerText.includes("play") || lowerText.includes("resume")) {
+                                        if (mainWindow.btMediaActive) btManager.play()
+                                        else sharedMediaPlayer.play()
+                                        console.log("Media playing")
+                                    }
+                                    else if (lowerText.includes("stop")) {
+                                        if (mainWindow.btMediaActive) { btManager.stop() }
+                                        else {
+                                            sharedMediaPlayer.stop()
+                                            mainWindow.currentMediaType = 0
+                                            mainWindow.currentMediaTitle = ""
+                                            mainWindow.currentMediaSubtitle = ""
+                                            mainWindow.currentMediaFavicon = ""
+                                            mainWindow.currentRadioStation = null
+                                        }
+                                        console.log("Media stopped")
+                                    }
+                                    else if (lowerText.includes("next")) {
+                                        if (mainWindow.btMediaActive) btManager.next()
+                                        else mainWindow.globalRadioAPI.playNext()
+                                        console.log("Next track")
+                                    }
+                                    else if (lowerText.includes("previous") || lowerText.includes("back")) {
+                                        if (mainWindow.btMediaActive) btManager.previous()
+                                        else mainWindow.globalRadioAPI.playPrevious()
+                                        console.log("Previous track")
                                     }
                                 }
 
@@ -1442,7 +1596,7 @@ ApplicationWindow {
                                     visible: mainWindow.currentMediaType !== 0
 
                                     Rectangle {
-                                        width: 32; height: 32; radius: 16
+                                        width: 36; height: 36; radius: 18
                                         color: tilePrevArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
                                         border.color: Theme.accentMint; border.width: 1
                                         visible: mainWindow.currentMediaType === 1
@@ -1450,7 +1604,7 @@ ApplicationWindow {
                                         Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
-                                            width: 18; height: 18
+                                            width: 16; height: 16
                                             source: "qrc:/assets/icons/prev.png"
                                             fillMode: Image.PreserveAspectFit
                                         }
@@ -1464,13 +1618,13 @@ ApplicationWindow {
                                     }
 
                                     Rectangle {
-                                        width: 32; height: 32; radius: 16
+                                        width: 36; height: 36; radius: 18
                                         color: tilePlayArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
                                         border.color: Theme.accentMint; border.width: 1
                                         Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
-                                            width: 25; height: 25
+                                            width: 18; height: 18
                                             source: mainWindow.mediaPlaying? "qrc:/assets/icons/pause.png" : "qrc:/assets/icons/play.png"
                                             fillMode: Image.PreserveAspectFit
                                         }
@@ -1487,9 +1641,9 @@ ApplicationWindow {
                                     }
 
                                     Rectangle {
-                                        width: 32; height: 32; radius: 16
-                                        color: tileStopArea.containsMouse ? Theme.tint(Theme.danger, 0.4) : Theme.glassFill
-                                        border.color: Theme.danger; border.width: 1
+                                        width: 36; height: 36; radius: 18
+                                        color: tileStopArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
+                                        border.color: Theme.accentMint; border.width: 1
                                         Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
@@ -1514,7 +1668,7 @@ ApplicationWindow {
                                     }
 
                                     Rectangle {
-                                        width: 32; height: 32; radius: 16
+                                        width: 36; height: 36; radius: 18
                                         color: tileNextArea.containsMouse ? Theme.tint(Theme.accentMint, 0.4) : Theme.glassFill
                                         border.color: Theme.accentMint; border.width: 1
                                         visible: mainWindow.currentMediaType === 1
@@ -1522,7 +1676,7 @@ ApplicationWindow {
                                         Behavior on color { ColorAnimation { duration: 150 } }
                                         Image{
                                             anchors.centerIn: parent
-                                            width: 18; height: 18
+                                            width: 16; height: 16
                                             source: "qrc:/assets/icons/next.png"
                                             fillMode: Image.PreserveAspectFit
                                         }
@@ -1727,10 +1881,10 @@ ApplicationWindow {
         }
     }
 
-    // Weather page
     Component {
         id: weatherPage
         WeatherPage {
+            objectName: "weatherPage"
             onGoBack: stackView.pop()
             city: mainWindow.preferredCity
         }
@@ -1739,6 +1893,7 @@ ApplicationWindow {
     Component {
         id: mediaPage
         MediaPlayerPage {
+            objectName: "mediaPage"
             mediaPlayer: sharedMediaPlayer
             mediaPage: mainWindow
             onGoBack: stackView.pop()
@@ -1748,6 +1903,7 @@ ApplicationWindow {
     Component {
         id: settingPage
         SettingPage {
+            objectName: "settingPage"
             id: settingsInstance
             onGoBack: stackView.pop()
             preferredCity: mainWindow.preferredCity

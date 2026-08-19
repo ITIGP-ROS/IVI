@@ -467,6 +467,37 @@ Rectangle {
             }
         }
 
+        // MIC
+        Rectangle {
+            id: micBtn
+            width: 28; height: 28; radius: 10
+            color: titleBar.window.isAwake ? "#ff4444" : (micMouse.pressed ? titleBar.accent : "transparent")
+            border.color: titleBar.window.isAwake ? "#ff4444" : titleBar.accent
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: 150 } }
+
+            Image {
+                anchors.centerIn: parent
+                source: "qrc:/assets/icons/mic.png"
+                width: 17; height: 17
+                fillMode: Image.PreserveAspectFit
+            }
+
+            MouseArea {
+                id: micMouse
+                anchors.fill: parent
+                preventStealing: true
+                hoverEnabled: true
+                onEntered: parent.scale = 1.03
+                onExited: parent.scale = 1.0
+                onClicked: {
+                    if (titleBar.window && typeof titleBar.window.toggleAwake === "function") {
+                        titleBar.window.toggleAwake()
+                    }
+                }
+            }
+        }
+
         // No minimise / maximise / close: the head unit is a fixed-size kiosk
         // with no window manager to hand the app back to, so closing or
         // minimising it would leave the driver looking at a blank screen.
