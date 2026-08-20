@@ -54,7 +54,7 @@ signals:
 private:
 
     QList<DetectionData> detections_;
-    int m_detectCount;
+    int m_detectCount = 0;
 };
 
 #endif // DETECTION_MODEL_H
