@@ -25,6 +25,7 @@
  *   /run/ota-approval/
  *     offers/<id>.json   0755 root:root    producers write, we read
  *     verdicts/<id>      0730 root:weston  we write, we cannot even list it
+ *     notices/<id>.json  0755 root:root    producers write, we read
  *     ui-alive           0664 weston       we touch it, producers stat it
  *
  * `verdicts/` at 0730 is the point of the whole layout: this process can create
@@ -62,25 +63,25 @@
  * ---------------------------------------------------------------------------
  * AUTO-ACCEPT
  *
- * The prompt approves itself if nobody touches it for `autoAcceptMs` (5 s).
+ * The prompt approves itself if nobody touches it for `autoAcceptMs` (9 s).
  * Deny is the deliberate act; letting it ride is consent.
  *
- * 5 s is deliberately the SAME for every target. The prompt a driver sees must
+ * 9 s is deliberately the SAME for every target. The prompt a driver sees must
  * not silently change length depending on which ECU is asking — a window you
  * cannot predict is one you cannot learn to react to.
  *
- * That is a real policy choice and worth naming: at five seconds this prompt is
- * closer to a notification with a veto than to a gate. A driver who is not
- * already looking at the screen will not stop it. It matches the fail-open
- * stance elsewhere in this handshake — a stale `ui-alive` also means approve —
- * so the vehicle's answer to "nobody is paying attention" is consistently "go
- * ahead" rather than "block forever".
+ * That is a real policy choice and worth naming: even at nine seconds this
+ * prompt is closer to a notification with a veto than to a gate. A driver who
+ * is not already looking at the screen will not stop it. It matches the
+ * fail-open stance elsewhere in this handshake — a stale `ui-alive` also means
+ * approve — so the vehicle's answer to "nobody is paying attention" is
+ * consistently "go ahead" rather than "block forever".
  *
- * Note that 5 s is the ESP32's ENTIRE wait (see below), so for that target the
- * coordinator's own 4.4 s deadline expires first and answers fail-open before
- * this countdown can run out. Accept and Deny are honoured normally up to that
- * point; only the last ~600 ms of the stripe is cosmetic on ESP32 offers. The
- * cluster, which waits 60 s, honours the full window.
+ * Every target honours the full 9 s. The cluster waits 60 s against a 30 s
+ * coordinator deadline; the ESP32 waits 10 s against a 9500 ms one. Both
+ * give-up points sit after this countdown, so the driver's window is what
+ * decides everywhere — see the ESP32 note below for how narrow that second
+ * corridor is.
  *
  * Set IVI_OTA_AUTOACCEPT_MS=0 to require an explicit answer instead.
  *
@@ -89,17 +90,58 @@
  * turned off — the effective window is min(offer, ours), and zero stays zero.
  * That asymmetry is the whole point: the field exists because the requester
  * knows a deadline we do not. No producer currently uses it to go shorter, since
- * every target is held to the same 5 s; it stays because the next ECU may be
+ * every target is held to the same 9 s; it stays because the next ECU may be
  * tighter still.
  *
- * The ESP32 is the tight one. Its firmware blocks for exactly 5000 ms waiting
- * for a verdict on 0x311, asks once, and then abandons the update
+ * IT ALSO MEANS RAISING THE NUMBER BELOW IS ONLY HALF THE CHANGE. The clamp is
+ * min(), so an offer that asks for 5000 ms still gets 5000 ms no matter how
+ * high this ceiling goes. update_coordinator writes `auto_accept_ms` from its
+ * own BUDGETS table (update_coordinator/node.py), so the cluster and ESP32
+ * paths only see a longer prompt once that table is raised to match.
+ *
+ * The ESP32 is the tight one. Its firmware blocks for 10000 ms waiting for a
+ * verdict on 0x311, asks once, and then abandons the update
  * (ECU/ESP32/src/logs/can.c). The window is not the only cost in that budget —
  * the offer has to be noticed, the card has to drop in, the coordinator polls
- * for the verdict, and the SecOC frame has to be built and sent. Because the
- * prompt now occupies that whole 5000 ms, the coordinator does not wait for it
- * on ESP32 offers: it gives up at 4400 ms and answers per `on_no_verdict`. An
- * explicit tap inside those 4.4 s is still what decides.
+ * for the verdict, and the SecOC frame has to be built and sent. A 9 s prompt
+ * leaves ~1 s for all of it, which is why the coordinator's deadline sits at
+ * 9500 ms: above this countdown, and far enough below the wall to get a frame
+ * out. That wall was 5000 ms until recently, and at 5000 ms a 9 s prompt does
+ * not fit at all — a board still running that build gives up mid-countdown.
+ *
+ * ---------------------------------------------------------------------------
+ * COMPLETION NOTICES
+ *
+ * The other direction of the same idea. When an update has actually landed, the
+ * producer drops a file in `notices/` and this side shows a 5 s banner saying so
+ * — and nothing else. There is no verdict to write and nothing for the driver to
+ * answer, so it is a toast, not a prompt: it does not take the screen, it does
+ * not dim it, and it does not swallow taps.
+ *
+ *   {
+ *     "id":     "esp32-1754994000",   // must match the filename stem
+ *     "target": "esp32",              // REQUIRED: esp32 | stm32 | cluster
+ *     "at":     1754994120            // optional, unix seconds
+ *   }
+ *
+ * Write it to `<id>.json.tmp` and rename(2) it into place, exactly as with an
+ * offer and for exactly the same reason.
+ *
+ * EVERY ECU IS ANNOUNCED — `esp32`, `stm32`, `cluster` — BUT NOT `ivi`, which
+ * is logged and dropped along with anything unrecognised. The head unit does
+ * not announce its own update because that one ends in a reboot: the screen
+ * going dark and coming back IS the announcement, and a banner afterwards would
+ * only report something the driver just watched happen. It also could not work
+ * — /run is a tmpfs, so a notice written before the reboot is not there
+ * afterwards.
+ *
+ * WE CANNOT DELETE THE NOTICE — notices/ is root-owned, like offers/. The
+ * producer unlinks it once it has written it; this side only remembers the ids
+ * it has already shown, so a file left lying there does not re-toast on every
+ * one-second tick. That memory is per-process, which is why a notice is ALSO
+ * ignored when it is already older than kNoticeMaxAgeS the first time we see
+ * it: without the age check, an uncollected notice would pop up again on the
+ * next app restart, announcing an update that finished an hour ago.
  *
  * ---------------------------------------------------------------------------
  * LIVENESS, AND WHY IT MATTERS
@@ -191,8 +233,15 @@ signals:
     // to its own default, so the user must be told their tap did nothing.
     void verdictFailed(const QString &reason);
 
+    // An update has finished. Purely informational — there is nothing to answer
+    // and nothing to write back, so this drives a toast rather than the prompt.
+    // `moduleLabel` is the friendly target name, empty when the notice did not
+    // say which module it was.
+    void updateCompleted(const QString &moduleLabel);
+
 private slots:
     void rescan();
+    void scanNotices();
     void tick();
 
 private:
@@ -200,15 +249,21 @@ private:
     void clearCurrent();
     bool writeVerdict(const QString &id, bool approved, QString *error) const;
 
+    // Friendly name for a target token, or an empty string for one we have no
+    // name for. targetLabel() is this plus a placeholder for the prompt, which
+    // must always say something; the toast prefers to say nothing.
+    QString labelFor(const QString &target) const;
+
     QString offersDir()   const { return m_root + QStringLiteral("/offers"); }
     QString verdictsDir() const { return m_root + QStringLiteral("/verdicts"); }
+    QString noticesDir()  const { return m_root + QStringLiteral("/notices"); }
     QString alivePath()   const { return m_root + QStringLiteral("/ui-alive"); }
 
     // Overridable so the whole handshake can be exercised on a laptop with no
     // root and no /run entry, which is how the UI gets developed:
     //   IVI_OTA_APPROVAL_DIR=/tmp/ota-approval ./appIVI
     QString m_root;
-    int     m_autoAcceptMs = 5000;   // our ceiling; an offer may only lower it
+    int     m_autoAcceptMs = 9000;   // our ceiling; an offer may only lower it
 
     // The offer on screen. Empty id means nothing is pending.
     QString m_id;
@@ -225,6 +280,10 @@ private:
     // Answered ids, so a verdict file that a producer has not collected yet
     // cannot make its offer pop up again on the next rescan.
     QSet<QString> m_answered;
+
+    // Notice ids already toasted. Same job as m_answered, for the same reason:
+    // we cannot unlink the file that caused it.
+    QSet<QString> m_notified;
 
     QFileSystemWatcher m_watcher;
     QTimer m_timer;

@@ -7,7 +7,7 @@
 // slot, a size and a queue depth (see OTA_APPROVAL_PROTOCOL.md) and none of it
 // is shown — a driver glancing at this needs to decide, not to audit.
 //
-// It ACCEPTS ITSELF after ota.autoAcceptMs (5 s) if nobody touches it. Deny is
+// It ACCEPTS ITSELF after ota.autoAcceptMs (9 s) if nobody touches it. Deny is
 // the deliberate act; ignoring it is consent. The top stripe drains away as the
 // window closes so the decision is not taken silently.
 //
@@ -181,7 +181,9 @@ Item {
     // anyone could possibly have seen it.
     Timer {
         id: autoTimer
-        interval: (root.ota && root.ota.autoAcceptMs > 0) ? root.ota.autoAcceptMs : 5000
+        // The fallback only applies if `ota` is missing entirely; it tracks the
+        // manager's own ceiling so the two cannot drift apart.
+        interval: (root.ota && root.ota.autoAcceptMs > 0) ? root.ota.autoAcceptMs : 9000
         running: root.visible
                  && root.ota && root.ota.autoAcceptMs > 0
                  && root.ota.requestPending

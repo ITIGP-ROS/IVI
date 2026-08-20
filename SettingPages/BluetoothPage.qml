@@ -500,18 +500,25 @@ Rectangle {
                         anchors.rightMargin: parent.width * 0.04
                         spacing: parent.width * 0.03
 
-                        Text {
-                            text: devRow.isConnected ? "🔵" : "⬡"
-                            font.pixelSize: parent.parent.height * 0.4
-                            color: devRow.isConnected ? btPage.accent : Theme.textPrimary
+                        BluetoothGlyph {
+                            id: devGlyph
+                            width: devRow.height * 0.62
+                            height: width
+                            connected: devRow.isConnected
+                            accent: btPage.accent
+                            idleColor: Theme.textSecondary
                             anchors.verticalCenter: parent.verticalCenter
                         }
 
                         Column {
                             anchors.verticalCenter: parent.verticalCenter
+                            // Measured off the glyph rather than re-deriving it
+                            // from the row height, which is how the old text
+                            // icon and this column drifted apart whenever the
+                            // icon was resized.
                             width: parent.width
                                    - actionBtn.width
-                                   - parent.parent.height * 0.4
+                                   - devGlyph.width
                                    - parent.spacing * 2
                             spacing: 2
 

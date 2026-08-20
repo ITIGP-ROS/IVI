@@ -100,6 +100,7 @@ qt_add_qml_module(appIVI
         Components/GlassButton.qml
         Components/IconWell.qml
         Components/WifiGlyph.qml
+        Components/BluetoothGlyph.qml
         Components/HudPanel.qml
         Components/HudButton.qml
         Components/WeatherGlyph.qml
@@ -118,6 +119,7 @@ qt_add_qml_module(appIVI
         Components/CarInfoPopup.qml
         Components/AmbientCard.qml
         Components/OtaPopup.qml
+        Components/OtaDoneToast.qml
         Components/VirtualKeyboard.qml
         MediaPages/AudioPage.qml
         MediaPages/VideoPage.qml

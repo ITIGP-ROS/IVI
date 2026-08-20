@@ -17,7 +17,11 @@ ApplicationWindow {
 
     Timer {
         id: wakeTimer
-        interval: 5000
+        // How long the assistant stays listening after a wake before it goes
+        // back to sleep. Restarted on every recognised phrase (see the handler
+        // below), so this is the gap AFTER the last thing said, not a cap on
+        // the whole conversation.
+        interval: 4000
         onTriggered: {
             mainWindow.isAwake = false
             console.log("Wake timer expired. Going to sleep.")
@@ -136,6 +140,24 @@ ApplicationWindow {
         // before boot would otherwise render underneath the splash clip and be
         // answered blind by whoever touches the screen first.
         visible: mainWindow.splashDone && opacity > 0
+    }
+
+    // OTA COMPLETION NOTICE
+    // Same spool, opposite direction: the update landed, and there is nothing
+    // to answer. Sits BELOW the approval prompt's z — if a notice and a fresh
+    // request ever overlap, the thing that needs a decision is the one that
+    // should be on top. Unlike the prompt it has no scrim and no MouseArea, so
+    // it neither dims the display nor takes taps from the page underneath.
+    OtaDoneToast {
+        parent: Overlay.overlay
+        anchors.fill: parent
+        z: 8990
+        ota: otaManager
+
+        // Not `visible:` like the prompt above — a notice arriving during boot
+        // should still be shown once the splash lifts, not spend its five
+        // seconds invisible behind it.
+        armed: mainWindow.splashDone
     }
 
     // Shared Media Player (persistent across all pages)
@@ -499,7 +521,6 @@ ApplicationWindow {
             signal openWeather()
             signal openMedia()
             signal openSettings()
-            signal openCarInfo()
             signal openDriveView()
 
             onOpenWeather: {
@@ -514,7 +535,6 @@ ApplicationWindow {
                 if (stackView.currentItem && stackView.currentItem.objectName === "settingPage") return
                 stackView.push(settingPage)
             }
-            onOpenCarInfo:        carInfoPopup.visible = true
             // active latches on first use in case the warm-up timer has not
             // fired yet; after that this is just a visibility flip.
             onOpenDriveView: {
@@ -746,16 +766,14 @@ ApplicationWindow {
                 anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
                 anchors.margins: 24; anchors.topMargin: 20
                 height: 56; radius: 16
-                // Lifts on hover. The bar is the only way into car info now
-                // that the About card is gone, and a header that reacts to
-                // nothing gives no hint that it can be pressed at all.
-                color: topBarClick.containsMouse ? Qt.rgba(1,1,1,0.08)
-                                                 : Qt.rgba(1,1,1,0.04)
-                border.color: topBarClick.containsMouse ? Qt.rgba(1,1,1,0.18)
-                                                        : Qt.rgba(1,1,1,0.08)
+                // Flat, and deliberately inert. It used to lift on hover and
+                // open the car-info card, and it was the only way in once the
+                // About tile went; with the card gone there is nothing behind
+                // it, so a bar that still lit up under the finger would be
+                // promising a press that does nothing.
+                color: Qt.rgba(1,1,1,0.04)
+                border.color: Qt.rgba(1,1,1,0.08)
                 border.width: 1
-                Behavior on color        { ColorAnimation { duration: 200 } }
-                Behavior on border.color { ColorAnimation { duration: 200 } }
 
                 Column {
                     id: timeColumn
@@ -809,14 +827,6 @@ ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
-                // Last child, so it sits above the clock and the logo and gets
-                // the press wherever on the bar it lands.
-                MouseArea {
-                    id: topBarClick
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: launcherItem.openCarInfo()
-                }
             }
 
             Timer {
@@ -1153,8 +1163,6 @@ ApplicationWindow {
                                         mainWindow.openSettingsSection("bluetooth")
                                     else if (lowerText.includes("settings") || lowerText.includes("setting"))
                                         launcherItem.openSettings()
-                                    else if (lowerText.includes("about"))
-                                        launcherItem.openCarInfo()
                                     else if (lowerText.includes("ambient light") || lowerText.includes("ambient"))
                                         mainWindow.openSettingsSection("ambient")
                                     else if (lowerText.includes("drive view") || lowerText.includes("navigation") || lowerText.includes("drive") || lowerText.includes("view"))
@@ -1869,14 +1877,6 @@ ApplicationWindow {
                         }
                     }
                 }
-            }
-            
-            // CAR INFO POPUP
-            CarInfoPopup {
-                id: carInfoPopup
-                visible: false
-                z: 100
-                onClosePopup: visible = false
             }
         }
     }

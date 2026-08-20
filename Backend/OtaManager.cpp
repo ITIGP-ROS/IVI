@@ -16,6 +16,14 @@ namespace {
 
 constexpr int kTickMs = 1000;
 
+// A completion notice this old the first time we see it is recorded and then
+// dropped rather than shown. We cannot unlink notices (root-owned directory),
+// so the only thing standing between an uncollected file and a toast on every
+// app restart is its age. Five minutes is long enough to survive the app being
+// restarted right after an update and short enough that yesterday's notice
+// never surfaces.
+constexpr qint64 kNoticeMaxAgeS = 300;
+
 QString defaultRoot()
 {
     const QByteArray env = qgetenv("IVI_OTA_APPROVAL_DIR");
@@ -52,8 +60,12 @@ OtaManager::OtaManager(QObject *parent)
                               ? QStringLiteral("%1 ms").arg(m_autoAcceptMs)
                               : QStringLiteral("disabled — explicit answer required"));
 
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged,
-            this, &OtaManager::rescan);
+    // One watcher over both spool directories; the slot does not care which of
+    // them fired, and doing both is two stats against tmpfs.
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this]() {
+        scanNotices();
+        rescan();
+    });
 
     // One timer for everything periodic: the liveness touch, the expiry
     // countdown, re-establishing a lost watch, and the backstop rescan. All of
@@ -62,20 +74,27 @@ OtaManager::OtaManager(QObject *parent)
     connect(&m_timer, &QTimer::timeout, this, &OtaManager::tick);
     m_timer.start(kTickMs);
 
+    scanNotices();
     rescan();
 }
 
-QString OtaManager::targetLabel() const
+QString OtaManager::labelFor(const QString &target) const
 {
-    if (m_target == QLatin1String("ivi"))     return tr("Head Unit");
-    if (m_target == QLatin1String("cluster")) return tr("Instrument Cluster");
-    if (m_target == QLatin1String("esp32"))   return tr("Body Control ECU");
-    if (m_target == QLatin1String("stm32"))   return tr("Powertrain ECU");
+    if (target == QLatin1String("ivi"))     return tr("Head Unit");
+    if (target == QLatin1String("cluster")) return tr("Instrument Cluster");
+    if (target == QLatin1String("esp32"))   return tr("Body Control ECU");
+    if (target == QLatin1String("stm32"))   return tr("Powertrain ECU");
     // Unknown target: show the raw token rather than inventing a friendly name.
     // A prompt that cannot say what it is updating is one the user should
     // treat with suspicion, and hiding that behind "Vehicle Module" would not
     // help them.
-    return m_target.isEmpty() ? tr("Unknown module") : m_target;
+    return target;
+}
+
+QString OtaManager::targetLabel() const
+{
+    const QString label = labelFor(m_target);
+    return label.isEmpty() ? tr("Unknown module") : label;
 }
 
 // The offer may only shorten the window, never lengthen it and never re-enable
@@ -124,6 +143,8 @@ void OtaManager::tick()
             emit secondsRemainingChanged();
         }
     }
+
+    scanNotices();
 
     // The producer withdraws its own offer when it gives up waiting, which the
     // rescan below notices. We do not answer on the user's behalf when the
@@ -277,6 +298,122 @@ void OtaManager::rescan()
     // the very deadline the field exists to respect.
     emit offerChanged();
     emit newOffer();
+}
+
+// Completion notices. Deliberately NOT folded into rescan(): that function
+// returns early in three places (no offers directory, no offers, same offer
+// still on screen), and every one of them is a state in which a notice can
+// still arrive.
+void OtaManager::scanNotices()
+{
+    QDir dir(noticesDir());
+
+    if (dir.exists() && !m_watcher.directories().contains(noticesDir()))
+        m_watcher.addPath(noticesDir());
+
+    if (!dir.exists())
+        return;
+
+    const QFileInfoList entries =
+        dir.entryInfoList({QStringLiteral("*.json")}, QDir::Files, QDir::Name);
+
+    // Forget ids whose file the producer has collected, so the set cannot grow
+    // without bound across a long run. Same bookkeeping as m_answered, and it
+    // has to happen before the loop below starts adding to it.
+    if (!m_notified.isEmpty()) {
+        QSet<QString> present;
+        for (const QFileInfo &fi : entries)
+            present.insert(fi.completeBaseName());
+        m_notified.intersect(present);
+    }
+
+    const QDateTime now = QDateTime::currentDateTime();
+
+    for (const QFileInfo &fi : entries) {
+        const QString id = fi.completeBaseName();
+        if (!idIsSane(id) || m_notified.contains(id))
+            continue;
+
+        QFile f(fi.absoluteFilePath());
+        if (!f.open(QIODevice::ReadOnly))
+            continue;
+
+        QJsonParseError err{};
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+        f.close();
+
+        if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+            // Half-written file, exactly as with an offer: skip it and pick it
+            // up on the next tick. Only give up on it once it has stopped
+            // changing, otherwise a producer that writes non-atomically loses
+            // its notice to a race it will never see.
+            if (fi.lastModified().msecsTo(now) > 2000) {
+                qWarning().noquote() << "[ota] ignoring malformed notice"
+                                     << fi.fileName() << ":" << err.errorString();
+                m_notified.insert(id);
+            }
+            continue;
+        }
+
+        const QJsonObject o = doc.object();
+
+        const QString innerId = o.value(QStringLiteral("id")).toString();
+        if (!innerId.isEmpty() && innerId != id) {
+            qWarning().noquote() << "[ota] notice" << fi.fileName()
+                                 << "declares id" << innerId << "— ignoring";
+            m_notified.insert(id);
+            continue;
+        }
+
+        // Consumed either way from here on: shown once, or dropped once.
+        m_notified.insert(id);
+
+        // Only the targets that are still up to be told: every ECU, but not
+        // this screen.
+        //
+        // The head unit deliberately does not announce its OWN update. That one
+        // ends in a reboot, so by the time there were anything to toast this
+        // process has already gone down and come back — the screen going dark
+        // and returning IS the announcement, and a banner afterwards would only
+        // report something the driver just watched happen.
+        //
+        // stm32 is on this list even though nothing sends one today: the
+        // coordinator's CAN flows are cluster (0x300) and esp32 (0x310) only,
+        // and the STM32 is reflashed through the ESP32. If that ever grows its
+        // own notice, the driver should see it.
+        //
+        // Anything else is a producer sending a notice for a target this screen
+        // has no business announcing, so it gets a log line rather than silence.
+        static const QSet<QString> kAnnounced = {
+            QStringLiteral("esp32"),
+            QStringLiteral("stm32"),
+            QStringLiteral("cluster"),
+        };
+        const QString target = o.value(QStringLiteral("target")).toString();
+        if (!kAnnounced.contains(target)) {
+            qInfo().noquote() << "[ota] notice" << id << "target"
+                              << (target.isEmpty() ? QStringLiteral("(none)") : target)
+                              << "— not an announced target, ignoring";
+            continue;
+        }
+
+        // Prefer the producer's own timestamp over mtime. mtime moves if the
+        // file is ever rewritten in place, and a notice that has sat in the
+        // spool since before this process started is not news.
+        const qint64 stamp = qint64(o.value(QStringLiteral("at")).toDouble());
+        const qint64 ageS  = stamp > 0
+            ? QDateTime::currentSecsSinceEpoch() - stamp
+            : fi.lastModified().secsTo(now);
+
+        if (ageS > kNoticeMaxAgeS) {
+            qInfo().noquote() << "[ota] notice" << id << "is" << ageS
+                              << "s old — not showing it";
+            continue;
+        }
+
+        qInfo().noquote() << "[ota] update complete:" << id << "target" << target;
+        emit updateCompleted(labelFor(target));
+    }
 }
 
 void OtaManager::approve() { answer(true); }
