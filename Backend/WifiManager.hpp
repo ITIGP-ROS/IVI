@@ -1,7 +1,10 @@
 #pragma once
 #include <QObject>
+#include <QByteArray>
 #include <QDBusInterface>
 #include <QDBusConnection>
+#include <QDBusObjectPath>
+#include <QTimer>
 #include "WifiCredSender.hpp"
 
 typedef QMap<QString, QVariantMap> NMConnectionSettings;
@@ -61,6 +64,25 @@ private slots:
 private:
     void watchActiveConnection(const QString &activeConnPath, const QString &ssid);
     void updateConnectedSsid();
+
+    /*
+     * Hand SSID + PSK to the ECUs, for whatever profile is active right now.
+     *
+     * The ESP32 and the Pi only learn a network when this runs, so it has to
+     * run on every connect — not only the ones started from this screen. It
+     * used to fire only when the user had *just typed* a password, which meant
+     * a boot auto-connect, a reconnect after the AP power-cycled, and a switch
+     * back to an already-saved network all left the ECUs pointed at whatever
+     * network they were last told about.
+     *
+     * The password is READ BACK FROM NETWORKMANAGER each time rather than
+     * remembered. NM owns it (in /data/network/system-connections, 0700 root,
+     * which this process cannot read directly), and a second copy in this app
+     * would be a second place for it to go stale — a network re-keyed from
+     * nmcli or another head unit would keep forwarding the old PSK forever.
+     */
+    void forwardCredentials(const QString &ssid, const QDBusObjectPath &connPath);
+    void attemptForward();
     // Shared body for both connect entry points. `hidden` sets
     // 802-11-wireless.hidden so NM probes for an SSID that is not beaconed;
     // `open` drops the security block entirely.
@@ -77,4 +99,23 @@ private:
     QString         m_activeConnPath;
     QString         m_connectedSsid;
     QString         m_wirelessDevicePath;
+
+    // --- credential forwarding -------------------------------------------
+    //
+    // Identity of a send, kept as a SHA-256 of "ssid\0psk" rather than the
+    // pair itself: enough to answer "have the ECUs already been told exactly
+    // this?", and it keeps no password sitting in a member for the life of the
+    // process. Re-keying a network changes the digest and forwards again.
+    QByteArray      m_inFlightFp;    // digest of the send currently out
+    QByteArray      m_lastSentFp;    // digest of the last one that succeeded
+
+    // Retried because can0 is not ordered before this app. systemd-networkd
+    // brings the interface up (recipes-connectivity/can-config/can0.network)
+    // and ivi-app.service has no After= against it, so a WiFi auto-connect at
+    // boot can easily beat CAN — the sender exits 4 and, without this, the one
+    // case the forwarding exists for would be the one case it never covers.
+    QDBusObjectPath m_forwardConnPath;
+    QString         m_forwardSsid;
+    int             m_forwardAttempts = 0;
+    QTimer          m_forwardRetry;
 };

@@ -3,7 +3,17 @@
 #include <QDBusMetaType>
 #include <QSet>
 #include <QHash>
+#include <QCryptographicHash>
 #include <QDebug>
+
+namespace {
+// can0 is brought up by systemd-networkd and ivi-app.service is not ordered
+// against it, so a boot-time forward can lose that race. Six tries five
+// seconds apart covers ~30 s of interface bring-up; past that the problem is
+// not timing and repeating will not fix it.
+constexpr int kForwardMaxAttempts = 6;
+constexpr int kForwardRetryMs     = 5000;
+} // namespace
 
 WifiManager::WifiManager(QObject *parent) : QObject(parent)
 {
@@ -39,6 +49,37 @@ WifiManager::WifiManager(QObject *parent) : QObject(parent)
             this, &WifiManager::credentialsSent);
     connect(m_credSender, &WifiCredSender::failed,
             this, &WifiManager::credentialsFailed);
+
+    // A delivered send is what promotes the digest: until the ECUs have
+    // actually been told, "already forwarded" must stay false or a failure at
+    // boot would suppress every later attempt for the same network.
+    connect(m_credSender, &WifiCredSender::sent, this, [this](const QString &) {
+        m_lastSentFp = m_inFlightFp;
+        m_inFlightFp.clear();
+        m_forwardAttempts = 0;
+        m_forwardRetry.stop();
+    });
+    connect(m_credSender, &WifiCredSender::failed, this, [this](const QString &reason) {
+        m_inFlightFp.clear();
+        if (m_forwardSsid.isEmpty())
+            return;
+        if (m_forwardAttempts >= kForwardMaxAttempts) {
+            qWarning().noquote()
+                << "[wifi] giving up forwarding credentials for" << m_forwardSsid
+                << "after" << m_forwardAttempts << "attempts —" << reason
+                << "| the ECUs are still on whatever network they were last told";
+            m_forwardSsid.clear();
+            return;
+        }
+        qInfo().noquote() << "[wifi] credential forward failed (" << reason
+                          << ") — retry" << (m_forwardAttempts + 1) << "of"
+                          << kForwardMaxAttempts << "in"
+                          << (kForwardRetryMs / 1000) << "s";
+        m_forwardRetry.start(kForwardRetryMs);
+    });
+
+    m_forwardRetry.setSingleShot(true);
+    connect(&m_forwardRetry, &QTimer::timeout, this, &WifiManager::attemptForward);
 
     // Read which network is currently connected at startup
     updateConnectedSsid();
@@ -76,6 +117,102 @@ void WifiManager::onPropertiesChanged(QString interface,
     if (changedProps.contains("ActiveConnections") && m_pendingSsid.isEmpty()) {
         updateConnectedSsid();
     }
+}
+
+void WifiManager::forwardCredentials(const QString &ssid, const QDBusObjectPath &connPath)
+{
+    if (ssid.isEmpty() || connPath.path().isEmpty() || connPath.path() == "/")
+        return;
+
+    // Already working on this network. NetworkManager emits ActiveConnections
+    // changes several times around a single connect, and letting each one reset
+    // the attempt counter would turn a genuine failure into an endless retry.
+    if (m_forwardSsid == ssid && (m_credSender->busy() || m_forwardRetry.isActive()))
+        return;
+
+    m_forwardSsid     = ssid;
+    m_forwardConnPath = connPath;
+    m_forwardAttempts = 0;
+    m_forwardRetry.stop();
+    attemptForward();
+}
+
+void WifiManager::attemptForward()
+{
+    if (m_forwardSsid.isEmpty())
+        return;
+
+    ++m_forwardAttempts;
+
+    // Never hand the sender a request while one is out.
+    //
+    // It answers a concurrent send with failed("already in progress"), and that
+    // failure would arrive on the bookkeeping of the send that is STILL RUNNING
+    // — clearing m_inFlightFp, so the digest promoted when that one succeeded
+    // would be empty and the dedupe below would never match again. Waiting is
+    // both simpler and correct.
+    if (m_credSender->busy()) {
+        m_forwardRetry.start(kForwardRetryMs);
+        return;
+    }
+
+    // Re-read the PSK on every attempt rather than holding it across the retry
+    // window. It costs one D-Bus round trip and means no password lives in a
+    // member between a failed send and the next one.
+    QDBusInterface connIface(
+        "org.freedesktop.NetworkManager",
+        m_forwardConnPath.path(),
+        "org.freedesktop.NetworkManager.Settings.Connection",
+        QDBusConnection::systemBus()
+    );
+
+    QDBusReply<NMConnectionSettings> secrets =
+        connIface.call("GetSecrets", "802-11-wireless-security");
+    if (!secrets.isValid()) {
+        // Not retried: a refusal here is a permissions answer, not a timing
+        // one, and it will be the same answer in five seconds.
+        qWarning().noquote() << "[wifi] cannot read saved PSK for" << m_forwardSsid
+                             << "-" << secrets.error().message().trimmed()
+                             << "| ECUs will not be told about this network";
+        m_forwardSsid.clear();
+        return;
+    }
+
+    const QString psk = secrets.value()
+        .value("802-11-wireless-security")
+        .value("psk")
+        .toString();
+
+    if (psk.isEmpty()) {
+        // An open network, or one whose PSK NetworkManager does not store
+        // (agent-owned secret flags). Nothing to hand over either way.
+        qInfo().noquote() << "[wifi] no stored PSK for" << m_forwardSsid
+                          << "— nothing to forward";
+        m_forwardSsid.clear();
+        return;
+    }
+
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    h.addData(m_forwardSsid.toUtf8());
+    h.addData(QByteArrayLiteral("\0"));
+    h.addData(psk.toUtf8());
+    const QByteArray fp = h.result();
+
+    if (fp == m_lastSentFp) {
+        // NetworkManager emits ActiveConnections changes fairly freely, and a
+        // link that flaps would otherwise burn a freshness counter per bounce
+        // — the receivers only accept strictly-increasing values, so that is
+        // not free.
+        qInfo().noquote() << "[wifi] ECUs already have" << m_forwardSsid
+                          << "— not resending";
+        m_forwardSsid.clear();
+        return;
+    }
+
+    qInfo().noquote() << "[wifi] forwarding credentials for" << m_forwardSsid
+                      << "to the ECUs (attempt" << m_forwardAttempts << ")";
+    m_inFlightFp = fp;
+    m_credSender->send(m_forwardSsid, psk);
 }
 
 // Read currently connected SSID from NetworkManager
@@ -125,6 +262,13 @@ void WifiManager::updateConnectedSsid()
                 m_connectedSsid = ssid;
                 emit connectedSsidChanged(m_connectedSsid);
             }
+            // Deliberately OUTSIDE the change check, and deliberately here
+            // rather than only in the connect handler. This function runs at
+            // construction and on every ActiveConnections change, which is the
+            // only notice we get of a connection NetworkManager made on its
+            // own — the boot auto-connect above all. The digest check inside
+            // makes calling it repeatedly free.
+            forwardCredentials(ssid, connPath);
             return;
         }
     }
@@ -552,16 +696,22 @@ void WifiManager::onActiveConnPropertiesChanged(QString interface,
                 m_connectedSsid = m_pendingSsid;
                 emit connectedSsidChanged(m_connectedSsid);
             }
-            // Hand the credentials to the vehicle host over SecOC CAN. Only the
-            // just-typed password is available here; a saved-profile reconnect
-            // cleared it, and there is nothing to send in that case.
+            // Hand the credentials to the ECUs over SecOC CAN.
+            //
+            // Resolved from NetworkManager rather than from the password the
+            // user just typed, so this path and the auto-connect path are the
+            // same code reading the same source. m_pendingPassword is still
+            // what BUILDS the profile; it is no longer what forwards it.
             qInfo().noquote() << "[wifi] connected to:" << m_pendingSsid;
-            if (!m_pendingPassword.isEmpty()) {
-                qInfo().noquote() << "[wifi] forwarding credentials to vehicle host...";
-                m_credSender->send(m_pendingSsid, m_pendingPassword);
-            } else {
-                qInfo().noquote() << "[wifi] saved-profile reconnect (no password held)"
-                                     " — nothing to forward";
+            {
+                QDBusInterface acIface(
+                    "org.freedesktop.NetworkManager",
+                    m_activeConnPath,
+                    "org.freedesktop.NetworkManager.Connection.Active",
+                    QDBusConnection::systemBus()
+                );
+                forwardCredentials(m_pendingSsid,
+                                   acIface.property("Connection").value<QDBusObjectPath>());
             }
             m_pendingPassword.clear();
             m_pendingSsid.clear();
