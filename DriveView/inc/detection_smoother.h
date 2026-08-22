@@ -59,12 +59,6 @@ private:
         QVector3D targetPrevPos;      // previous message position
         qint64 targetPrevTimeMs = 0;  // wall time of previous message
         qint64 lastTickMs = 0;        // wall time of previous 60 Hz tick
-
-        // Spawn opacity, delivered to the renderer as the alpha of
-        // DetectionData::color. Spawn ONLY — there is no despawn ramp; a track
-        // the detector stops reporting is erased outright, so this value only
-        // ever climbs.
-        float alpha = 0.0f;           // 0 on creation: everything fades in
     };
 
     void tick();

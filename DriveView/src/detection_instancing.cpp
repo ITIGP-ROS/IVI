@@ -93,14 +93,13 @@ void DetectionInstancing::rebuild()
                 rotation = d.rotation * QQuaternion::fromEulerAngles(-90, yaw, 0);
             }
 
-            // Alpha always rides through: it carries the spawn/despawn fade
-            // from DetectionSmoother and is independent of whether the class
-            // tint is wanted. RGB stays opt-in because the detection colours
-            // are raw primaries (red/green/blue) chosen as data, not as a
-            // look — applying them would repaint the silver car pure blue and
-            // the pedestrian pure red.
-            QColor color = useInstanceColor_ ? d.color : QColor(Qt::white);
-            color.setAlpha(d.color.alpha());
+            // Fully opaque, always. Detections do not fade in or out: every
+            // material in Scene3D declares AlphaMode.Opaque, so an alpha below
+            // 1 here would be discarded anyway. RGB stays opt-in because the
+            // detection colours are raw primaries (red/green/blue) chosen as
+            // data, not as a look — applying them would repaint the silver car
+            // pure blue and the pedestrian pure red.
+            const QColor color = useInstanceColor_ ? d.color : QColor(Qt::white);
             const InstanceTableEntry entry =
                 calculateTableEntryFromQuaternion(d.position, scale, rotation, color);
 

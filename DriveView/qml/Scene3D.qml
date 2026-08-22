@@ -246,11 +246,12 @@ Item {
                 instancing: planeInstancing
                 castsShadows: false
                 receivesShadows: false
-                // Blend so the spawn/despawn fade in DetectionSmoother is
-                // visible at all — it arrives as per-instance alpha, and an
-                // Opaque material simply discards it.
+                // Opaque, like every other detection material. Stated rather
+                // than left to the default: PrincipledMaterial defaults to
+                // AlphaMode.Default, which blends as soon as alpha drops below
+                // 1 — so omitting this does not mean "opaque".
                 materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.8; roughness: 0.5
-                                                alphaMode: PrincipledMaterial.Blend }
+                                                alphaMode: PrincipledMaterial.Opaque }
             }
             Model {
                 source: "#Cube"
@@ -258,7 +259,7 @@ Item {
                 castsShadows: false
                 receivesShadows: false
                 materials: PrincipledMaterial { baseColor: fsd.detection; metalness: 0.1; roughness: 0.5
-                                                alphaMode: PrincipledMaterial.Blend }
+                                                alphaMode: PrincipledMaterial.Opaque }
             }
             Model {
                 source: "qrc:/models_3d/tesla_low_poly/meshes/object_0_mesh.mesh"
@@ -296,15 +297,14 @@ Item {
                     emissiveFactor: root.useTeslaTexture ? Qt.vector3d(0.65, 0.65, 0.65)
                                                          : Qt.vector3d(0, 0, 0)
                     metalness: 0.0; roughness: 0.9
-                    // Deliberately left Opaque, i.e. the per-instance
-                    // spawn/despawn alpha is discarded for cars. Blend was
-                    // tried so they would fade in like the other classes and it
-                    // wrecked them: this mesh is one concave body with the
-                    // wheels as separate surfaces inside the arches, and a
-                    // blended material sorts per object instead of per pixel —
-                    // so the wheels drew over the bodywork and appeared to hang
-                    // outside the car. Cars pop in instead. Do not add Blend
-                    // back here without OpaquePrePassDepthDraw alongside it.
+                    // Opaque, and load-bearing on this mesh specifically.
+                    // Blend was tried here and wrecked it: one concave body with
+                    // the wheels as separate surfaces inside the arches, and a
+                    // blended material sorts per object instead of per pixel, so
+                    // the wheels drew over the bodywork and appeared to hang
+                    // outside the car. Do not add Blend back without
+                    // OpaquePrePassDepthDraw alongside it.
+                    alphaMode: PrincipledMaterial.Opaque
                 }
             }
         }

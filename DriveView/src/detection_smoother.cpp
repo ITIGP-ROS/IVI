@@ -26,11 +26,6 @@ constexpr float kMaxSpeedMs = 40.0f;
 // target to the near side instead of letting slerp spin the mesh 180 deg.
 constexpr float kFlipThresholdDeg = 120.0f;
 
-// Spawn opacity ramp, ~350 ms to settle. Spawn only: there is deliberately no
-// despawn counterpart, because fading a car out looked worse than removing it
-// (see the erase in update()).
-constexpr float kTauAlphaMs = 90.0f;
-
 // Base for synthetic keys given to untracked detections. Real track ids from
 // AB3DMOT are non-negative, so nothing can collide with these.
 constexpr int kUntrackedKeyBase = -1000;
@@ -84,9 +79,6 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
         if (d.trackId < 0) {
             // untracked stream: pass through instantly, no interpolation
             track.untracked = true;
-            // tick() skips untracked tracks entirely, so their opacity would
-            // never ramp; they are simply always solid.
-            track.alpha = 1.0f;
             track.currentPos = d.position;
             track.targetPos = d.position;
             track.currentScale = d.scale;
@@ -222,14 +214,6 @@ void DetectionSmoother::tick()
         track.currentPos += (projected - track.currentPos) * alpha;
         track.currentScale += (track.targetScale - track.currentScale) * alpha;
         track.currentRot = QQuaternion::slerp(track.currentRot, track.targetRot, alpha);
-
-        // Opacity ramp — one direction only. Everything in this loop is a live
-        // track, because a track that stopped being reported was erased in
-        // update() rather than left here to dissolve. So alpha only climbs, and
-        // nothing is ever drawn at a partial opacity it is not on its way up
-        // from.
-        const float aFade = 1.0f - qExp(-float(dtMs) / kTauAlphaMs);
-        track.alpha += (1.0f - track.alpha) * aFade;
     }
 
     const QList<DetectionData> output = buildOutput();
@@ -265,11 +249,7 @@ QList<DetectionData> DetectionSmoother::buildOutput() const
         d.position = track.currentPos;
         d.scale = track.currentScale;
         d.rotation = track.currentRot;
-        // Opacity travels as the alpha of the colour: DetectionInstancing
-        // passes it into the instance table whether or not the class tint
-        // is enabled, so a fade costs no extra plumbing.
         d.color = track.color;
-        d.color.setAlphaF(qBound(0.0f, track.alpha, 1.0f));
         d.label = track.label;
         d.confidence = track.confidence;
         out.append(d);
