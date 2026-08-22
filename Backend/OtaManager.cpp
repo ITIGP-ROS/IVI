@@ -412,7 +412,7 @@ void OtaManager::scanNotices()
         }
 
         qInfo().noquote() << "[ota] update complete:" << id << "target" << target;
-        emit updateCompleted(labelFor(target));
+        emit updateCompleted();
     }
 }
 

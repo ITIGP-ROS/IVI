@@ -1141,12 +1141,30 @@ ApplicationWindow {
                                             return // Ignore while sleeping
                                         }
                                     } else {
-                                        // We are awake. Reset timer on any speech.
-                                        wakeTimer.restart()
+                                        // Awake.
+                                        //
+                                        // The window is ONE fixed 4 s from the wake
+                                        // word — it is deliberately not extended by
+                                        // ordinary speech any more. It used to restart
+                                        // on every recognised phrase, so anything said
+                                        // near the head unit kept the assistant open
+                                        // indefinitely and a command was still followed
+                                        // by another live window nobody asked for.
+                                        //
+                                        // Saying "amigo" again is the one thing that
+                                        // does re-arm it: that is an explicit request to
+                                        // stay listening, not incidental speech.
+                                        if (lowerText.includes("amigo"))
+                                            wakeTimer.restart()
                                         lowerText = lowerText.replace("amigo", "").trim()
                                         if (lowerText === "") return
                                     }
                                     
+                                    // Cleared by the trailing else below when nothing
+                                    // in the chain matched, so an unrecognised phrase
+                                    // does not count as "done" and burn the window.
+                                    var handled = true
+
                                     if (lowerText.includes("weather"))
                                         launcherItem.openWeather()
                                     else if (lowerText.includes("radio"))
@@ -1244,6 +1262,17 @@ ApplicationWindow {
                                         if (mainWindow.btMediaActive) btManager.previous()
                                         else mainWindow.globalRadioAPI.playPrevious()
                                         console.log("Previous track")
+                                    }
+                                    else handled = false
+
+                                    // One command per wake. Acting on a command is the
+                                    // end of the exchange, so the window closes with it
+                                    // rather than leaving the assistant live for the
+                                    // remainder of the 4 s.
+                                    if (handled) {
+                                        mainWindow.isAwake = false
+                                        wakeTimer.stop()
+                                        console.log("Command handled — asleep, say 'amigo' to wake")
                                     }
                                 }
 
@@ -1885,7 +1914,13 @@ ApplicationWindow {
         id: weatherPage
         WeatherPage {
             objectName: "weatherPage"
-            onGoBack: stackView.pop()
+            // goHome(), not pop(). The control this arrives from carries
+            // home.png — `goBack` is a legacy name for it — and popping a
+            // single level meant it landed on whatever happened to be under
+            // the current page instead of on the launcher. Easy to miss while
+            // the stack was only ever one deep; the voice assistant pushes a
+            // page from wherever you already are, which makes it routine.
+            onGoBack: mainWindow.goHome()
             city: mainWindow.preferredCity
         }
     }
@@ -1896,7 +1931,7 @@ ApplicationWindow {
             objectName: "mediaPage"
             mediaPlayer: sharedMediaPlayer
             mediaPage: mainWindow
-            onGoBack: stackView.pop()
+            onGoBack: mainWindow.goHome()
         }
     }
 
@@ -1905,7 +1940,7 @@ ApplicationWindow {
         SettingPage {
             objectName: "settingPage"
             id: settingsInstance
-            onGoBack: stackView.pop()
+            onGoBack: mainWindow.goHome()
             preferredCity: mainWindow.preferredCity
             
             onPreferredCityChanged: {
@@ -1924,16 +1959,11 @@ ApplicationWindow {
     Component {
         id: driveViewPage
         DriveViewPage {
-            onGoBack: {
-                slideIn.stop()
-                launcherOut.stop()
-                driveViewLoader.entering = false
-                driveViewLoader.exiting = true
-                slideOut.from = driveSlide.x
-                launcherIn.from = launcherSlide.x
-                slideOut.start()
-                launcherIn.start()
-            }
+            // Was a hand-copied duplicate of goHome()'s Drive View branch,
+            // minus its `shown = false` and its pop(null) — so leaving Drive
+            // View left any pages underneath it on the stack. Same function
+            // now, which is the one the voice "home" command already used.
+            onGoBack: mainWindow.goHome()
         }
     }
 }

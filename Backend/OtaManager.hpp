@@ -235,9 +235,10 @@ signals:
 
     // An update has finished. Purely informational — there is nothing to answer
     // and nothing to write back, so this drives a toast rather than the prompt.
-    // `moduleLabel` is the friendly target name, empty when the notice did not
-    // say which module it was.
-    void updateCompleted(const QString &moduleLabel);
+    //
+    // Carries nothing: the banner says only that an update is done. The target
+    // is logged, not shown, so there is no argument here to go stale.
+    void updateCompleted();
 
 private slots:
     void rescan();

@@ -83,6 +83,12 @@ private:
      */
     void forwardCredentials(const QString &ssid, const QDBusObjectPath &connPath);
     void attemptForward();
+
+    // Where the "already forwarded" digest is remembered between app starts.
+    // Empty when there is no runtime directory to put it in.
+    QString sentDigestPath() const;
+    void    loadSentDigest();
+    void    saveSentDigest() const;
     // Shared body for both connect entry points. `hidden` sets
     // 802-11-wireless.hidden so NM probes for an SSID that is not beaconed;
     // `open` drops the security block entirely.
@@ -106,6 +112,15 @@ private:
     // pair itself: enough to answer "have the ECUs already been told exactly
     // this?", and it keeps no password sitting in a member for the life of the
     // process. Re-keying a network changes the digest and forwards again.
+    //
+    // ONCE PER JETSON BOOT, NOT ONCE PER APP START. m_lastSentFp is seeded from
+    // a file under XDG_RUNTIME_DIR, which is on /run — a tmpfs. That gives
+    // exactly the lifetime wanted: an app restart (an IVI OTA, a crash and
+    // Restart=on-failure, a manual `systemctl restart`) finds the digest still
+    // there and stays quiet, while a reboot wipes /run and the ECUs get told
+    // again. Held in memory alone it re-sent on every app start; persisted to
+    // /data it would never re-send at all, and an ECU that had been reflashed
+    // would be stranded with no way to be told short of deleting a state file.
     QByteArray      m_inFlightFp;    // digest of the send currently out
     QByteArray      m_lastSentFp;    // digest of the last one that succeeded
 

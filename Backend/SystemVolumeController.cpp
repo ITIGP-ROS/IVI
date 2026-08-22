@@ -117,6 +117,38 @@ void SystemVolumeController::sinkInfoCallback(pa_context *, const pa_sink_info *
     if(eol != 0 || !i) return;
     auto *self = static_cast<SystemVolumeController*>(userdata);
 
+    /*
+     * REFUSE VIRTUAL SINKS, even when one is the server's default.
+     *
+     * Targeting the default sink is right as far as it goes, but on this board
+     * the default can BE the virtual microphone. ivi-remote-mic loads a null
+     * sink named `ivi_mic` whose monitor is the head unit's capture device, and
+     * when no speaker is attached that null sink is the only sink there is — so
+     * PulseAudio makes it the default and the driver's mute button lands on it.
+     *
+     * A null sink's monitor carries the POST-MUTE signal. Muting it therefore
+     * silences the microphone completely while every diagnostic still looks
+     * healthy: the receiver is attached and uncorked, the sink reports RUNNING,
+     * every volume reads 100%. The only symptom is that speech recognition
+     * stops working, with nothing anywhere saying why, and it survives until
+     * someone unmutes a sink nobody thinks of as an output.
+     *
+     * device.class distinguishes them without hardcoding a name: real cards
+     * report "sound", module-null-sink reports "abstract".
+     *
+     * Declining leaves m_sinkIndex invalid, so applyVolume()/applyMute() log and
+     * do nothing. That is the correct outcome — if the only sink is virtual,
+     * there is no output to control, and doing nothing is far better than
+     * muting the microphone.
+     */
+    const char *cls = pa_proplist_gets(i->proplist, PA_PROP_DEVICE_CLASS);
+    if(cls && qstrcmp(cls, "sound") != 0){
+        qWarning() << "PulseAudio: default sink" << i->name << "is class" << cls
+                   << "- not an output, declining to control it";
+        self->m_sinkIndex = PA_INVALID_INDEX;
+        return;
+    }
+
     self->m_sinkIndex = i->index;
     // Straight from the sink: the server validates a submitted pa_cvolume
     // against the sink's channel map and rejects the operation outright on a

@@ -13,7 +13,6 @@
 // It keeps the prompt's motion, though: the same drop from above the top edge
 // to the same inset, so the two read as one family arriving the same way.
 import QtQuick
-import QtQuick.Layouts
 
 Item {
     id: root
@@ -29,9 +28,6 @@ Item {
 
     // How far the resting card sits below the top edge. Matches OtaPopup.
     property real topInset: 24
-
-    // Friendly name of what was updated, "" when the notice did not say.
-    property string moduleLabel: ""
 
     // Set on a notice, cleared when the dwell runs out.
     property bool pending: false
@@ -50,8 +46,7 @@ Item {
     Connections {
         target: root.ota
 
-        function onUpdateCompleted(moduleLabel) {
-            root.moduleLabel = moduleLabel
+        function onUpdateCompleted() {
             root.pending = true
             // A second notice arriving while the first is still up gets its own
             // full five seconds instead of inheriting what is left of the
@@ -153,31 +148,20 @@ Item {
             }
         }
 
-        ColumnLayout {
+        // One line, deliberately. It used to carry the module name underneath
+        // ("Body Control ECU"), which is an audit detail: the driver is being
+        // told the car is done updating, and which ECU it was does not change
+        // anything they might do about it. The target is still in the journal.
+        Text {
             anchors {
                 left: parent.left; leftMargin: 74
                 right: parent.right; rightMargin: 22
                 verticalCenter: parent.verticalCenter
             }
-            spacing: 2
-
-            Text {
-                Layout.fillWidth: true
-                text: qsTr("OTA update done")
-                color: "#ffffff"
-                font { pixelSize: 19; bold: true; family: "Arial" }
-            }
-
-            // Only when the notice named a module. A line reading "Unknown
-            // module" tells the driver nothing they did not already know.
-            Text {
-                Layout.fillWidth: true
-                visible: root.moduleLabel !== ""
-                text: root.moduleLabel
-                color: "#9fb0c8"
-                elide: Text.ElideRight
-                font { pixelSize: 13; family: "Arial" }
-            }
+            text: qsTr("OTA update done")
+            color: "#ffffff"
+            elide: Text.ElideRight
+            font { pixelSize: 19; bold: true; family: "Arial" }
         }
     }
 }

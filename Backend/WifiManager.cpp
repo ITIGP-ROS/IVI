@@ -4,6 +4,9 @@
 #include <QSet>
 #include <QHash>
 #include <QCryptographicHash>
+#include <QFile>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QDebug>
 
 namespace {
@@ -58,6 +61,7 @@ WifiManager::WifiManager(QObject *parent) : QObject(parent)
         m_inFlightFp.clear();
         m_forwardAttempts = 0;
         m_forwardRetry.stop();
+        saveSentDigest();
     });
     connect(m_credSender, &WifiCredSender::failed, this, [this](const QString &reason) {
         m_inFlightFp.clear();
@@ -80,6 +84,10 @@ WifiManager::WifiManager(QObject *parent) : QObject(parent)
 
     m_forwardRetry.setSingleShot(true);
     connect(&m_forwardRetry, &QTimer::timeout, this, &WifiManager::attemptForward);
+
+    // Before the first scan below, so a restart within the same boot knows the
+    // ECUs have already been told and does not repeat the handover.
+    loadSentDigest();
 
     // Read which network is currently connected at startup
     updateConnectedSsid();
@@ -117,6 +125,59 @@ void WifiManager::onPropertiesChanged(QString interface,
     if (changedProps.contains("ActiveConnections") && m_pendingSsid.isEmpty()) {
         updateConnectedSsid();
     }
+}
+
+QString WifiManager::sentDigestPath() const
+{
+    // RuntimeLocation is XDG_RUNTIME_DIR, i.e. /run/user/1000 for the weston
+    // user this runs as. On /run, so it is gone after a reboot and present
+    // after a service restart — which is the entire point.
+    const QString dir =
+        QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    return dir.isEmpty() ? QString()
+                         : dir + QStringLiteral("/ivi-wifi-cred-sent");
+}
+
+void WifiManager::loadSentDigest()
+{
+    const QString path = sentDigestPath();
+    if (path.isEmpty()) {
+        qWarning().noquote()
+            << "[wifi] no runtime directory — credentials will be re-forwarded on"
+               " every app start, not once per boot";
+        return;
+    }
+
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return;                       // first run this boot; nothing to read
+
+    m_lastSentFp = QByteArray::fromHex(f.readAll().trimmed());
+    if (!m_lastSentFp.isEmpty())
+        qInfo().noquote() << "[wifi] the ECUs were already given a network this"
+                             " boot — not repeating it";
+}
+
+void WifiManager::saveSentDigest() const
+{
+    const QString path = sentDigestPath();
+    if (path.isEmpty() || m_lastSentFp.isEmpty())
+        return;
+
+    // Hex, and only the digest: this file must never be somewhere a password
+    // could end up. QSaveFile renames into place so a restart cannot read a
+    // half-written one and conclude something different was sent.
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        qWarning().noquote() << "[wifi] cannot record the forwarded digest in"
+                             << path << "-" << f.errorString();
+        return;
+    }
+    f.write(m_lastSentFp.toHex());
+    f.write("\n");
+    if (!f.commit())
+        qWarning().noquote() << "[wifi] could not save" << path
+                             << "-" << f.errorString();
 }
 
 void WifiManager::forwardCredentials(const QString &ssid, const QDBusObjectPath &connPath)
@@ -199,10 +260,11 @@ void WifiManager::attemptForward()
     const QByteArray fp = h.result();
 
     if (fp == m_lastSentFp) {
-        // NetworkManager emits ActiveConnections changes fairly freely, and a
-        // link that flaps would otherwise burn a freshness counter per bounce
-        // — the receivers only accept strictly-increasing values, so that is
-        // not free.
+        // Either we sent this already in this process, or a previous run did
+        // and left the digest in /run. NetworkManager emits ActiveConnections
+        // changes fairly freely, and a link that flaps would otherwise burn a
+        // freshness counter per bounce — the receivers only accept
+        // strictly-increasing values, so that is not free.
         qInfo().noquote() << "[wifi] ECUs already have" << m_forwardSsid
                           << "— not resending";
         m_forwardSsid.clear();

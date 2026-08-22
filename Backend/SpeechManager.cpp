@@ -32,6 +32,17 @@ SpeechManager::SpeechManager(QObject *parent) : QObject(parent){
          \"play\", \"pause\", \"resume\", \"stop\", \"next\", \"previous\", \"radio\", \"music\", \"audio\", \"video\", \"volume\", \"up\", \"down\", \"mute\", \"unmute\", \"about\", \"brightness\", \"max\", \"min\", \"[unk]\"]"
     );
     vosk_set_log_level(-1); // silence Vosk logs
+
+    // Watch for the capture device appearing, vanishing, or being swapped.
+    // ivi-remote-mic's virtual mic does all three across a service restart.
+    m_devices = new QMediaDevices(this);
+    connect(m_devices, &QMediaDevices::audioInputsChanged,
+            this, &SpeechManager::onInputsChanged);
+
+    m_retry.setInterval(2000);
+    connect(&m_retry, &QTimer::timeout, this, [this]() {
+        if (!m_listening) startListening();
+    });
 }
 
 SpeechManager::~SpeechManager(){
@@ -43,27 +54,107 @@ SpeechManager::~SpeechManager(){
 void SpeechManager::startListening(){
     if(m_listening || !m_recognizer) return;
 
+    if (!openAudio()) {
+        // Keep trying rather than reporting a microphone we do not have. This
+        // is the boot race: the sound server is usually up within a few
+        // seconds of us asking.
+        m_retry.start();
+        return;
+    }
+
+    m_retry.stop();
+    m_listening = true;
+    emit listeningChanged();
+}
+
+bool SpeechManager::openAudio(){
+    const QAudioDevice dev = QMediaDevices::defaultAudioInput();
+    if (dev.isNull()) {
+        if (!m_warnedNoDevice) {
+            m_warnedNoDevice = true;
+            qWarning() << "[speech] no audio input yet — retrying every"
+                       << m_retry.interval() << "ms";
+        }
+        return false;
+    }
+
     QAudioFormat fmt;
     fmt.setSampleRate(16000);
     fmt.setChannelCount(1);
     fmt.setSampleFormat(QAudioFormat::Int16);
 
-    m_audio = new QAudioSource(QMediaDevices::defaultAudioInput(), fmt, this);
+    m_audio = new QAudioSource(dev, fmt, this);
+    connect(m_audio, &QAudioSource::stateChanged,
+            this, &SpeechManager::onAudioStateChanged);
+
     m_audioDevice = m_audio->start();
 
-    connect(m_audioDevice, &QIODevice::readyRead, this, &SpeechManager::onAudioData);
+    // start() hands back a QIODevice even when it failed, which is what made
+    // the original silently claim to be listening. The error code is the only
+    // honest answer.
+    if (!m_audioDevice || m_audio->error() != QAudio::NoError) {
+        qWarning() << "[speech] could not open" << dev.description()
+                   << "- error" << (m_audio ? int(m_audio->error()) : -1);
+        closeAudio();
+        return false;
+    }
 
-    m_listening = true;
+    connect(m_audioDevice, &QIODevice::readyRead, this, &SpeechManager::onAudioData);
+    m_openDevice     = dev;
+    m_warnedNoDevice = false;
+    qInfo() << "[speech] listening on" << dev.description();
+    return true;
+}
+
+void SpeechManager::closeAudio(){
+    if (m_audio) {
+        m_audio->stop();
+        m_audio->deleteLater();
+    }
+    m_audio       = nullptr;
+    m_audioDevice = nullptr;
+}
+
+void SpeechManager::onAudioStateChanged(QAudio::State state){
+    if (!m_listening || state != QAudio::StoppedState)
+        return;
+    if (!m_audio || m_audio->error() == QAudio::NoError)
+        return;      // a clean stop is stopListening() doing its job
+
+    qWarning() << "[speech] capture stopped unexpectedly (error"
+               << int(m_audio->error()) << ") — reopening";
+    closeAudio();
+    m_listening = false;
     emit listeningChanged();
+    startListening();
+}
+
+void SpeechManager::onInputsChanged(){
+    // Only act on a device swap. The signal also fires for outputs and for
+    // devices we are not using.
+    const QAudioDevice now = QMediaDevices::defaultAudioInput();
+
+    if (!m_listening) {
+        if (!now.isNull()) startListening();   // the mic finally showed up
+        return;
+    }
+
+    if (now.isNull() || now.id() == m_openDevice.id())
+        return;
+
+    qInfo() << "[speech] default input changed to" << now.description()
+            << "— reopening";
+    closeAudio();
+    m_listening = false;
+    emit listeningChanged();
+    startListening();
 }
 
 void SpeechManager::stopListening(){
+    m_retry.stop();
     if(!m_listening) return;
 
-    m_audio->stop();
-    m_audio->deleteLater();
-    m_audio = nullptr;
-    m_audioDevice = nullptr;
+    closeAudio();
 
     // Get final result
     const char *res = vosk_recognizer_final_result(m_recognizer);
