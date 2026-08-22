@@ -6,6 +6,30 @@
 
 #include "inc/box_transform.h"
 
+namespace {
+// Per-class confidence gate, indexed by the message's label field.
+// Vulnerable road users are held to a higher bar than cars: a false-positive
+// pedestrian or cyclist box is far more distracting on screen than a missed
+// low-confidence one, and the detector is noisiest on exactly those classes.
+constexpr float kConfThreshold[] = {
+    0.7f,   // 0 = pedestrian
+    0.7f,   // 1 = cyclist
+    0.5f,   // 2 = car
+};
+constexpr int kConfThresholdCount =
+    int(sizeof(kConfThreshold) / sizeof(kConfThreshold[0]));
+
+// Anything the detector labels outside the known set keeps the old gate.
+constexpr float kConfThresholdDefault = 0.5f;
+
+float confThresholdFor(int label)
+{
+    return (label >= 0 && label < kConfThresholdCount)
+               ? kConfThreshold[label]
+               : kConfThresholdDefault;
+}
+}
+
 RosSpinThread::RosSpinThread(std::shared_ptr<rclcpp::Node> node, QObject* parent)
     : QThread(parent), node_(node) {}
 
@@ -355,7 +379,7 @@ void RosNode::objectDetectionCallback(const object_detection_msgs::msg::Object3d
     for (const auto& obj : msg->objects)
     {
         // Filter out low-confidence detections
-        if (obj.confidence_score < 0.5f)
+        if (obj.confidence_score < confThresholdFor(obj.label))
             continue;
 
         DetectionData d;
