@@ -384,7 +384,7 @@ Item {
                         }
                     }
                     Text {
-                        text: "Visualizer BETA"
+                        text: "V-PACE BETA"
                         color: fsd.textPri
                         font.pixelSize: _fMd
                         font.bold: true
@@ -430,159 +430,165 @@ Item {
             }
         }
 
-        HudButton {
-            id: settingsBtn
-            width: _btnW
-            height: _btnH
-            cardRadius: _r
-            accent: fsd.accent
-            textColor: fsd.textPri
-            fontSize: _fSm
-            text: "⚙  SETTINGS"
-            opacity: settingsDrawer.open ? 0.0 : 1.0
-            visible: !settingsDrawer.open
-            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
-            onClicked: settingsDrawer.open = true
-        }
+
+    }
+
+    HudButton {
+        id: settingsBtn
+        width: _btnW
+        height: _btnH
+        cardRadius: _r
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: _m
+        anchors.bottomMargin: _m
+        accent: fsd.accent
+        textColor: fsd.textPri
+        fontSize: _fSm
+        text: "⚙  SETTINGS"
+        opacity: settingsDrawer.open ? 0.0 : 1.0
+        visible: !settingsDrawer.open
+        Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
+        onClicked: settingsDrawer.open = true
     }
 
     // ============================================================
     // HUD — BOTTOM LEFT: Legend
     // ============================================================
-    HudPanel {
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.leftMargin: _m
-        anchors.bottomMargin: _m
-        width: parent.width * 0.13
-        height: _legendCol.implicitHeight + _m * 1.6
-        cardRadius: _r
-        accent: fsd.accent
-        // The one panel that may as well be see-through: two static swatches
-        // that the driver reads once and then never again.
-        inkAlpha: 0.62
-        opacity: settingsDrawer.open ? 0.0 : 1.0
-        visible: !settingsDrawer.open || opacity > 0.01
-        Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
+    // HudPanel {
+    //     anchors.left: parent.left
+    //     anchors.bottom: parent.bottom
+    //     anchors.leftMargin: _m
+    //     anchors.bottomMargin: _m
+    //     width: parent.width * 0.13
+    //     height: _legendCol.implicitHeight + _m * 1.6
+    //     cardRadius: _r
+    //     accent: fsd.accent
+    //     // The one panel that may as well be see-through: two static swatches
+    //     // that the driver reads once and then never again.
+    //     inkAlpha: 0.62
+    //     opacity: settingsDrawer.open ? 0.0 : 1.0
+    //     visible: !settingsDrawer.open || opacity > 0.01
+    //     Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
 
-        Column {
-            id: _legendCol
-            anchors { fill: parent; margins: _m * 0.85 }
-            spacing: _m * 0.55
+    //     Column {
+    //         id: _legendCol
+    //         anchors { fill: parent; margins: _m * 0.85 }
+    //         spacing: _m * 0.55
 
-            Text {
-                text: "LEGEND"
-                color: fsd.textPri
-                font.pixelSize: _fSm
-                font.bold: true
-                font.family: "monospace"
-                width: parent.width
-                height: implicitHeight
-                fontSizeMode: Text.HorizontalFit
-                minimumPixelSize: 8
-            }
-            Row {
-                spacing: _m * 0.5
-                width: parent.width
-                Rectangle {
-                    width: _fSm * 0.85
-                    height: _fSm * 0.85
-                    radius: 2
-                    color: fsd.ego
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    text: "Ego"
-                    color: fsd.textSec
-                    font.pixelSize: _fSm
-                    font.family: "monospace"
-                    width: parent.width - _fSm * 0.85 - parent.spacing
-                    height: implicitHeight
-                    fontSizeMode: Text.HorizontalFit
-                    minimumPixelSize: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-            Row {
-                spacing: _m * 0.5
-                width: parent.width
-                Rectangle {
-                    width: _fSm * 0.85
-                    height: _fSm * 0.85
-                    radius: 2
-                    color: fsd.detection
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    text: "Detection"
-                    color: fsd.textSec
-                    font.pixelSize: _fSm
-                    font.family: "monospace"
-                    width: parent.width - _fSm * 0.85 - parent.spacing
-                    height: implicitHeight
-                    fontSizeMode: Text.HorizontalFit
-                    minimumPixelSize: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-        }
-    }
+    //         Text {
+    //             text: "LEGEND"
+    //             color: fsd.textPri
+    //             font.pixelSize: _fSm
+    //             font.bold: true
+    //             font.family: "monospace"
+    //             width: parent.width
+    //             height: implicitHeight
+    //             fontSizeMode: Text.HorizontalFit
+    //             minimumPixelSize: 8
+    //         }
+    //         Row {
+    //             spacing: _m * 0.5
+    //             width: parent.width
+    //             Rectangle {
+    //                 width: _fSm * 0.85
+    //                 height: _fSm * 0.85
+    //                 radius: 2
+    //                 color: fsd.ego
+    //                 anchors.verticalCenter: parent.verticalCenter
+    //             }
+    //             Text {
+    //                 text: "Ego"
+    //                 color: fsd.textSec
+    //                 font.pixelSize: _fSm
+    //                 font.family: "monospace"
+    //                 width: parent.width - _fSm * 0.85 - parent.spacing
+    //                 height: implicitHeight
+    //                 fontSizeMode: Text.HorizontalFit
+    //                 minimumPixelSize: 8
+    //                 anchors.verticalCenter: parent.verticalCenter
+    //             }
+    //         }
+    //         Row {
+    //             spacing: _m * 0.5
+    //             width: parent.width
+    //             Rectangle {
+    //                 width: _fSm * 0.85
+    //                 height: _fSm * 0.85
+    //                 radius: 2
+    //                 color: fsd.detection
+    //                 anchors.verticalCenter: parent.verticalCenter
+    //             }
+    //             Text {
+    //                 text: "Detection"
+    //                 color: fsd.textSec
+    //                 font.pixelSize: _fSm
+    //                 font.family: "monospace"
+    //                 width: parent.width - _fSm * 0.85 - parent.spacing
+    //                 height: implicitHeight
+    //                 fontSizeMode: Text.HorizontalFit
+    //                 minimumPixelSize: 8
+    //                 anchors.verticalCenter: parent.verticalCenter
+    //             }
+    //         }
+    //     }
+    // }
 
     // ============================================================
     // HUD — TOP RIGHT: Camera Telemetry
     // ============================================================
-    HudPanel {
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.rightMargin: _m
-        anchors.topMargin: _m + root.topInset
-        width: parent.width * 0.17
-        height: _camCol.implicitHeight + _m * 2
-        cardRadius: _r * 1.3
-        accent: fsd.accent
-        // A telemetry dump, not something the driver acts on. Lighter ink than
-        // the rest so it recedes instead of competing with the road.
-        inkAlpha: 0.60
-        // Hidden with the others when the drawer is open, which it was not —
-        // it used to sit on top of the drawer's own panel.
-        opacity: settingsDrawer.open ? 0.0 : 1.0
-        visible: !settingsDrawer.open || opacity > 0.01
-        Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
+    // HudPanel {
+    //     anchors.right: parent.right
+    //     anchors.top: parent.top
+    //     anchors.rightMargin: _m
+    //     anchors.topMargin: _m + root.topInset
+    //     width: parent.width * 0.17
+    //     height: _camCol.implicitHeight + _m * 2
+    //     cardRadius: _r * 1.3
+    //     accent: fsd.accent
+    //     // A telemetry dump, not something the driver acts on. Lighter ink than
+    //     // the rest so it recedes instead of competing with the road.
+    //     inkAlpha: 0.60
+    //     // Hidden with the others when the drawer is open, which it was not —
+    //     // it used to sit on top of the drawer's own panel.
+    //     opacity: settingsDrawer.open ? 0.0 : 1.0
+    //     visible: !settingsDrawer.open || opacity > 0.01
+    //     Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
 
-        Column {
-            id: _camCol
-            anchors { fill: parent; margins: _m }
-            spacing: _m * 0.45
+    //     Column {
+    //         id: _camCol
+    //         anchors { fill: parent; margins: _m }
+    //         spacing: _m * 0.45
 
-            Text {
-                text: "CAMERA"
-                color: fsd.textPri
-                font.pixelSize: _fMd
-                font.bold: true
-                font.family: "monospace"
-                width: parent.width
-                height: implicitHeight
-                fontSizeMode: Text.HorizontalFit
-                minimumPixelSize: 8
-            }
-            Text {
-                width: parent.width
-                height: implicitHeight
-                color: fsd.textSec
-                font.pixelSize: _fSm
-                font.family: "monospace"
-                lineHeight: 1.4
-                fontSizeMode: Text.HorizontalFit
-                minimumPixelSize: 8
-                text: "POS\n  X: " + camera.position.x.toFixed(1) +
-                      "\n  Y: " + camera.position.y.toFixed(1) +
-                      "\n  Z: " + camera.position.z.toFixed(1) +
-                      "\n\nROT\n  X: " + camera.eulerRotation.x.toFixed(1) +
-                      "\n  Y: " + camera.eulerRotation.y.toFixed(1) +
-                      "\n  Z: " + camera.eulerRotation.z.toFixed(1)
-            }
-        }
-    }
+    //         Text {
+    //             text: "CAMERA"
+    //             color: fsd.textPri
+    //             font.pixelSize: _fMd
+    //             font.bold: true
+    //             font.family: "monospace"
+    //             width: parent.width
+    //             height: implicitHeight
+    //             fontSizeMode: Text.HorizontalFit
+    //             minimumPixelSize: 8
+    //         }
+    //         Text {
+    //             width: parent.width
+    //             height: implicitHeight
+    //             color: fsd.textSec
+    //             font.pixelSize: _fSm
+    //             font.family: "monospace"
+    //             lineHeight: 1.4
+    //             fontSizeMode: Text.HorizontalFit
+    //             minimumPixelSize: 8
+    //             text: "POS\n  X: " + camera.position.x.toFixed(1) +
+    //                   "\n  Y: " + camera.position.y.toFixed(1) +
+    //                   "\n  Z: " + camera.position.z.toFixed(1) +
+    //                   "\n\nROT\n  X: " + camera.eulerRotation.x.toFixed(1) +
+    //                   "\n  Y: " + camera.eulerRotation.y.toFixed(1) +
+    //                   "\n  Z: " + camera.eulerRotation.z.toFixed(1)
+    //         }
+    //     }
+    // }
 
     // ============================================================
     // HUD — BOTTOM CENTER: Speed Pill
