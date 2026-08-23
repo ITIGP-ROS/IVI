@@ -76,13 +76,8 @@ RosNode::~RosNode() {
     destroyNode();
 }
 
-void RosNode::initialize(const QString& /*topic*/,const QString& topic_detect , const QString& /*velTopic*/, const QString& imuTopic, const QString& gpsTopic,
-                         int maxPoints) {
-    maxPoints_ = maxPoints;
-
-    detectTopic_ = topic_detect;
-    imuTopic_    = imuTopic;
-    gpsTopic_    = gpsTopic;
+void RosNode::initialize(const QString& topicDetect) {
+    detectTopic_ = topicDetect;
 
     // 60 Hz interpolation between detection messages
     detectionSmoother_.setModel(&detectionModel_);
@@ -154,8 +149,6 @@ void RosNode::destroyNode()
     // Subscriptions must go before the node: they hold it alive, and the
     // participant is only dropped once the last node in the context is gone.
     detectSub_.reset();
-    imuSub_.reset();
-    gpsSub_.reset();
 
     node_.reset();
     nodeAddrs_.clear();
@@ -208,24 +201,21 @@ void RosNode::createNode() {
      * VehicleStatus and from nowhere else — see VehicleBus. This topic carried
      * the KITTI bag's recorded velocity, which is not this car's speed, so
      * leaving it subscribed would only give it a second way back in.
-     *
-     * velTopic is kept in the signature so callers and the other branches do
-     * not have to change; it is deliberately unused.
      */
 
-    imuSub_ =node_->create_subscription<sensor_msgs::msg::Imu>(
-        imuTopic_.toStdString(),10,
-        [this](const sensor_msgs::msg::Imu::ConstSharedPtr msg) {
-            imuCallback(msg);
-
-        });
-
-    gpsSub_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(
-        gpsTopic_.toStdString(),10,
-        [this](const sensor_msgs::msg::NavSatFix::ConstSharedPtr msg) {
-            gpsCallback(msg);
-        });
-
+    /*
+     * No IMU or GPS subscription either.
+     *
+     * Both existed only to push values into CarInfo, and nothing ever read
+     * them back out: the scene takes its car orientation from the detection
+     * boxes, and no screen in this app displays latitude, longitude or
+     * altitude. They were two more remote topics dragged onto the head unit's
+     * WiFi to be dropped on the floor — the same mistake as the point cloud,
+     * only cheaper.
+     *
+     * If a map or a heading indicator ever lands, restore them together with
+     * whatever reads CarInfo, not before it.
+     */
 
     spinThread_ = std::make_unique<RosSpinThread>(node_, this);
     spinThread_->start();
@@ -434,25 +424,6 @@ void RosNode::objectDetectionCallback(const object_detection_msgs::msg::Object3d
         detections);
 
 }
-
-void RosNode::imuCallback(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
-{
-
-    carInfo_.setCurrImuX(msg->orientation.x);
-    carInfo_.setCurrImuY(msg->orientation.y);
-    carInfo_.setCurrImuZ(msg->orientation.z);
-    carInfo_.setCurrImuW(msg->orientation.w);
-
-}
-
-void RosNode::gpsCallback(const sensor_msgs::msg::NavSatFix::ConstSharedPtr msg)
-{
-    carInfo_.setCurrAltitude(msg->altitude);
-    carInfo_.setCurrLatitude(msg->latitude);
-    carInfo_.setCurrLongitude(msg->longitude);
-}
-
-
 
 DetectionModel* RosNode::detectionModel() const
 {

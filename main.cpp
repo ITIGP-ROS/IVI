@@ -91,9 +91,7 @@ int main(int argc, char *argv[]){
 
     // --- DriveView: 3D surroundings visualization (ROS2) ---
     RosNode *rosNode = new RosNode(&app);
-    rosNode->initialize("/kitti/velo", "/object_detections_3d",
-                        "/kitti/oxts/gps/vel", "/kitti/oxts/imu",
-                        "/kitti/oxts/gps/fix", 20000);
+    rosNode->initialize("/object_detections_3d");
     engine.rootContext()->setContextProperty("rosNodeInstance", rosNode);
     engine.rootContext()->setContextProperty("detectionModel", rosNode->detectionModel());
     engine.rootContext()->setContextProperty("carInfo", rosNode->carInfo());

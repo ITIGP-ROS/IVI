@@ -13,10 +13,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/nav_sat_fix.hpp>
-
-#include <geometry_msgs/msg/twist_stamped.hpp>
 #include "object_detection_msgs/msg/object3d_array.hpp"
 #include "object_detection_msgs/msg/object3d.hpp"
 
@@ -72,8 +68,10 @@ public:
     explicit RosNode(QObject* parent = nullptr);
     ~RosNode() override;
 
-    void initialize(const QString& topic,const QString& topic_detect, const QString& velTopic, const QString& imuTopic, const QString& gpsTopic,
-                    int maxPoints);
+    // Detections are the only thing this node subscribes to, so they are the
+    // only thing it needs to be told. The cloud, velocity, IMU and GPS topic
+    // names went out with their subscriptions, and maxPoints with the cloud.
+    void initialize(const QString& topicDetect);
 
     QString frameId() const;
     int pointCount() const;
@@ -92,8 +90,6 @@ signals:
 private:
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
     void objectDetectionCallback(const object_detection_msgs::msg::Object3dArray::ConstSharedPtr msg);
-    void imuCallback(const sensor_msgs::msg::Imu::ConstSharedPtr msg);
-    void gpsCallback(const sensor_msgs::msg::NavSatFix::ConstSharedPtr msg);
 
     /*
      * Build and tear down the ROS node.
@@ -116,10 +112,8 @@ private:
     std::shared_ptr<rclcpp::Node> node_;
     std::unique_ptr<RosSpinThread> spinThread_;
 
-    // Topic names, kept so a rebuild can resubscribe without the caller.
+    // Topic name, kept so a rebuild can resubscribe without the caller.
     QString detectTopic_;
-    QString imuTopic_;
-    QString gpsTopic_;
 
     // Watches the kernel for IPv4 address changes, and the address set the
     // live node was built on. Comparing against the latter is what stops a
@@ -134,10 +128,10 @@ private:
     DetectionModel detectionModel_;
     DetectionSmoother detectionSmoother_;
 
-    // car info subscriptions (IMU and GPS). Speed is NOT among them: it comes
-    // off CAN 0x200 VehicleStatus, via VehicleBus.
-    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imuSub_;
-    rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gpsSub_;
+    // No IMU or GPS subscription. Both fed CarInfo and nothing read what they
+    // wrote: no view uses the orientation quaternion, and nothing on any screen
+    // shows latitude, longitude or altitude. Speed — the one CarInfo field QML
+    // does read — comes off CAN 0x200 VehicleStatus via VehicleBus, never ROS.
     CarInfo carInfo_;
 
 
