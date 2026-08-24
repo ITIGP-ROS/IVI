@@ -104,8 +104,11 @@ Item {
                 id: camera
                 position: Qt.vector3d(0, 0, 1250)
                 fieldOfView: 60
-                clipNear: 1
-                clipFar: 100000
+                // Same reasoning as the full scene: 100 units = 1 m, the rig
+                // sits 1250 units out, and near:1 leaves too little depth
+                // precision at the far end for the road quads to stay ordered.
+                clipNear: 50
+                clipFar: 10000
             }
         }
 

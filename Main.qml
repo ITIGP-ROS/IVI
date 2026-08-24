@@ -440,6 +440,9 @@ ApplicationWindow {
                 launcherSlide.x = 0
                 slideIn.start()
                 launcherOut.start()
+                // Same intro as the warm path above — this is the tap that
+                // beat the async build, so it arms here instead.
+                item.playIntro()
             }
         }
     }
@@ -549,6 +552,12 @@ ApplicationWindow {
                     launcherSlide.x = 0
                     slideIn.start()
                     launcherOut.start()
+                    // Arm the camera zoom in on the tap, not at construction:
+                    // the scene was built and warmed behind this launcher a
+                    // long time ago, so an intro that ran back then would be
+                    // over before the page was ever on screen. Rearmed on
+                    // every open, so it replays each time the card is used.
+                    driveViewLoader.item.playIntro()
                 }
                 // otherwise the slides are started from onStatusChanged once
                 // the async build finishes

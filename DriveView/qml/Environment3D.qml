@@ -43,7 +43,10 @@ Node {
         id: ground
         source: "#Rectangle"
         visible: root.showGround
-        y: floorY
+        // 4 units (4 cm) below the road rather than 0.5. The road hides it
+        // everywhere they overlap, so the drop is invisible even at the road
+        // edge, and it buys depth separation for free — see the road quad.
+        y: floorY - 4
         eulerRotation.x: -90
         // 12000-wide x 24000-long strip. Width tracks the city: the outermost
         // facade is at cityInset + 3450 = 5550, and half of 12000 is 6000, so
@@ -116,12 +119,19 @@ Node {
     // painted line is a fixed real-world width whatever the road is doing.
     readonly property real edgeLineX: roadHalfWidth * 0.96
 
+    // Height of the painted lines above the road. The stack (ground / road /
+    // lines) is what z-fights when depth precision runs out at the far end,
+    // so the gaps are deliberately wider than they need to be for looks: at
+    // 2 cm none of this is visible from a camera 12 m away, but it keeps the
+    // ordering unambiguous on a 16-bit depth buffer as well as a 24-bit one.
+    readonly property real edgeLineY: floorY + 2
+
     // left edge solid line (magenta in neon style)
     Model {
         id: leftEdge
         source: "#Rectangle"
         x: -root.edgeLineX
-        y: floorY + 1
+        y: root.edgeLineY
         eulerRotation.x: -90
         scale: Qt.vector3d(0.35, 120, 1)
         receivesShadows: false
@@ -133,7 +143,7 @@ Node {
         id: rightEdge
         source: "#Rectangle"
         x: root.edgeLineX
-        y: floorY + 1
+        y: root.edgeLineY
         eulerRotation.x: -90
         scale: Qt.vector3d(0.35, 120, 1)
         receivesShadows: false

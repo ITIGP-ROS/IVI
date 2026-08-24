@@ -22,6 +22,16 @@ Item {
     property vector3d topRotation: Qt.vector3d(-90, 0, 0)
     property real     topDistance: 1600
 
+    // Startup intro. The camera is DECLARED out at introDistance and the
+    // Component.onCompleted view apply pulls it in to chaseDistance, so the
+    // scene opens by settling into the chase view instead of backing away
+    // from it. This is only where the camera starts from — chaseDistance and
+    // topDistance are untouched, so both views still rest exactly where they
+    // did and every later switch is unaffected.
+    // Must stay outside chaseDistance or the intro reads as a zoom out again.
+    property real introDistance: 2000
+    property real introDuration: 1800
+
     // render the Tesla with its baked texture instead of the flat detection tint
     property bool useTeslaTexture: true
 
@@ -119,6 +129,12 @@ Item {
     readonly property real _btnW: width  * 0.125
     readonly property real _btnH: height * 0.058
 
+    // Duration of the camera's distance glide. Normally the 700 ms view-switch
+    // feel; the intro raises it to introDuration for its one run and the glide
+    // restores it the moment it lands, so exactly one animation is long and
+    // nothing has to know when the intro is "over".
+    property int cameraGlideDuration: 700
+
     // ============================================================
     // 3D VIEW
     // ============================================================
@@ -188,9 +204,30 @@ Item {
             id: orbitOrigin
             PerspectiveCamera {
                 id: camera
-                position: Qt.vector3d(0, 0, 960)
-                fieldOfView: 70; clipNear: 1; clipFar: 100000
-                Behavior on position      { Vector3dAnimation { duration: 700; easing.type: Easing.InOutCubic } }
+                position: Qt.vector3d(0, 0, root.introDistance)
+                // 100 units = 1 m here, so clipNear 50 is half a metre — the
+                // rig orbits 1200-1600 units out and the pitch limit keeps it
+                // above the road, so nothing ever gets that close. The old
+                // near:1 / far:100000 spent the depth buffer on the first
+                // centimetre and left ~0.5 units of resolution at the far end
+                // of the road, where the ground/road/lane-line quads are only
+                // 0.5 units apart: they z-fought and the road flickered while
+                // orbiting. clipFar 10000 is past the fog wall (6800), so the
+                // geometry it drops was already fully hazed out.
+                fieldOfView: 70; clipNear: 50; clipFar: 10000
+                Behavior on position {
+                    id: camGlide
+                    Vector3dAnimation {
+                        duration: root.cameraGlideDuration
+                        easing.type: Easing.InOutCubic
+                        // Self-clearing intro: the first glide is the long one,
+                        // and dropping back to 700 as soon as it stops means a
+                        // view switch during the intro still ends up at the
+                        // normal speed. Re-setting 700 on every later glide is
+                        // a no-op.
+                        onRunningChanged: if (!running) root.cameraGlideDuration = 700
+                    }
+                }
                 Behavior on eulerRotation { Vector3dAnimation { duration: 700; easing.type: Easing.InOutCubic } }
             }
         }
@@ -222,6 +259,10 @@ Item {
         MyOrbitCameraController {
             anchors.fill: parent; camera: camera; origin: orbitOrigin
             mouseEnabled: true; panEnabled: false; zoomEnabled: false; xSpeed: 0.05; ySpeed: 0.05
+            // Without this the controller's automatic clipping resets clipNear
+            // to 1 on every camera.z write — which the view-switch Behavior
+            // fires all through its 700 ms glide.
+            minClipNear: 50
         }
 
         Node {
@@ -1268,6 +1309,29 @@ Item {
         viewSwitchAnim.start()
     }
 
+    /*
+     * Play the opening zoom in, from scratch, however the page was last left.
+     *
+     * Called on the Drive View card tap rather than at construction, so the
+     * animation is tied to the user opening the page instead of to a warm-up
+     * that happened minutes earlier behind the launcher.
+     *
+     * The snap out has to bypass the glide Behavior: a plain write would
+     * animate the camera OUT to introDistance and then back in, and that
+     * outward sweep is exactly the zoom out this whole change replaced.
+     *
+     * Ends on resetCurrentView() rather than applyChaseView() so reopening
+     * keeps whichever view the driver left on — the intro is a zoom in to the
+     * current view, not a reset to chase.
+     */
+    function playIntro() {
+        camGlide.enabled = false
+        camera.position = Qt.vector3d(0, 0, root.introDistance)
+        camGlide.enabled = true
+        root.cameraGlideDuration = root.introDuration
+        resetCurrentView()
+    }
+
     function resetCurrentView() {
         if (topDownView)
             applyTopView()
@@ -1310,7 +1374,18 @@ Item {
         applyColor()
         colorWheel.requestPaint()
 
+        // Settle straight into the chase view with no motion at all. The
+        // intro deliberately does NOT run here: this page is built and warmed
+        // behind the launcher (see the warm-frame Loader in Main.qml), so an
+        // intro tied to construction plays to nobody and is over well before
+        // the card is ever tapped. Main.qml calls playIntro() on the tap.
+        //
+        // Disabling the Behavior is what makes this a snap — without it the
+        // camera sweeps from its declared introDistance down to chaseDistance,
+        // which is the wasted invisible animation this is avoiding.
+        camGlide.enabled = false
         applyChaseView()
+        camGlide.enabled = true
         applyTheme()
         viewReady = true
     }

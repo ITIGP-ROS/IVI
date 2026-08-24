@@ -20,6 +20,13 @@ Item {
     property bool zoomEnabled: true
     property bool automaticClipping: true
 
+    // Floor for the automatic near plane. The tiers below assume 1 unit = 1 m;
+    // a scene on another scale (DriveView is 100 units = 1 m) would get a near
+    // plane orders of magnitude tighter than it needs, and spend its whole
+    // depth buffer on the first centimetre. Coplanar geometry far from the
+    // camera then z-fights, which reads as flicker while orbiting.
+    property real minClipNear: 0
+
     // Pitch limits. The camera orbits root.camera.z units from the pivot, so its
     // height is -camera.z*sin(pitch) — it dips below groundY(=road surface, y=-141.5
     // in the DriveView scene) once pitch exceeds asin(-groundY/camera.z), which is
@@ -58,6 +65,11 @@ Item {
                 root.camera.clipNear = 1
                 root.camera.clipFar = 10000
             }
+            // Applied last so it survives every tier above. Kept below the
+            // orbit distance so the pivot itself can never be clipped away.
+            if (root.minClipNear > 0)
+                root.camera.clipNear = Math.max(root.camera.clipNear,
+                                                Math.min(root.minClipNear, distance / 2))
         }
     }
 

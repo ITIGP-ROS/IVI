@@ -6,6 +6,11 @@ Item {
 
     signal goBack()
 
+    // Replay the opening camera zoom in. Main.qml calls this on the card tap;
+    // the scene cannot trigger it itself because it is built and warmed long
+    // before the page is actually opened.
+    function playIntro() { scene.playIntro() }
+
     // 3D surroundings visualization (ROS2)
     Scene3D {
         id: scene
