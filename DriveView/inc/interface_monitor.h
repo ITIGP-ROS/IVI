@@ -11,22 +11,14 @@ class QSocketNotifier;
 /*
  * Tells you when this machine's set of usable IPv4 addresses changes.
  *
- * This exists for one reason: Fast DDS enumerates the host's network
- * interfaces once, when the DomainParticipant is created, and the Humble line
- * never rescans. A participant built while the WiFi has no address is deaf and
- * mute on that NIC forever — it does not announce itself there, does not join
- * the discovery multicast group there, and does not advertise a reachable
- * unicast locator. Connecting to WiFi afterwards does not repair it; only
- * building a new participant does.
+ * Fast DDS enumerates network interfaces once at DomainParticipant creation
+ * and never rescans, so a participant built before an interface has an
+ * address stays deaf on it forever, even after DHCP hands out a lease.
+ * ivi-app starts before DHCP completes, so RosNode needs to know when an
+ * address appears so it can rebuild its participant.
  *
- * That is exactly the head unit's boot order. ivi-app starts a second or so
- * before DHCP hands out the lease, so out of the box the app can never see the
- * detection publisher, no matter what the user does in the WiFi settings page.
- *
- * So RosNode needs to know when an address appears. It must NOT learn that by
- * polling, and it must not tear down a working ROS node on a guess: this
- * reports the kernel's own RTNETLINK notifications, and only when the address
- * set genuinely changed.
+ * Uses the kernel's RTNETLINK notifications, not polling, and only fires
+ * when the address set actually changed.
  */
 class InterfaceMonitor : public QObject
 {

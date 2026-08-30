@@ -92,18 +92,14 @@ private:
     void objectDetectionCallback(const object_detection_msgs::msg::Object3dArray::ConstSharedPtr msg);
 
     /*
-     * Build and tear down the ROS node.
+     * Build/tear down the ROS node. Split out of initialize() because the
+     * node must be rebuilt, not just built: Fast DDS scans interfaces once
+     * per DomainParticipant, and rmw_fastrtps refcounts one participant per
+     * node count — destroying the only node drops it, so the next
+     * createNode() scans interfaces afresh.
      *
-     * Split out of initialize() because the node has to be rebuilt, not just
-     * built: Fast DDS scans the host's interfaces once per DomainParticipant
-     * and never rescans, so a participant created before the WiFi has an
-     * address stays invisible to every other host for as long as the process
-     * lives. rmw_fastrtps keeps one participant per context, refcounted by
-     * node count, so destroying this process's only node drops the
-     * participant and creating the next one scans the interfaces afresh.
-     *
-     * Both run on the GUI thread; destroyNode() joins the spin thread, so
-     * no callback can be in flight once it returns.
+     * Both run on the GUI thread; destroyNode() joins the spin thread first,
+     * so no callback is in flight once it returns.
      */
     void createNode();
     void destroyNode();

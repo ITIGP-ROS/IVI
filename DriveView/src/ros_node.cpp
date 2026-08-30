@@ -83,20 +83,13 @@ void RosNode::initialize(const QString& topicDetect) {
     detectionSmoother_.setModel(&detectionModel_);
 
     /*
-     * Watch for IPv4 addresses coming and going, and rebuild the node when the
-     * set changes.
+     * Watches for IPv4 addresses appearing and rebuilds the node when the set
+     * changes. The head unit starts this app before DHCP finishes, and a Fast
+     * DDS participant only knows the interfaces that existed at creation —
+     * WiFi is joined through this app, so first boot always loses that race.
      *
-     * The head unit starts this app about a second before DHCP finishes, and a
-     * Fast DDS participant only ever knows the interfaces that existed when it
-     * was created. Built one second early, it never announces itself over WiFi
-     * and the detection publisher never sends it anything — permanently, since
-     * joining a network later changes nothing. That is not a corner case here:
-     * WiFi is joined *through* this app, so the first boot of a new unit
-     * always loses that race.
-     *
-     * Ordering the service after network-online.target is not the answer; it
-     * would leave the screen blank for the wait-online timeout on exactly the
-     * units that have no network yet.
+     * Ordering after network-online.target isn't the fix either: it would
+     * blank the screen for the wait-online timeout on units with no network.
      */
     ifMonitor_ = new InterfaceMonitor(this);
     connect(ifMonitor_, &InterfaceMonitor::addressesChanged,
@@ -168,22 +161,11 @@ void RosNode::createNode() {
     node_ = std::make_shared<rclcpp::Node>("qt_pcl_visualizer");
 
     /*
-     * No point cloud subscription.
-     *
-     * pointCloudCallback's body is entirely commented out, and nothing in the
-     * scene draws a cloud any more — Environment3D replaced that view — so
-     * every byte of this topic was received and dropped on the floor.
-     *
-     * Free on a laptop, where publisher and subscriber share memory. Ruinous
-     * on the head unit: a KITTI velodyne frame is ~1.9 MB, and at 10 Hz that
-     * is ~155 Mbit/s against the Jetson's 11 Mbit/s of 2.4 GHz WiFi. DDS only
-     * puts a topic on the wire when something remote asks for it, so this
-     * subscription on its own was what dragged that stream onto the radio.
-     *
-     * Nothing came of it — the kernel reassembled 281 of 11227 fragmented
-     * datagrams, and `ros2 topic hz /kitti/velo` on the board printed nothing
-     * at all — while the detections, a few hundred bytes each, had to cross
-     * the same saturated link and never made it to the screen.
+     * No point cloud subscription: pointCloudCallback's body is commented out
+     * and nothing draws a cloud any more (Environment3D replaced that view),
+     * so this was pure overhead — a KITTI velodyne frame at 10 Hz saturates
+     * the Jetson's WiFi (~155 Mbit/s vs ~11 Mbit/s available) and starved the
+     * much smaller detections stream sharing the link.
      *
      * Restore this together with the callback body, not before it.
      */
@@ -204,17 +186,11 @@ void RosNode::createNode() {
      */
 
     /*
-     * No IMU or GPS subscription either.
+     * No IMU or GPS subscription either: both only fed CarInfo, and nothing
+     * reads it back — orientation comes from the detection boxes, and no
+     * screen shows lat/long/altitude. Same waste as the point cloud, cheaper.
      *
-     * Both existed only to push values into CarInfo, and nothing ever read
-     * them back out: the scene takes its car orientation from the detection
-     * boxes, and no screen in this app displays latitude, longitude or
-     * altitude. They were two more remote topics dragged onto the head unit's
-     * WiFi to be dropped on the floor — the same mistake as the point cloud,
-     * only cheaper.
-     *
-     * If a map or a heading indicator ever lands, restore them together with
-     * whatever reads CarInfo, not before it.
+     * Restore together with whatever reads CarInfo, not before it.
      */
 
     spinThread_ = std::make_unique<RosSpinThread>(node_, this);

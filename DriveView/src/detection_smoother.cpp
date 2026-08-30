@@ -116,18 +116,14 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
             track.targetPrevPos = d.position;
             track.targetPrevTimeMs = nowMs;
 
-            // flip guard: snap the target rotation to the near side so the
-            // mesh never 180-spins on symmetric-box yaw ambiguity.
-            // IMPORTANT: rotations here live in the Qt3D frame where UP = Y,
-            // so the flip must be about the box's OWN up axis (which stays
-            // fixed under the flip); a 180 deg rotation about any horizontal
-            // world axis would turn the box upside down.
-            // NOTE: QQuaternion::getAxisAndAngle reports the angle in the
-            // range (180, 360] whenever the quaternion's scalar part is
-            // negative (it does not normalize to the shortest rotation), so
-            // the diff quaternion must be sign-normalized (w >= 0) first,
-            // otherwise the near-side flip is always rejected and the box
-            // slerps through a full 180 deg spin on yaw sign flips.
+            // Flip guard: snap the target rotation to the near side so the
+            // mesh never 180-spins on symmetric-box yaw ambiguity. Must flip
+            // about the box's own up axis, not a world axis, or it turns the
+            // box upside down.
+            //
+            // getAxisAndAngle reports (180, 360] when the quaternion's scalar
+            // is negative, so the diff must be sign-normalized (w >= 0) first
+            // or the near-side check always rejects the flip.
             QQuaternion targetRot = d.rotation;
             QQuaternion diff = track.currentRot.conjugated() * targetRot;
             if (diff.scalar() < 0.0f)
@@ -159,21 +155,14 @@ void DetectionSmoother::update(const QList<DetectionData>& raw)
         seen.insert(key);
     }
 
-    // Tracks that disappeared (the detector-side tracker already holds objects
-    // through missed frames, so this only fires on real deletion).
+    // Tracks that disappeared (the detector's own tracker holds objects
+    // through missed frames, so this only fires on real deletion) drop
+    // immediately rather than fading out — a fade left the Tesla mesh's
+    // wheels re-sorting through partial alpha and visibly shifting colour
+    // while the car sat frozen going translucent.
     //
-    // Everything goes immediately, tracked or not. Tracked objects used to be
-    // marked for a fade instead, on the theory that blinking out between two
-    // frames reads as a glitch. The fade was worse: over its ~350 ms the car
-    // sat still going translucent, and on the Tesla mesh — one concave body
-    // with the wheels as separate surfaces inside the arches — partial alpha
-    // re-sorts those surfaces and visibly shifts its colour. A car that simply
-    // stops being drawn is cleaner than one that discolours and freezes on its
-    // way out.
-    //
-    // Safe because of the note above: the tracker retires an id only after its
-    // own max-age, and an object it re-acquires comes back under a NEW id, so
-    // this cannot be triggered by a one-message dropout.
+    // Safe because a re-acquired object comes back under a new id, so this
+    // can't be triggered by a one-message dropout.
     for (auto it = tracks_.begin(); it != tracks_.end();) {
         if (seen.contains(it.key()))
             ++it;

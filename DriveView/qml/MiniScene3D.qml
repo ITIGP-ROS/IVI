@@ -71,30 +71,23 @@ Item {
             // normal map at heavy minification, and where the low fill light
             // rakes across them the specular breaks into crawling glitter —
             // this widens the highlight as the normals get noisier instead.
-            // NOTE: was specularAAEnabled: true — set back to true if the
-            // tile's specular glitter returns (dev-parity change).
+            // Was specularAAEnabled: true — set back to true if the tile's
+            // specular glitter returns.
             specularAAEnabled: false
         }
 
         DirectionalLight { eulerRotation.x: -60; eulerRotation.y: 30;   brightness: 1.1 }
         DirectionalLight { eulerRotation.x: -20; eulerRotation.y: -150; color: "#7799ff"; brightness: 0.5 }
 
-        // Fixed chase view — same angle the full page opens on, just pulled
-        // back further to suit the tile.
+        // Fixed chase view — same angle the full page opens on, pulled back
+        // further for the tile. Pivot sits ahead of the car, not on it, so
+        // the car drops below centre and the road gets most of the frame —
+        // it used to sit closer, which put the rear bumper right at the
+        // bottom edge.
         //
-        // The pivot sits ahead of the car rather than on it, which drops the
-        // car below centre and hands most of the frame to the road in front.
-        // It used to sit a full 3 m ahead, which pushed the rear bumper to
-        // within ~0.7 m of the bottom edge — the car looked like it was about
-        // to fall out of the tile.
-        //
-        // Only Z moves here: the rotation and the camera's local offset are
-        // untouched, so this slides the whole rig backwards along the road
-        // without changing the angle. At the -42 deg tilt and 60 deg vertical
-        // FOV, backing the pivot off by 115 units lifts the bumper from 7% to
-        // 17% of the tile height above the bottom edge. The road ahead loses
-        // about the same amount, but perspective compresses the far end so
-        // the loss reads as far less than the gain behind.
+        // Only Z moves here; rotation and camera offset are untouched, so
+        // this just slides the rig back along the road without changing
+        // the angle.
         Node {
             id: orbitOrigin
             position: Qt.vector3d(0, 0, -185)

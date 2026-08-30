@@ -21,17 +21,10 @@ Node {
     property real wheelSpeed: 0
     property real wheelAngle: 0
 
-    /*
-     * Integrated on the real frame time, like the city scroll in
-     * Environment3D. This was a 16 ms Timer advancing by a hard-coded 0.016 s,
-     * which assumed every tick landed exactly on schedule: Qt timers are coarse
-     * and fire late under load, so the wheels quietly ran slow — on a busy
-     * Jetson, slower than the ground they are standing on, which is exactly the
-     * skid this is supposed to avoid.
-     *
-     * frameTime is capped for the same reason the city caps it: a hidden window
-     * or a hitch must resume smoothly, not snap the wheels through a spin.
-     */
+    // Integrated on real frame time, like the city scroll in Environment3D —
+    // a fixed-step Timer let the wheels run slow under load (a skid on a busy
+    // Jetson). frameTime is capped so a hitch resumes smoothly instead of
+    // snapping the spin.
     FrameAnimation {
         running: Math.abs(node.wheelSpeed) > 0.01
         onTriggered: {

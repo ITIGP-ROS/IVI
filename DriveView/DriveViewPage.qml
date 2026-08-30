@@ -16,14 +16,10 @@ Item {
         id: scene
         anchors.fill: parent
 
-        // Fills the page edge to edge, including the strip behind the window
-        // bar. The bar floats with a 10px inset (WindowBar anchors), so a scene
-        // that started below it left that 10px — plus the gap either side of
-        // the rounded bar — showing bare background as a grey band across the
-        // top. The road runs under the bar instead.
-        //
-        // Only the HUD panels are held clear, via topInset: the bar's own
-        // height plus its top margin, so nothing lands underneath it.
+        // Fills the page edge to edge, including behind the floating window
+        // bar (which has its own inset) — a scene anchored below it left a
+        // grey band across the top instead. Only the HUD panels are held
+        // clear, via topInset.
         topInset: titleBar.height + titleBar.anchors.topMargin
     }
 

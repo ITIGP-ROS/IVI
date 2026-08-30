@@ -16,9 +16,9 @@ Node {
     property bool showGround: true
     property bool showCity: true
 
-    // Vehicle speed in m/s, straight off the bus — NOT a scroll rate. It goes
-    // through DriveSpeed below, which is what decides how fast the city moves;
-    // the world still stands still at a standstill just like the wheels do.
+    // Vehicle speed in m/s, straight off the bus — not a scroll rate. It goes
+    // through DriveSpeed below, which decides how fast the city moves; the
+    // world stands still at a standstill, same as the wheels.
     property real speed: 0
 
     // created city entries (for teardown on theme/palette change)
@@ -38,7 +38,7 @@ Node {
     // used to be a separate literal that silently had to match.
     readonly property real roadHalfWidth: 874.8   // 17.5 m across
 
-    // ---- GROUND ----------------------------------------------------------
+    // Ground
     Model {
         id: ground
         source: "#Rectangle"
@@ -91,7 +91,7 @@ Node {
         scaleV: 26
     }
 
-    // ---- ROAD ------------------------------------------------------------
+    // Road
     // one straight 2-lane road along Z (KITTI forward = -Z), centered on origin
     Model {
         id: roadSurface
@@ -115,8 +115,8 @@ Node {
 
     // lane markings (thin strips above the asphalt)
     // Inset a little from the physical edge so the asphalt still shows outside
-    // the line. Their thickness is deliberately NOT scaled with the road: a
-    // painted line is a fixed real-world width whatever the road is doing.
+    // the line. Thickness is deliberately not scaled with the road — a
+    // painted line has a fixed real-world width regardless of road width.
     readonly property real edgeLineX: roadHalfWidth * 0.96
 
     // Height of the painted lines above the road. The stack (ground / road /
@@ -164,56 +164,33 @@ Node {
     readonly property real cityInset: 2100
 
 
-    // ---- MOVING CITY (neon style) ---------------------------------------
-    // Instanced building cubes on both sides of the road, scrolling toward
-    // the camera in a seamless loop (Outrun style).
-    // Rows run from 100 m BEHIND the ego car (z=0) to the road's far end
-    // (z=-6000) — nothing past the road at rest, and the loop keeps rows
-    // behind the car at all times (nearest row is 4 m behind at loop start).
-    // Pattern: deterministic 12-row cycle, spacing 800 -> the city tiles
-    // perfectly every 12*800 = 9600 units, and the model scrolls by exactly
-    // one period (-9600 -> 0) before wrapping, so the loop has no seam. The
-    // scroll is integrated per frame at the car's own speed rather than run on
-    // a fixed duration: a duration binding would restart (and visibly jump)
-    // the loop on every velocity update. Building depth stays
-    // below the spacing (max 760 < 800) so cubes never overlap each other.
-    // Buildings are BIG and drastically varied (8..20 m wide, 3..7.6 m deep,
-    // 3..40 m tall); their inner edge sits cityInset..cityInset+4.5 m from the
-    // road centre, and outer edges stay inside the 12000-wide strip.
-    // Depth haze is NOT baked into the city: the whole city is one opaque
-    // layer — the far end fades via SceneEnvironment fog (Scene3D.qml),
-    // which is world-space and seamless, and also hides the loop-wrap pop
-    // beyond the road end. No opacity bands -> no banding and no flash at
-    // the loop boundary.
+    // Moving city (neon style): instanced building cubes on both sides of the
+    // road, scrolling toward the camera in a seamless Outrun-style loop.
+    //
+    // 12-row deterministic cycle, spacing 800, tiles every 9600 units. Scroll
+    // is integrated per frame at the car's own speed rather than run on a
+    // fixed duration, so a velocity update never jumps the loop. Building
+    // depth stays below the spacing (max 760 < 800) so cubes never overlap.
+    //
+    // The city is one opaque layer with no baked depth haze — the far end
+    // fades via SceneEnvironment fog (Scene3D.qml) instead, which avoids
+    // banding at the loop boundary.
 
     // 12 rows x 800 spacing — the tiling period the scroll has to wrap on.
     readonly property real cityPeriod: 9600
 
-    /*
-     * Scroll rate in units/s (100 units = 1 m, as everywhere else here).
-     *
-     * DriveSpeed owns the mapping — including the standstill threshold and the
-     * corrupt-frame clamp — so the city and the ego car's wheels are driven off
-     * one number and cannot disagree about how fast the ground is moving.
-     *
-     * This is NOT the car's literal ground speed. The vehicle tops out at
-     * 50 m/min (0.833 m/s), which on a real-scale city is one building past the
-     * camera every 9.6 seconds — a frozen backdrop at full throttle. See
-     * DriveSpeed.qml for why the scenery is scaled and what is left alone.
-     */
+    // Scroll rate in units/s (100 units = 1 m). DriveSpeed owns the mapping
+    // (standstill threshold, corrupt-frame clamp) so the city and the ego
+    // wheels can't disagree about ground speed.
+    //
+    // Not the car's literal ground speed — see DriveSpeed.qml for why the
+    // scenery is scaled instead.
     readonly property real scrollRate: DriveSpeed.sceneMps(root.speed) * 100
 
-    // Resting phase of the scroll. The band is 16000 long but wraps every
-    // 9600, so the stretch covered at EVERY phase is only the 6400 between the
-    // road's far end and 4 m behind the car — where the remaining 9600 sits is
-    // purely a matter of phase. At -cityPeriod that surplus is all dumped past
-    // the road end (invisible, it is deep in the fog) and the nearest row ends
-    // up 4 m behind the car, leaving the camera at z=+960 sitting in a gap with
-    // bare road behind it. -2400 spends it the other way: 76 m of city behind
-    // the car, out to the point where fog closes in anyway (+7760), while the
-    // far end still reaches -8400, well past the fog wall at -5840.
-    // This is the frame the user actually sits on, since the city is frozen
-    // until the car moves.
+    // Resting phase of the scroll: the 16000-long band wraps every 9600, so
+    // this picks which window is visible before the car moves. -2400 keeps
+    // city on both sides of the camera at rest, instead of leaving a bare gap
+    // behind it the way the other extreme (-cityPeriod) would.
     readonly property real cityRestZ: -2400
 
     Node {
@@ -255,8 +232,8 @@ Node {
     readonly property int cityRowFrom: 0
     readonly property int cityRowTo:   20
 
-    // The ONLY thing about a building that depends on the theme. Position,
-    // scale and row order do not, which is what makes recolouring in place a
+    // The only thing about a building that depends on the theme — position,
+    // scale and row order don't, which is what makes recolouring in place a
     // valid substitute for rebuilding.
     function cityColor(p) {
         // asphalt -> road-gray family + white accents,
@@ -293,14 +270,10 @@ Node {
                 // 3 depth levels (300/530/760, min 3 m, < spacing 800 -> no overlap)
                 let d = 300 + 460 * (p % 3) / 2
                 let w = wl[p]
-                // Inner edge sits cityInset + jitter from the centre line.
-                // It used to be 1300, which put 40 m towers barely 13 m from
-                // a chase camera sitting 8 m up: the frustum sliced straight
-                // through them and they read as flat neon wedges cutting
-                // across the top corners of the HUD rather than as a skyline.
-                // Backing them off lets a whole facade fit in frame, which is
-                // what makes them parse as buildings.
-                // outer edge stays <= 3550 < strip edge 3600
+                // Inner edge sits cityInset + jitter from the centre line. It
+                // used to be 1300 — close enough that the chase camera's
+                // frustum sliced through 40 m towers instead of framing them
+                // as a skyline. outer edge stays <= 3550 < strip edge 3600
                 // building cube; #Cube is 100x100x100 units -> /100 scales
                 arr.push(cityEntry.createObject(list, {
                     position: Qt.vector3d(dir * (root.cityInset + jx[p] + w / 2), h / 2, z),
@@ -321,17 +294,13 @@ Node {
         cityList.instances = cityEntries
     }
 
-    /*
-     * Theme change: repaint the buildings that already exist.
-     *
-     * This used to call rebuildCity(), which tore down all 42 instances and
-     * created 42 replacements through createObject — a large part of why
-     * flipping the theme stalled on the Jetson, and it ran every time even
-     * though a building's geometry does not depend on the theme at all.
-     *
-     * The traversal below mirrors buildCityBand's loop order exactly (side
-     * outer, k inner), so entry i is the building for that side and row.
-     */
+    // Theme change repaints existing buildings instead of calling
+    // rebuildCity() — tearing down and recreating all 42 instances stalled
+    // the theme flip on the Jetson, for geometry that never depended on the
+    // theme anyway.
+    //
+    // Traversal order below must mirror buildCityBand's (side outer, k
+    // inner), so entry i matches that side/row.
     function recolourCity() {
         let i = 0
         for (let side = 0; side < 2; side++) {
@@ -347,7 +316,7 @@ Node {
         Component.onCompleted: root.rebuildCity()
     }
 
-    // ---- ASPHALT STYLE OVERRIDES -----------------------------------------
+    // Asphalt style overrides
     states: [
         State {
             name: "asphalt"

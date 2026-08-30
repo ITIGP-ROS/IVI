@@ -2,32 +2,15 @@ pragma Singleton
 import QtQuick
 
 /*
- * The one place that turns the vehicle's real speed into the speed the 3D
- * scene is ANIMATED at. Everything that moves with the car — the scrolling
- * city, the ego car's wheels — pulls its rate from here, so they can never
- * drift out of step with each other.
+ * Converts real vehicle speed into the rate the 3D scene animates at, so
+ * the scrolling city and ego wheels never drift out of sync.
  *
- * Why a gain exists at all
- * -----------------------
- * The scene is drawn at real-world scale: a 17.5 m road, 40 m towers, a
- * 5 m car, 100 units = 1 m. The vehicle underneath it is not a real car — the
- * Tiva reports 0x200 speed at 1 LSB = 1 m/min, full scale 50 m/min, i.e.
- * 0.833 m/s or a slow walk. Animating a real-scale city at a literal 0.833 m/s
- * puts one building past the camera every 9.6 s and spins the wheels at a
- * quarter turn a second: the world reads as frozen and the car as parked, even
- * at full throttle. This used to look right only because the speed came from a
- * KITTI bag doing 7-14 m/s.
+ * The scene is real-world scale, but the vehicle's own speed (Tiva 0x200,
+ * full scale 50 m/min ≈ 0.833 m/s) is too slow to look right 1:1 — this
+ * scales the backdrop proportionally to real speed instead.
  *
- * So the backdrop is stylised, deliberately: it moves proportionally to the
- * real speed, scaled so that the vehicle's own ceiling looks like the drive the
- * scene was built to depict.
- *
- * What this does NOT touch
- * ------------------------
- * The HUD speed pill (Scene3D.qml) and everything else a driver reads as an
- * instrument stay on the true number in m/min. So do the detections: those are
- * metres in the velo frame, positioned by the lidar, and no gain is applied to
- * them anywhere. This scales scenery only.
+ * The HUD speed pill and detections stay on the true m/min value; no gain
+ * is applied to them.
  */
 QtObject {
     // The vehicle's own ceiling, from the DBC: 50 m/min. Same number the HUD
@@ -44,42 +27,21 @@ QtObject {
     // would turn that into a 1.1-million-units/s strobe across the whole city.
     readonly property real maxVehicleMps: 1.0
 
-    /*
-     * THE TWO LOOK KNOBS.
-     *
-     * Each says what its animation should look like at the vehicle's full
-     * 50 m/min, and the two are independent on purpose. They are tuned by eye,
-     * separately, against the running scene — so speeding the city up must not
-     * drag the wheels along with it, or every adjustment to one becomes a
-     * re-tune of the other. That coupling is exactly what the first version of
-     * this file got wrong.
-     */
+    // Two independent look knobs, each tuned by eye at the vehicle's full
+    // 50 m/min. Keep them independent — coupling city speed to wheel speed
+    // was a past bug in this file.
 
-    // City scroll at full scale, in m/s. The starting point was 7.2 — 720
-    // units/s, the rate the band was originally composed at back when it ran on
-    // a fixed 13.333 s animation — and this is that 30% faster, which is where
-    // it was judged to read as driving rather than drifting. Buildings arrive
-    // about one every 0.85 s here.
+    // City scroll at full scale, in m/s — tuned by eye to read as driving.
     readonly property real sceneTopMps: 9.36
 
-    // Ego wheel spin at full scale, in deg/s — 1.92 rev/s.
-    //
-    // Deliberately a little under a true no-slip roll. The wheel's centre sits
-    // ~0.715 m above the road surface, the largest rolling radius this mesh can
-    // be read as having (the smallest is 0.39 m, the same wheel unstretched by
-    // the 250/137 vertical scale), and even that wants 750 deg/s against a
-    // 9.36 m/s ground. This is ~8% under it — what a 0.78 m wheel would turn
-    // at. Anything faster looked frantic on a car nominally doing walking pace.
+    // Ego wheel spin at full scale, in deg/s. Deliberately under the true
+    // no-slip roll rate (~750 deg/s) — matching it looked frantic at this
+    // car's scale.
     readonly property real wheelTopDegPerSec: 691.2
 
-    /*
-     * The shape both animations share: vehicle speed as a fraction of full
-     * scale — 0 at a standstill, 1 at 50 m/min, and over 1 only while the
-     * corrupt-frame clamp is doing its job.
-     *
-     * Linear on purpose: twice the speed on the bus has to look twice as fast,
-     * or the backdrop stops meaning anything at all.
-     */
+    // Vehicle speed as a fraction of full scale: 0 at standstill, 1 at
+    // 50 m/min, and briefly over 1 while the corrupt-frame clamp holds.
+    // Linear so double the speed reads as double the animation rate.
     function fraction(mps) {
         if (!isFinite(mps) || mps <= standstillMps)
             return 0

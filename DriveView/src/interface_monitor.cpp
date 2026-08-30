@@ -16,14 +16,10 @@
 #include <unistd.h>
 
 namespace {
-// DHCP does not produce one netlink message, it produces a burst: the journal
-// on this board shows "new lease, address=10.42.0.40, acd pending" followed by
-// the confirmed lease a fraction of a second later, and a re-association adds
-// a delete/add pair on top. Collapsing the burst keeps us from rebuilding the
-// participant several times for a single connect.
-//
-// This is a debounce, not a poll: it is single-shot, armed only by an actual
-// kernel notification, and idle the rest of the time.
+// DHCP produces a burst of netlink messages per lease (offer, confirm, and a
+// delete/add pair on re-association), so this debounces to avoid rebuilding
+// the participant several times for one connect. Single-shot, armed only by
+// a kernel notification — not a poll.
 constexpr int kDebounceMs = 1000;
 
 // The netlink read buffer. Address messages are small; this is drained in a

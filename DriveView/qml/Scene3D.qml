@@ -22,13 +22,10 @@ Item {
     property vector3d topRotation: Qt.vector3d(-90, 0, 0)
     property real     topDistance: 1600
 
-    // Startup intro. The camera is DECLARED out at introDistance and the
-    // Component.onCompleted view apply pulls it in to chaseDistance, so the
-    // scene opens by settling into the chase view instead of backing away
-    // from it. This is only where the camera starts from — chaseDistance and
-    // topDistance are untouched, so both views still rest exactly where they
-    // did and every later switch is unaffected.
-    // Must stay outside chaseDistance or the intro reads as a zoom out again.
+    // Startup intro: camera starts declared at introDistance, then
+    // Component.onCompleted pulls it to chaseDistance so the scene opens by
+    // settling in rather than backing away. Must stay outside chaseDistance
+    // or the intro reads as a zoom out.
     property real introDistance: 2000
     property real introDuration: 1800
 
@@ -52,10 +49,7 @@ Item {
 
     anchors.fill: parent
 
-    // ============================================================
-    // THEME
-    // ============================================================
-    // Dark, because the road is. The panels used to be dark ink on a light
+    // Theme: dark, because the road is. The panels used to be dark ink on a light
     // grey void; with a real road under them that reads as unlit text on unlit
     // tarmac, so the whole HUD is inverted rather than fighting the ground for
     // contrast.
@@ -69,14 +63,9 @@ Item {
         property color textPri:     Theme.textPrimary
         property color textSec:     Theme.textSecondary
 
-        /*
-         * The HUD's own colour, shared with the rest of the app.
-         *
-         * Deliberately NOT the car colour. The ego swatch, the legend and the
-         * car itself already carry that, and it is user-settable — a driver who
-         * picks red would otherwise repaint every border and every hover state
-         * on the page red along with the paintwork.
-         */
+        // HUD accent colour, shared with the rest of the app — deliberately
+        // not the (user-settable) car colour, or picking red would repaint
+        // every border and hover state along with the paintwork.
         property color accent:      Theme.accentBlue
 
         // Panel fill and border now live in HudPanel; these two remain for the
@@ -85,17 +74,12 @@ Item {
         property color panelBorder: Theme.glassBorder
     }
 
-    /*
-     * Everything the car-settings drawer can change, kept across restarts.
-     *
-     * The car colour itself is owned by CarColors (shared with the launcher
-     * preview, which needs it from the first frame, before this scene is even
-     * created), stored there as the three inputs the picker works in.
-     *
-     * QSettings is usable here because main.cpp sets the organisation and
-     * application identifiers before the engine loads — without those it
-     * refuses to initialise and every value is silently dropped.
-     */
+    // Everything the car-settings drawer changes, persisted across restarts.
+    // Car colour itself lives in CarColors instead (needed by the launcher
+    // preview before this scene exists).
+    //
+    // Requires main.cpp to set the org/app identifiers before the engine
+    // loads, or QSettings silently drops every value.
     Settings {
         id: driveSettings
         category: "DriveView"
@@ -105,21 +89,14 @@ Item {
         property real carRoughness: 0.1
     }
 
-    /*
-     * Extra clearance at the top for the HUD panels only.
-     *
-     * The 3D view deliberately fills the whole page, so the road and sky run
-     * underneath the floating window bar instead of leaving bare background
-     * above it. The bar is not part of this component and knows nothing about
-     * it, so anything anchored to the top here would slide under it — hence a
-     * separate inset for the overlays rather than a margin on the scene.
-     *
-     * 0 by default: a Scene3D with no bar over it must not reserve space for
-     * one. DriveViewPage sets it to clear the bar it draws.
-     */
+    // Extra top clearance for HUD panels only: the 3D view fills the whole
+    // page, so overlays need their own inset (not a margin) to clear the
+    // floating window bar, which this component knows nothing about.
+    //
+    // 0 by default; DriveViewPage sets it to clear the bar it draws.
     property real topInset: 0
 
-    // ---- Responsive scale helpers ----
+    // Responsive scale helpers
     readonly property real _m:    width * 0.022
     readonly property real _r:    width * 0.012
     readonly property real _fSm:  Math.max(11, height * 0.019)
@@ -135,9 +112,7 @@ Item {
     // nothing has to know when the intro is "over".
     property int cameraGlideDuration: 700
 
-    // ============================================================
-    // 3D VIEW
-    // ============================================================
+    // 3D view
     View3D {
         id: view
         anchors.fill: parent
@@ -161,11 +136,9 @@ Item {
                       : null
             probeExposure: root.probeExposure
 
-            // distance haze: the far end of the city (and everything else
-            // past ~40 m) melts into the light background. This is world-space
-            // (per-fragment), so it is smooth and seamless — no per-row
-            // opacity bands, and it hides the city's loop-wrap pop beyond
-            // the road end.
+            // Distance haze: fades the far city into the background.
+            // World-space/per-fragment, so it's seamless (no per-row bands)
+            // and hides the city's loop-wrap pop past the road end.
             fog: Fog {
                 enabled: true
                 color: root.darkTheme ? "#101015" : "#ffffff"
@@ -205,26 +178,18 @@ Item {
             PerspectiveCamera {
                 id: camera
                 position: Qt.vector3d(0, 0, root.introDistance)
-                // 100 units = 1 m here, so clipNear 50 is half a metre — the
-                // rig orbits 1200-1600 units out and the pitch limit keeps it
-                // above the road, so nothing ever gets that close. The old
-                // near:1 / far:100000 spent the depth buffer on the first
-                // centimetre and left ~0.5 units of resolution at the far end
-                // of the road, where the ground/road/lane-line quads are only
-                // 0.5 units apart: they z-fought and the road flickered while
-                // orbiting. clipFar 10000 is past the fog wall (6800), so the
-                // geometry it drops was already fully hazed out.
+                // 100 units = 1 m. clipNear 50 / clipFar 10000 avoid the
+                // z-fighting that flickered the road under near:1/far:100000 —
+                // clipFar sits past the fog wall (6800) so nothing visible is cut.
                 fieldOfView: 70; clipNear: 50; clipFar: 10000
                 Behavior on position {
                     id: camGlide
                     Vector3dAnimation {
                         duration: root.cameraGlideDuration
                         easing.type: Easing.InOutCubic
-                        // Self-clearing intro: the first glide is the long one,
-                        // and dropping back to 700 as soon as it stops means a
-                        // view switch during the intro still ends up at the
-                        // normal speed. Re-setting 700 on every later glide is
-                        // a no-op.
+                        // Self-clearing intro: the first glide is long, then drops
+                        // back to 700 the moment it stops, so a switch mid-intro
+                        // still ends at normal speed. Re-setting 700 later is a no-op.
                         onRunningChanged: if (!running) root.cameraGlideDuration = 700
                     }
                 }
@@ -232,12 +197,9 @@ Item {
             }
         }
 
-        // View-switch glide for the orbit origin. The camera distance rides
-        // its Behavior above; this animates the rig's rotation (and any pan
-        // drift) with the same duration/easing so the pitch doesn't snap
-        // while the camera glides. Manually from/to'd per switch because a
-        // Behavior here would fight the OrbitCameraController, which writes
-        // orbitOrigin every frame while dragging.
+        // View-switch glide for the orbit origin: mirrors the camera distance
+        // Behavior above but for rotation/pan. Set manually per switch because
+        // a Behavior here would fight OrbitCameraController's per-frame writes.
         ParallelAnimation {
             id: viewSwitchAnim
             Vector3dAnimation {
@@ -308,43 +270,23 @@ Item {
                 castsShadows: false
                 receivesShadows: false
                 materials: PrincipledMaterial {
-                    // White base when the map is active: the silver texture
-                    // already carries the full tone range, so no double-darkening.
-                    // Matte + no metal: flat, non-distracting detection look.
-                    //
-                    // Emissive is doing real work here, not decoration.
-                    // Detections arrive at whatever yaw the detector reports, and
-                    // the scene has a key light plus one weak fill but no ambient
-                    // — the two lights sit at opposite yaws, so a face pointing
-                    // between them catches almost nothing. Left to the lights
-                    // alone a car turned away rendered its painted rear panels at
-                    // ~0.6x the brightness of an identical car facing the camera,
-                    // which is what made these read grey instead of silver.
-                    //
-                    // Feeding the same map back as emissive adds a constant floor
-                    // to every face regardless of which way it points. Pulling the
-                    // diffuse down to compensate was tried and made it worse — it
-                    // dimmed everything without closing the gap, because the gap is
-                    // additive, not proportional. Full diffuse plus a strong floor
-                    // is what works.
-                    //
-                    // Note this does NOT make the whole rear silver, and should not:
-                    // the rear window and glass roof are black in the texture by
-                    // design, and from a raised chase camera they are most of what
-                    // you see of a car driving away.
+                    // White base + map when active: texture already carries the
+                    // full tone range. Matte, no metal, for a flat detection look.
                     baseColor: root.useTeslaTexture ? Qt.rgba(1, 1, 1, 1) : fsd.detection
                     baseColorMap: root.useTeslaTexture ? teslaTex : null
+                    // Emissive floor compensates the scene's two-light setup:
+                    // without it, a face pointed away from both lights renders
+                    // near black instead of silver (dimming diffuse instead was
+                    // tried and looked worse). Rear window/glass roof stay black
+                    // by texture design.
                     emissiveMap: root.useTeslaTexture ? teslaTex : null
                     emissiveFactor: root.useTeslaTexture ? Qt.vector3d(0.65, 0.65, 0.65)
                                                          : Qt.vector3d(0, 0, 0)
                     metalness: 0.0; roughness: 0.9
-                    // Opaque, and load-bearing on this mesh specifically.
-                    // Blend was tried here and wrecked it: one concave body with
-                    // the wheels as separate surfaces inside the arches, and a
-                    // blended material sorts per object instead of per pixel, so
-                    // the wheels drew over the bodywork and appeared to hang
-                    // outside the car. Do not add Blend back without
-                    // OpaquePrePassDepthDraw alongside it.
+                    // Must stay Opaque: wheels are separate surfaces inside concave
+                    // arches, and Blend sorts per-object instead of per-pixel,
+                    // drawing wheels over the body. Add OpaquePrePassDepthDraw
+                    // before ever re-enabling Blend here.
                     alphaMode: PrincipledMaterial.Opaque
                 }
             }
@@ -373,9 +315,7 @@ Item {
             " passes=" + view.renderStats.renderPassCount)
     }
 
-    // ============================================================
-    // HUD — TOP LEFT: Settings Button + Status Panel (stacked)
-    // ============================================================
+    // HUD: top-left settings button + status panel (stacked)
     Column {
         id: leftHudColumn
         anchors.left: parent.left
@@ -493,9 +433,7 @@ Item {
         onClicked: settingsDrawer.open = true
     }
 
-    // ============================================================
-    // HUD — BOTTOM LEFT: Legend
-    // ============================================================
+    // HUD: bottom-left legend
     // HudPanel {
     //     anchors.left: parent.left
     //     anchors.bottom: parent.bottom
@@ -575,9 +513,7 @@ Item {
     //     }
     // }
 
-    // ============================================================
-    // HUD — TOP RIGHT: Camera Telemetry
-    // ============================================================
+    // HUD: top-right camera telemetry
     // HudPanel {
     //     anchors.right: parent.right
     //     anchors.top: parent.top
@@ -631,19 +567,10 @@ Item {
     //     }
     // }
 
-    // ============================================================
-    // HUD — BOTTOM CENTER: Speed Pill
-    // ============================================================
-    /*
-     * The one number on this page the driver actually reads, so it is the one
-     * thing allowed to look like an instrument: opaque enough to never fight
-     * the road, ringed in the HUD accent, with the speed also stated as a bar
-     * along the bottom of the pill.
-     *
-     * The bar is not decoration — a filling arc is readable from the corner of
-     * an eye at a glance, which is the only kind of attention a moving car has
-     * to spare for it.
-     */
+    // HUD: bottom-center speed pill.
+    // The one number the driver actually reads, so it looks like an
+    // instrument: opaque, ringed in the HUD accent, speed also shown as a
+    // fill bar readable at a glance.
     HudPanel {
         id: speedPill
         anchors.horizontalCenter: parent.horizontalCenter
@@ -655,16 +582,9 @@ Item {
         accent: fsd.accent
         inkAlpha: 0.82
 
-        /*
-         * Metres per minute, not km/h.
-         *
-         * This is the unit the Tiva actually sends (0x200 speed, 1 LSB =
-         * 1 m/min) and the only one that reads as an instrument on this
-         * vehicle. The whole range is 0-50 m/min, which is 0-3 km/h: a km/h
-         * readout would show 0, 1, 2 or 3 for an entire drive and look like a
-         * car that never left the kerb. The DBC makes the same argument for
-         * choosing the unit on the wire.
-         */
+        // Metres per minute, not km/h: the unit the Tiva sends on the wire
+        // (0x200, 1 LSB = 1 m/min). Range is 0-50 m/min = 0-3 km/h, so a
+        // km/h readout would just show 0-3 for the whole drive.
         readonly property real mPerMin: carInfo.currVel * 60
 
         // Full scale is the vehicle's own ceiling, so the bar uses its whole
@@ -722,9 +642,7 @@ Item {
         }
     }
 
-    // ============================================================
-    // HUD — BOTTOM RIGHT: View buttons
-    // ============================================================
+    // HUD: bottom-right view buttons
     HudButton {
         id: viewToggle
         anchors.right: parent.right
@@ -760,9 +678,7 @@ Item {
         onClicked: resetCurrentView()
     }
 
-    // ============================================================
-    // LEFT DRAWER — Car Settings
-    // ============================================================
+    // Left drawer: car settings
 
     // Volume-style slider: same chrome as the WindowBar volume control, but the
     // fill and knob pick up the car colour like the theme toggle does.
@@ -802,15 +718,9 @@ Item {
         }
     }
 
-    /*
-     * One control per setting: name on the left, live value on the right,
-     * slider underneath.
-     *
-     * The value used to be glued onto the label ("Brightness: 1.00"), which
-     * left the three numbers at three different x positions depending on how
-     * long each word was — so they could not be compared or even easily found.
-     * Right-aligned and monospaced, they form a column.
-     */
+    // One control per setting: name left, live value right, slider below.
+    // Value is right-aligned and monospaced so the numbers form a column
+    // instead of drifting with label length.
     component SettingSlider: Column {
         id: sRow
 
@@ -865,15 +775,9 @@ Item {
         opacity: 0.75
     }
 
-    /*
-     * Dims the scene while the drawer is out, and closes it on a tap anywhere
-     * else. Before this the only way back was the Close button: a driver who
-     * opened the drawer by accident had to find one specific target to undo it,
-     * on a touchscreen, while moving.
-     *
-     * Hidden rather than transparent when shut — a full-page MouseArea left
-     * lying over the scene would swallow every camera drag.
-     */
+    // Dims the scene while the drawer is open and closes it on any outside
+    // tap, not just the Close button. Hidden (not just transparent) when
+    // shut, so it doesn't swallow camera drags over the scene.
     Rectangle {
         id: drawerScrim
         anchors.fill: parent
@@ -964,7 +868,7 @@ Item {
             // one. The wheel below gives up height for the same reason.
             spacing: _m * 0.3
 
-            // ---- Header: title + close button (anchored, no overlap) ----
+            // Header: title + close button (anchored, no overlap)
             Item {
                 width: parent.width
                 height: Math.max(_drawerTitle.implicitHeight, closeBtn.height)
@@ -985,18 +889,11 @@ Item {
                     horizontalAlignment: Text.AlignLeft
                 }
 
-                /*
-                 * Round, not a labelled pill.
-                 *
-                 * "× Close" spent a fifth of the drawer's width saying what the
-                 * × already says, and it was the widest thing in the header. A
-                 * circle is also a better touch target than a short wide box
-                 * for a thumb coming in at an angle.
-                 *
-                 * U+00D7, for the reason spelled out in VirtualKeyboard: the
-                 * prettier ✕ is a Dingbats glyph no font on the head unit
-                 * carries, and it renders as nothing there.
-                 */
+                // Round icon-only close button, not a labelled pill — smaller
+                // and a better touch target than a wide box.
+                //
+                // Uses U+00D7, not the prettier ✕: that glyph is Dingbats and
+                // doesn't render on the head unit's fonts.
                 Rectangle {
                     id: closeBtn
                     anchors.right: parent.right
@@ -1037,7 +934,7 @@ Item {
 
             SectionLabel { text: "ENVIRONMENT"; width: parent.width }
 
-            // ---- Theme: same switch look as the ambient-light card ----
+            // Theme: same switch look as the ambient-light card
             Item {
                 width: parent.width
                 height: Math.max(themeTextCol.height, themeToggle.height)
@@ -1102,17 +999,12 @@ Item {
                 color: Qt.rgba(1, 1, 1, 0.10)
             }
 
-            // ---- Car Color ----
+            // Car color
             SectionLabel { text: "PAINT"; width: parent.width }
 
-            /*
-             * The swatch, sitting in its own glow.
-             *
-             * A flat rectangle of colour states the value; the bloom behind it
-             * shows what that paint does to the light around it, which is the
-             * thing actually being chosen. The hex sits on top so the value is
-             * still readable as a value.
-             */
+            // The swatch sits in its own glow: a flat rectangle states the
+            // value, the bloom behind it shows what that paint does to the
+            // light, and the hex sits on top so it's still readable as text.
             Item {
                 width: parent.width
                 height: _m * 1.9
@@ -1253,9 +1145,7 @@ Item {
         }
     }
 
-    // ============================================================
-    // HELPERS
-    // ============================================================
+    // Helpers
     function hsvToRgb(h, s, v) {
         var r, g, b, i=Math.floor(h*6), f=h*6-i
         var p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s)
@@ -1268,12 +1158,9 @@ Item {
     }
 
     function applyColor() {
-        // Single funnel for every colour change — the wheel and the brightness
-        // slider both come through here — so this is the only place the stored
-        // copy has to be kept up to date. CarColors persists it from its own
-        // Settings block and restores itself at boot, when the launcher
-        // preview is created, so the persisted colour is visible from the
-        // first frame.
+        // Single funnel for every colour change (wheel + brightness slider),
+        // so this is the only place the stored copy needs updating. CarColors
+        // restores it at boot so the persisted colour shows from frame one.
         CarColors.setColor(colorWheel.pickedHue, colorWheel.pickedSat, brightnessSlider.value)
     }
 
@@ -1309,21 +1196,14 @@ Item {
         viewSwitchAnim.start()
     }
 
-    /*
-     * Play the opening zoom in, from scratch, however the page was last left.
-     *
-     * Called on the Drive View card tap rather than at construction, so the
-     * animation is tied to the user opening the page instead of to a warm-up
-     * that happened minutes earlier behind the launcher.
-     *
-     * The snap out has to bypass the glide Behavior: a plain write would
-     * animate the camera OUT to introDistance and then back in, and that
-     * outward sweep is exactly the zoom out this whole change replaced.
-     *
-     * Ends on resetCurrentView() rather than applyChaseView() so reopening
-     * keeps whichever view the driver left on — the intro is a zoom in to the
-     * current view, not a reset to chase.
-     */
+    // Plays the opening zoom-in. Called on Drive View card tap, not at
+    // construction, so it's tied to the user opening the page.
+    //
+    // Bypasses the glide Behavior — a plain write would animate out to
+    // introDistance first, then back in, which is the sweep this replaces.
+    //
+    // Ends on resetCurrentView(), not applyChaseView(), so reopening keeps
+    // whichever view the driver left on.
     function playIntro() {
         camGlide.enabled = false
         camera.position = Qt.vector3d(0, 0, root.introDistance)
@@ -1356,14 +1236,12 @@ Item {
     }
 
     Component.onCompleted: {
-        // Restore first: applyTheme() below reads darkTheme, and the colour
-        // has to be rebuilt from the stored hue/sat/value before anything
-        // paints, or the car flashes its default blue on every start.
+        // Restore before applyTheme() (which reads darkTheme) and before any
+        // paint, or the car flashes its default blue on start.
         //
-        // Assigning brightnessSlider.value fires its onValueChanged, which
-        // calls applyColor() — so hue and saturation are set ahead of it.
-        // The colour itself lives in CarColors (shared with the launcher
-        // preview, restored at boot), so this scene only syncs its picker.
+        // Setting brightnessSlider.value fires onValueChanged -> applyColor(),
+        // so hue/sat are set first. Colour itself lives in CarColors, shared
+        // with the launcher preview.
         root.darkTheme         = driveSettings.darkTheme
         colorWheel.pickedHue   = CarColors.carHue
         colorWheel.pickedSat   = CarColors.carSat
@@ -1374,15 +1252,12 @@ Item {
         applyColor()
         colorWheel.requestPaint()
 
-        // Settle straight into the chase view with no motion at all. The
-        // intro deliberately does NOT run here: this page is built and warmed
-        // behind the launcher (see the warm-frame Loader in Main.qml), so an
-        // intro tied to construction plays to nobody and is over well before
-        // the card is ever tapped. Main.qml calls playIntro() on the tap.
+        // No intro here: this page is warmed behind the launcher (see
+        // Main.qml) before the card is ever tapped, so Main.qml calls
+        // playIntro() on tap instead.
         //
-        // Disabling the Behavior is what makes this a snap — without it the
-        // camera sweeps from its declared introDistance down to chaseDistance,
-        // which is the wasted invisible animation this is avoiding.
+        // Disabling the Behavior makes this a snap instead of an invisible
+        // sweep from introDistance to chaseDistance.
         camGlide.enabled = false
         applyChaseView()
         camGlide.enabled = true
